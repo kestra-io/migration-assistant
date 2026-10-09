@@ -95,7 +95,7 @@ def test_the_front_page_follows_the_guides_order(which, request):
     assert secs[0] == "What's in this estate" and secs[1].startswith("The recommendation: ")
     assert secs[1].split(": ", 1)[1] in ("convert", "a mix", "rebuild")
     assert secs[2:] == ["What we need from you", "The plan"]           # the navigation is where to check
-    assert "have a path to Kestra" in r["text"] and "are ready now" in r["text"]
+    assert "have a path to Kestra" in r["text"]
     assert "**Direct**" not in page and "<strong>Direct</strong> converts one for one" in page
 
 
@@ -121,6 +121,27 @@ def F_CAPS():
 def test_a_larger_estate_does_not_make_a_longer_page(big, small):
     print("words: big", len(big["text"].split()), "small", len(small["text"].split()), "brief big", len(big["md"].split()))
     assert len(big["text"].split()) <= len(small["text"].split()) + 120
+
+
+@pytest.mark.parametrize("which", ["big", "small"])
+def test_the_front_page_says_it_in_the_guides_words(which, request):
+    """The How column says Direct or Redesign, or what a row waits on in words (never "Open"); the
+    recommendation says how many of the elements convert Direct, then what the rest depend on; until answers make
+    something ready, the figures say what the answers unlock, not that nothing is ready."""
+    from kestra_migration_assistant.vra.stages import front as F
+    r = request.getfixturevalue(which)
+    table = r["page"].split("<table>", 1)[1].split("</table>", 1)[0]
+    hows = set(re.findall(r'<span class="status [a-z]+">([^<]+)</span>', table))
+    assert hows <= {"Direct", "Redesign", "Stays in vRA", "Retired", *F.WAITS.values()}, hows
+    assert "Open" not in hows and "no path until" not in r["text"]
+    rows = F.merged_rows(r["assess"], r["brief"])
+    sp = F.split(rows)
+    if sp["Direct"]:
+        assert f"{sp['Direct']} of the {sp['total']} elements convert Direct" in r["text"]
+    if sp["Open"]:
+        assert re.search(rf"The other {sp['Open']} depends? on ", r["text"]) or f"All {sp['Open']}" in r["text"]
+    if not r["brief"]["translation"]["number"].get("elements_ready"):
+        assert "are ready now" not in r["text"] and "ready now" not in F.translation_page(r["assess"], r["brief"])
 
 
 @pytest.mark.parametrize("which", ["big", "small"])
@@ -177,7 +198,14 @@ def test_the_recommendation_opens_with_what_happens_to_the_workflows():
             {"key": ("vra-front", "Redesign"), "how": "Redesign", "count": 12}]
     head, s = F.recommendation({}, brief("convert", ["Convert"] * 4), rows)
     assert head == "convert" and s[0] == "Every workflow can be converted to Kestra, and nothing has to be rebuilt from scratch."
-    assert s[1] == "Of the estate's 59 elements, 47 convert Direct and 12 need a Redesign, mostly where vRA itself goes away."
+    assert s[1] == "47 of the 59 elements convert Direct. The other 12 need a Redesign, mostly where vRA itself goes away."
+    # the rest waits on whether vRA stays (Q9): said in plain words, with which question it is
+    wait = [{"key": ("client", "x", "Direct"), "how": "Direct", "count": 50},
+            {"key": ("vra-front", "Open"), "how": "Open", "count": 4, "waits": "vra"},
+            {"key": ("vra-events", "Open"), "how": "Open", "count": 5, "waits": "vra"}]
+    _, s = F.recommendation({}, brief("convert", ["Convert"] * 4), wait)
+    assert s[1] == ("50 of the 59 elements convert Direct. The other 9 depend on whether vRA stays in front, which "
+                    "is one of the questions below.")
     head, s = F.recommendation({}, brief("convert", ["Convert"] * 38 + ["Rebuild"] * 4), rows)
     assert s[0] == ("Most of this estate can be converted: 38 workflows convert, and 4 are rebuilt from scratch because "
                     "they only make sense inside vRA.")

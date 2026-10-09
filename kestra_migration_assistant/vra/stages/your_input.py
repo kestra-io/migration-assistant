@@ -512,17 +512,22 @@ def group_question(gid: str, its: list[dict]) -> str:
     return "What the export cannot say about the estate:"
 
 
+def q3_systems(it: dict, keys: list[str]) -> list[str]:
+    """The systems Q3 (`it`) still asks about when the items `keys` are asked too: an endpoint item
+    (endpoint.<system key>) asks for its own system. Matched on the system's key, never its display name."""
+    from . import gates as G
+    asked = {k.split(".", 1)[1] for k in keys if k.startswith("endpoint.")}
+    if it.get("systems"):
+        return [s["name"] for s in it["systems"] if G.key_part(s["key"]) not in asked]
+    return [x for x in (re.sub(r" \(from [^;]*\)\.?$", "", p.strip()) for p in str(it.get("found") or "").split("; "))
+            if x]
+
+
 def _member_question(it: dict, siblings: list[dict] | None = None) -> str:
     if it["key"].startswith("q3-") and it.get("found"):
         # Q3 asks for a non-production instance of each system; an endpoint item (endpoint.<system key>) already
         # asks for its system, so Q3 asks only for the others, matched on the key, never on a display name
-        from . import gates as G
-        asked = {s["key"].split(".", 1)[1] for s in siblings or [] if s is not it and s.get("family") == "endpoint"}
-        if it.get("systems"):
-            rest = [s["name"] for s in it["systems"] if G.key_part(s["key"]) not in asked]
-        else:
-            rest = [x for x in (re.sub(r" \(from [^;]*\)\.?$", "", p.strip()) for p in str(it["found"]).split("; "))
-                    if x]
+        rest = q3_systems(it, [s["key"] for s in siblings or [] if s is not it])
         return (f"{_and(rest)}: is there a non-production instance? And name any other system the workflows reach."
                 if rest else "Do the workflows reach any other system? Name it, or answer none.")
     q = question_of(it)
