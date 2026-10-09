@@ -1,7 +1,8 @@
 # Inputs: what the customer sends, and where it goes
 
-This tool reads one estate at a time from `sources/<estate>/`. An **estate** is one customer's whole
-vRO/vRA scope; one estate is one run (`--estate <name>`). This page says what to put in that folder,
+This tool reads one estate at a time from one **export folder**. An **estate** is one customer's whole
+vRO/vRA scope, and it is named after its export folder; one estate is one run
+(`kestra-migrate vra run <export folder>`). This page says what to put in that folder,
 how an administrator produces it, and what has to come separately because no export contains it.
 
 Every step that describes how the VMware product behaves is marked **(to confirm with a vRO expert)**.
@@ -44,7 +45,7 @@ source tree instead of a package: `Workflow/<Folder>/<Name>.xml` with a sibling
 Both sample estates in this repository are trees of this kind.
 
 Put the tree in the estate folder as it is in the repository, either as the whole folder
-(`sources/acme/src/main/resources/...` trimmed to the folder holding `Workflow/`) or one tree per
+(`acme/src/main/resources/...` trimmed to the folder holding `Workflow/`) or one tree per
 sub-folder. **(To confirm with a vRO expert:** whether the customer's BTVA version writes the same
 `element_info` layout; the TypeScript `vro/src` form of BTVA projects is **not** read, only the XML
 it compiles to.**)**
@@ -79,7 +80,7 @@ Folders it does not know are listed in `readiness.md`, not dropped. Every workfl
 matched to the package by vRO workflow ID, and any that does not resolve is reported.
 
 Without a vRA export, the customer gives the same facts by hand in
-`stages/<estate>/your-input/entry-points.yaml`. Preflight writes it only then, as a template with one
+`<export folder>/kestra-assessment/your-input/entry-points.yaml`. Preflight writes it only then, as a template with one
 commented example in the same schema, and never overwrites it once it has an entry; `answers.yaml` then has
 one open question, Q2, that points to it. With a vRA export there is no such file: Q2 is asked in
 `answers.yaml` itself, for what no export holds (vRO scheduled tasks and policies, an ITSM, scripts calling
@@ -104,7 +105,7 @@ the brief can only say which workflows nothing *in the export* calls, not which 
 | **Installed plugins and versions** per node | A plugin object type with no Kestra route blocks every workflow that uses it | Orchestrator control centre > plugins, per node | Q8 |
 | **A non-production instance per target** | A wave that writes to a target cannot be verified without one | From the owning teams | Q3 |
 
-Answers go in `stages/<estate>/your-input/answers.yaml`, the one file a person fills in. By default it is
+Answers go in `<export folder>/kestra-assessment/your-input/answers.yaml`, the one file a person fills in. By default it is
 the only file in `your-input/`. It looks like this:
 
 ```yaml
@@ -154,7 +155,7 @@ the id that closes it.
 
 This step is for advanced use, and most estates never need it. If the tool got something wrong (a domain's
 name, which domain a cluster belongs to, how a target is reached, a wrapper flag, a workflow's outcome),
-add `stages/<estate>/your-input/corrections.yaml`. The tool never creates it; it reads it on every run if it
+add `<export folder>/kestra-assessment/your-input/corrections.yaml`. The tool never creates it; it reads it on every run if it
 is there. Leave a section empty to change nothing:
 
 ```yaml
@@ -185,11 +186,8 @@ outcomes: {}
 
 ## 6. Before anything leaves the customer's network: sanitize
 
-```bash
-python plugin/scripts/vro.py sanitize --estate acme
-```
-
-writes a redacted copy to `stages/acme/data/0-preflight/sanitized/` and a `redaction-report.md` to review:
+Every run sanitizes first: `kestra-migrate vra run acme` writes a redacted copy to
+`acme/kestra-assessment/data/0-preflight/sanitized/` and a `redaction-report.md` to review:
 hostnames, IPs, URLs, emails, account names and anything credential-shaped replaced with stable
 placeholders; configuration element and SecureString values dropped; signer and owner identities
 stripped. A `.vra-ng` is sanitized too: besides the same text rules, owners, subscribers and
@@ -200,27 +198,32 @@ can run this themselves and send only the sanitized copy.
 
 ## 7. Where the customer puts it
 
+One folder per estate, anywhere on the machine. The folder's name is the estate's name.
+
 ```
-sources/
-  acme/                          one folder per estate; the name is the --estate value
-    acme-prod.package            one or more packages ...
-    acme-dev-extras.package
-    btva-repo/                   ... and/or BTVA trees ...
-    Some Workflow.workflow       ... and/or single workflow files (experimental), at the top level
-    acme-vra.vra-ng              a vRA content export, read for entry points (section 4)
-    run-history-2025.csv         other files are listed by Preflight, not parsed
+acme/                            the export folder
+  acme-prod.package              one or more packages ...
+  acme-dev-extras.package
+  btva-repo/                     ... and/or BTVA trees ...
+  Some Workflow.workflow         ... and/or single workflow files (experimental), at the top level
+  acme-vra.vra-ng                a vRA content export, read for entry points (section 4)
+  run-history-2025.csv           other files are listed by Preflight, not parsed
+  kestra-assessment/             written by the tool, and never read as part of the export
 ```
 
 Then:
 
 ```bash
-python plugin/scripts/vro.py run --estate acme      # sanitize, preflight, assess, understand, brief, pages
+kestra-migrate vra run acme      # sanitize, preflight, assess, understand, brief, pages
 ```
 
-Everything the tool writes goes to `stages/acme/`; open `stages/acme/index.html`, the brief. Answer in
-`stages/acme/your-input/answers.yaml` and run the same command again; only what changed is re-done. `sources/` is gitignored: a customer export is never
-committed. Nothing is uploaded anywhere by these commands; the only outbound traffic is to the model
-configured in `models.yaml`, and only for the model calls the brief lists (domain names, walkthrough
-text, and the specs, which `run` writes unless `--no-model` is given), with every piece of export text marked as untrusted data.
+Everything the tool writes goes to `acme/kestra-assessment/` (or the folder `--out` names, for an export
+folder you cannot write to); open `acme/kestra-assessment/index.html`, the brief. Answer in
+`acme/kestra-assessment/your-input/answers.yaml` and run the same command again; only what changed is
+re-done, and the model replies already paid for come from the cache in `kestra-assessment/data/model-cache/`.
+Nothing is uploaded anywhere by these commands; the only outbound traffic is to the configured model, and
+only for the model calls the brief lists (domain names, walkthrough text, and the specs, which `run` writes
+unless `--no-model` is given), with every piece of export text marked as untrusted data.
 
-To try the tool without a customer export, copy a public sample: `python plugin/scripts/vro.py use-sample avi`.
+To try the tool without a customer export, run it on a copy of a public sample from this repository:
+`kestra-migrate vra use-sample samples/avi avi-sample`, then `kestra-migrate vra run avi-sample`.

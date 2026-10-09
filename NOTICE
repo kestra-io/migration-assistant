@@ -1,30 +1,79 @@
-vro2k
+Kestra Migration Assistant
+Copyright 2026 Kestra Technologies
 
-LICENCE PENDING REVIEW
+This product is licensed under the Apache License, Version 2.0 (see LICENSE), except for the
+third-party files listed below, which keep their own licences. Each licence file sits next to the
+files it covers.
 
-This repository has no licence yet. Until one is chosen and added, all rights are reserved: the
-code and documentation written for this project may not be copied, modified or redistributed
-outside Kestra.
 
-The intended split, subject to that review:
+TRADEMARKS
 
-  vro2k_assess/    intended to be released as open source (the discovery side a customer can run
-                   on their own network: parse, cluster, sanitize, intake check, stages 0 to 2)
+"Kestra" and the Kestra logo are trademarks of Kestra Technologies. They are not covered by the
+Apache License: the licence grants no right to use them (section 6), apart from the reasonable and
+customary use needed to describe where this software comes from. The logo files in
+kestra_migration_assistant/vra/assets/brand/ are included, unmodified, so the reports render as
+intended; they may not be used to brand another product.
 
-tests/test_boundary.py enforces that vro2k_assess stands alone.
+VMware, vRealize, Aria, NSX and other product names are trademarks of their owners. They are used
+only to name the products this tool reads exports from.
 
-Third-party files keep their own licences. Each licence file sits next to the files it covers:
 
-  samples/avi/                                         Apache License 2.0 (LICENSE, SOURCE.md)
-  samples/nuage/                                       BSD 3-Clause (LICENSE, SOURCE.md)
-  tests/conformance/                                   BSD 2-Clause and MIT (licences/, CONFORMANCE.md)
-  vro2k_assess/assets/vendor/mermaid/                  MIT (LICENSE)
-  vro2k_assess/assets/vendor/anthropic-code-modernization/
-                                                       Apache License 2.0 (LICENSE)
-  vro2k_assess/assets/explorer-viewer.html             Apache License 2.0, adapted from the file
-                                                       above (changes listed in its header); inlines
-                                                       a d3 v7 subset, ISC, Copyright Mike Bostock
-  vro2k_assess/assets/vendor/mona-sans/                SIL Open Font License 1.1 (OFL.txt)
-  vro2k_assess/assets/brand/                           Kestra logo, a Kestra trademark, unmodified
+THIRD-PARTY FILES BUNDLED WITH THE PACKAGE (installed with it, and copied into every report)
 
-Copies of the vendored files in an estate's report carry the same licences.
+kestra_migration_assistant/vra/assets/vendor/mermaid/mermaid.min.js
+    Mermaid 11.17.2, https://github.com/mermaid-js/mermaid
+    MIT License, Copyright (c) 2014 - 2022 Knut Sveidqvist (LICENSE beside it).
+    The bundle includes, under their own licences, as its header lists:
+      DOMPurify 3.4.12, (c) Cure53 and other contributors, Apache License 2.0 or Mozilla Public
+        License 2.0;
+      lodash-es 4.18.1, Copyright OpenJS Foundation and other contributors, MIT License (based on
+        Underscore.js 1.8.3, Copyright Jeremy Ashkenas, DocumentCloud and Investigative
+        Reporters & Editors);
+      cytoscape, MIT License, including "Embeddable Minimum Strictly-Compliant Promises/A+ 1.1.1
+        Thenable", Copyright (c) 2013-2014 Ralf S. Engelschall, MIT License.
+
+kestra_migration_assistant/vra/assets/vendor/anthropic-code-modernization/topology-viewer.html
+    From Anthropic's code-modernization plugin for Claude Code, assets/topology-viewer.html.
+    Apache License 2.0 (LICENSE beside it). Inlines a subset of d3 v7, ISC License,
+    Copyright Mike Bostock.
+
+kestra_migration_assistant/vra/assets/explorer-viewer.html
+    Adapted from the topology viewer above; the changes are listed in its header.
+    Apache License 2.0. Inlines the same d3 v7 subset, ISC License, Copyright Mike Bostock.
+
+kestra_migration_assistant/vra/assets/vendor/mona-sans/MonaSansVF-opsz-wght.ttf
+    Mona Sans v2.0.27, https://github.com/github/mona-sans, unmodified (renamed only).
+    SIL Open Font License 1.1 (OFL.txt beside it). Reserved Font Name "Mona".
+
+kestra_migration_assistant/vra/assets/brand/
+    The Kestra logo. A trademark of Kestra Technologies; see TRADEMARKS above.
+
+kestra_migration_assistant/vra/data/plugins/kestra-plugins-2026-09-30.json
+    A dated snapshot of the names, versions and licences of Kestra plugins, taken from a running
+    Kestra and the kestra.io plugin catalogue. Kestra's own data.
+
+
+THIRD-PARTY FILES IN THE REPOSITORY ONLY (not installed with the package)
+
+samples/avi/
+    vmware/vrealize-orchestrator-plugin-for-alb, commit 20740bf.
+    Apache License 2.0 (LICENSE, SOURCE.md).
+
+samples/nuage/
+    nuagenetworks/vspk-vro-workflows, commit 16a8a11.
+    BSD 3-Clause License, Copyright (c) 2015 Alcatel-Lucent, (c) 2016 Nokia (LICENSE, SOURCE.md).
+
+tests/conformance/canvas/
+    vmware/build-tools-for-vmware-aria, commit 4ca2f6a. BSD 2-Clause License, Copyright 2023
+    VMware, Inc. (licences/build-tools-for-vmware-aria.LICENSE.txt).
+
+tests/conformance/aria-xml/
+    vmware-samples/build-tools-for-vmware-aria-samples, commit 57e4d5b. BSD 2-Clause License
+    (licences/build-tools-for-vmware-aria-samples.LICENSE).
+
+tests/conformance/pkgdiff-v1.0.package, tests/conformance/pkgdiff-v1.1.package
+    lrivallain/vro-package-diff, commit 04de43b. MIT License, Copyright (c) 2018 Ludovic Rivallain
+    (licences/vro-package-diff.LICENSE.md).
+
+Everything else in tests/conformance/ was written for this repository (CONFORMANCE.md lists each
+file's origin) and is under the Apache License 2.0.
