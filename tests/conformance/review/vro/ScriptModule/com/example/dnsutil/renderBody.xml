@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="renderBody" result-type="Any" api-version="6.0.0" id="a3000000-0000-4000-8000-000000000019" version="1.0.0" allowed-operations="vef"><description/><param n="name" t="string"/><param n="values" t="Properties"/><script encoded="false"><![CDATA[var category = Server.getResourceElementCategoryWithPath("Example/Dns/Templates");
+var element = null;
+for (var i = 0; i < category.resourceElements.length; i++) {
+    if (category.resourceElements[i].name === name) {
+        element = category.resourceElements[i];
+    }
+}
+var text = element.getContentAsMimeAttachment().content;
+for (var j = 0; j < values.keys.length; j++) {
+    text = text.split("{{" + values.keys[j] + "}}").join(values.get(values.keys[j]));
+}
+return JSON.parse(text);]]></script></dunes-script-module>

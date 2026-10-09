@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config-element id="c3000000-0000-4000-8000-000000000003" version="1.0.0">
+  <display-name><![CDATA[Nuage]]></display-name>
+  <atts>
+    <att name="host" type="string" read-only="false">
+      <value encoded="n"><![CDATA[sdn.example.test]]></value>
+    </att>
+    <att name="username" type="string" read-only="false">
+      <value encoded="n"><![CDATA[svc]]></value>
+    </att>
+    <att name="password" type="SecureString" read-only="false">
+      <value encoded="n"><![CDATA[]]></value>
+    </att>
+  </atts>
+</config-element>

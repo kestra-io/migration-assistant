@@ -1,0 +1,17 @@
+---
+# Synthetic vRA export for vro2k's event-driven tests. Every name in it is invented.
+blueprint:
+  - Web Host
+subscription:
+  - Net - register on provision
+  - Net - unregister on removal
+  - Net - clean up failed request
+  - Net - route deployment events
+catalog-item:
+  - Example Templates__Web Host
+content-source:
+  - Example Templates
+catalog-entitlement:
+  - Example Templates
+custom-resource: []
+resource-action: []

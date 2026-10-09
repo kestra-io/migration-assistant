@@ -1,0 +1,20 @@
+{
+  "id": "sub-example-1",
+  "type": "RUNNABLE",
+  "name": "Net - register on provision",
+  "description": "Synthetic subscription",
+  "disabled": false,
+  "eventTopicId": "compute.provision.post",
+  "runnableType": "extensibility.vro",
+  "runnableId": "e1000000-0000-4000-8000-000000000001",
+  "blocking": true,
+  "timeout": 5,
+  "priority": 10,
+  "criteria": "event.data.customProperties.ipamEnabled == \"true\"",
+  "contextual": false,
+  "constraints": {
+    "projectNames": [
+      "Example Project"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "workflow_uid": "helpers-Web---Provision-Host",
+  "purpose": "Creates a subnet for each new machine in the SDN controller and registers the machine in IPAM.",
+  "confidence": "medium",
+  "open_questions": [],
+  "external_systems": [
+    {
+      "system": "Infoblox"
+    },
+    {
+      "system": "Nuage VSD"
+    }
+  ]
+}

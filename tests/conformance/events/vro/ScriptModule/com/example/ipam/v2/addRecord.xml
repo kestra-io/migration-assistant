@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="addRecord" result-type="Properties" api-version="6.0.0" id="a1000000-0000-4000-8000-000000000005" version="1.0.0" allowed-operations="vef"><description/><param n="endpoint" t="Properties"/><param n="name" t="string"/><param n="address" t="string"/><script encoded="false"><![CDATA[let api = System.getModule("com.example.ipam");
+let v1 = api;
+return v1.callApi(endpoint, "POST", "/wapi/v2.12/record:a", { name: name, ipv4addr: address, comment: "v2" });]]></script></dunes-script-module>

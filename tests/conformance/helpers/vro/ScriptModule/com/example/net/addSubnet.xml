@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="addSubnet" result-type="Any" api-version="6.0.0" id="a2000000-0000-4000-8000-000000000003" version="1.0.0" allowed-operations="vef"><description/><param n="endpoint" t="Properties"/><param n="cidr" t="string"/><script encoded="false"><![CDATA[var net = System.getModule("com.example.net");
+var r = net.callApi(endpoint, "POST", "/nuage/api/v6/subnets", { address: cidr });
+net.checkResponse(r);
+return r;]]></script></dunes-script-module>

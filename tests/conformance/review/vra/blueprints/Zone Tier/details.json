@@ -1,0 +1,6 @@
+{
+  "id": "b3000000-0000-4000-8000-000000000001",
+  "name": "Zone Tier",
+  "description": "Synthetic cloud template: hosts on an existing network with static IPs",
+  "requestScopeOrg": false
+}

@@ -1,0 +1,23 @@
+formatVersion: 1
+inputs:
+  hostCount:
+    type: integer
+    title: Hosts
+    default: 2
+resources:
+  host:
+    type: Cloud.vSphere.Machine
+    properties:
+      count: ${input.hostCount}
+      image: example-image
+      flavor: small
+      dnsEnabled: true
+      networks:
+        - network: ${resource.host_net.id}
+          assignment: static
+  host_net:
+    type: Cloud.vSphere.Network
+    properties:
+      networkType: existing
+      constraints:
+        - tag: 'net:example'

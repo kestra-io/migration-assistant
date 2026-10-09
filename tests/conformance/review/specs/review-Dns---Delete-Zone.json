@@ -1,0 +1,54 @@
+{
+ "purpose": "Removes the zone's host records, the Infoblox zone and the Nuage domain when a deployment is destroyed, and drops its registry entry.",
+ "inputs": [
+  {
+   "name": "inputProperties",
+   "type": "Properties",
+   "meaning": "vRA event payload"
+  }
+ ],
+ "outputs": [],
+ "external_systems": [
+  {
+   "system": "Infoblox",
+   "how": "WAPI over REST"
+  },
+  {
+   "system": "Nuage VSD",
+   "how": "REST"
+  }
+ ],
+ "decisions": [],
+ "side_effects": [
+  "writes the zone registry"
+ ],
+ "assumptions": [],
+ "open_questions": [
+  {
+   "question": "Is a failed call to Infoblox retried before the run fails?",
+   "why_it_matters": "retry policy",
+   "theme": "error semantics"
+  }
+ ],
+ "suspected_defects": [
+  {
+   "what": "host records are removed with the zone's reference, not each record's own",
+   "evidence": "removeHostRecord(ib, state.ref)",
+   "question": "Should each host record be removed by its own reference?"
+  },
+  {
+   "what": "a failed create also drops the zone, but nothing passes the failed status here",
+   "evidence": "shouldDropZone(eventType, status)",
+   "question": "Is the failed-create cleanup meant to run through this workflow?"
+  }
+ ],
+ "state_records": [
+  {
+   "where": "Example/Dns/State, Zone Registry, one attribute per deployment id",
+   "shape": "JSON: zone, ref, domain (strings)",
+   "written_when": "after the zone is created"
+  }
+ ],
+ "confidence": "medium",
+ "confidence_reason": "synthetic spec for the review tests"
+}

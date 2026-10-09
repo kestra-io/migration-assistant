@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="getEndpoint" result-type="Properties" api-version="6.0.0" id="a3000000-0000-4000-8000-000000000014" version="1.0.0" allowed-operations="vef"><description/><param n="name" t="string"/><script encoded="false"><![CDATA[var category = Server.getConfigurationElementCategoryWithPath("Example/Dns/Endpoints");
+for (var i = 0; i < category.configurationElements.length; i++) {
+    var e = category.configurationElements[i];
+    if (e.name === name) {
+        var p = new Properties();
+        p.put("host", e.getAttributeWithKey("host").value);
+        p.put("username", e.getAttributeWithKey("username").value);
+        p.put("password", e.getAttributeWithKey("password").value);
+        return p;
+    }
+}
+throw "no endpoint " + name;]]></script></dunes-script-module>

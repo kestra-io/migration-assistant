@@ -1,0 +1,69 @@
+{
+ "purpose": "\"Decision Edge 2\" (category VMware.PSCoE) is a three-item vRO fixture/graph-shape workflow that exercises a decision element whose true and false arms converge on the same successor. It takes no inputs, produces no outputs, calls no action, no plugin, no nested workflow, and performs no side effects. At runtime it evaluates one JavaScript condition against the workflow attribute `waitingTimer` (a Date that is never assigned a value anywhere in the workflow), then \u2014 regardless of the result \u2014 runs an empty scripted task named `shouldGoHere` and terminates normally. Its only observable behaviour is \"starts and completes successfully\"; its real content is the control-flow topology (branch with an immediate join), which is what a conversion must preserve.",
+ "inputs": [],
+ "outputs": [],
+ "external_systems": [],
+ "decisions": [
+  {
+   "item": "item1 \u2014 \"decisionElement\" (type custom-condition, root_item / entry point). Reads workflow attribute `waitingTimer` (Date) via in_binding (export_name `waitingTimer`). Script body is exactly: `return waitingTimer !== null;`",
+   "condition": "waitingTimer !== null (strict inequality against null)",
+   "branches": [
+    {
+     "when": "Condition returns true (waitingTimer holds a Date)",
+     "goes_to": "item2 (\"shouldGoHere\") via out_name",
+     "does": "Takes the normal/true edge. In practice unreachable in any self-contained run: `waitingTimer` is declared with value null and is never written by any item, input, or binding in this workflow."
+    },
+    {
+     "when": "Condition returns false (waitingTimer is null)",
+     "goes_to": "item2 (\"shouldGoHere\") via alt_out_name \u2014 the SAME target as the true arm",
+     "does": "Takes the else/false edge to the identical successor. This is the path actually taken on every normal execution."
+    }
+   ]
+  },
+  {
+   "item": "item2 \u2014 \"shouldGoHere\" (type task)",
+   "condition": "None \u2014 unconditional single successor. The task has a null script and no in_bindings or out_bindings, so it is a pure no-op node.",
+   "branches": [
+    {
+     "when": "Always",
+     "goes_to": "item0 via out_name",
+     "does": "Executes nothing and falls through to the end element."
+    }
+   ]
+  },
+  {
+   "item": "item0 \u2014 end element, end_mode \"0\"",
+   "condition": "None \u2014 terminal",
+   "branches": [
+    {
+     "when": "Always",
+     "goes_to": "(workflow terminates)",
+     "does": "Ends the workflow with normal/successful completion. end_mode \"0\" means finish normally; it does NOT throw. There is no end element with end_mode \"1\" anywhere in this workflow, so there is no throwing exit path."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "None. No item writes any attribute, output, or external system; no script mutates state (item1's script only reads and returns; item2 has no script at all).",
+  "State surface consists solely of the workflow attribute `waitingTimer`: type Date, read_only false, no value (null / unset), no description. It is read once by item1 and never written.",
+  "No catch_name is set on any item, so there is no error-handling path. An unexpected runtime failure (e.g. the condition script erroring) would propagate as a workflow failure, not be caught.",
+  "No error/throw exit exists: the only end element is end_mode \"0\".",
+  "Graph facts to preserve: 3 items, 3 edges, 1 branch, 1 join, no cycles, depth 2, all 3 items reachable from root, no unreachable items, not linear."
+ ],
+ "assumptions": [
+  "`waitingTimer` starts as vRO null because the attribute declares no value (value: null, is_null_sentinel false \u2014 i.e. genuinely unset, not the `__NULL__` sentinel), so `waitingTimer !== null` evaluates false and the alt arm is taken on every self-contained execution. Behaviour is identical either way because both arms target item2.",
+  "The name `waitingTimer` matches vRO's conventional attribute for a 'Wait until date' / timer-driven workflow, but this workflow contains no waiting-timer element and nothing that sets it \u2014 so here it is inert data, not a scheduling mechanism.",
+  "The task `shouldGoHere` with a null script is intentionally empty (a marker node proving the branch lands there), not a case of a missing/undelivered script body \u2014 there is no script_module, linked_workflow_id, or launched_workflow_id on it either.",
+  "A converted implementation must still evaluate the condition (it is real, executable code with a defined truth value) even though the two arms are indistinguishable; collapsing it silently would lose the branch/join shape the workflow is named for.",
+  "The workflow is self-contained: presentation_ognl, plugin_types, sdk_calls, config_refs, and action_calls are all empty, so nothing is hidden behind an action or nested workflow."
+ ],
+ "open_questions": [
+  {
+   "theme": "scope",
+   "question": "Should the converted form preserve the no-op task `shouldGoHere` and the duplicated true/false edges as distinct, observable constructs (e.g. a real step and a real if/else), or may it collapse them to a single straight-line step since the condition has no effect on the outcome?",
+   "why_it_matters": "This workflow has no data or side-effect contract, so the only thing a test can assert is topology: that the decision is evaluated, that both arms converge on `shouldGoHere`, and that `shouldGoHere` is entered exactly once. If the converter optimises the branch away, those assertions become untestable."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The item graph is fully resolved from root_item through both branch arms to the single normal-completion end element, and the only executable code (`return waitingTimer !== null;`) is given in full. There are no actions, nested/launched workflows, plugin objects, SDK calls, or configuration references to hide behaviour behind, and no unreachable items. The single residual uncertainty is a conversion-style choice, not a gap in understanding the source behaviour."
+}

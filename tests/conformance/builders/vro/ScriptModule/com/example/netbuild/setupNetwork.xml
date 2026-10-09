@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="setupNetwork" result-type="Any" api-version="6.0.0" id="a4000000-0000-4000-8000-000000000008" version="1.0.0" allowed-operations="vef"><description/><param n="endpoint" t="Properties"/><param n="name" t="string"/><script encoded="false"><![CDATA[var net = System.getModule("com.example.netbuild");
+net.createVsdObject(endpoint, "enterprises", { name: name });
+return net.addIpamRecord(endpoint, name);]]></script></dunes-script-module>

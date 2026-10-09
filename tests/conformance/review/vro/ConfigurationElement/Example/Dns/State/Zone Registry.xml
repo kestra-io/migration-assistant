@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config-element id="c3000000-0000-4000-8000-000000000004" version="1.0.0">
+  <display-name><![CDATA[Zone Registry]]></display-name>
+  <atts>
+    <att name="_format" type="string" read-only="false">
+      <value encoded="n"><![CDATA[{"zone": "string", "ref": "string", "domain": "string"}]]></value>
+    </att>
+  </atts>
+</config-element>

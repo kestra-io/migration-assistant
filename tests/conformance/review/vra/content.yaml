@@ -1,0 +1,17 @@
+---
+# Synthetic vRA export for vro2k's review tests. Every name in it is invented.
+blueprint:
+  - Zone Tier
+subscription:
+  - Dns - create zone
+  - Dns - register host
+  - Dns - delete zone
+  - Dns - clean up failed create
+catalog-item:
+  - Example Dns__Zone Tier
+content-source:
+  - Example Dns
+catalog-entitlement:
+  - Example Dns
+custom-resource: []
+resource-action: []

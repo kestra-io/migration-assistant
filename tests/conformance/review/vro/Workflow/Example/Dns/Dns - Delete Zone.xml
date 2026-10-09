@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workflow xmlns="http://vmware.com/vco/workflow" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://vmware.com/vco/workflow http://vmware.com/vco/workflow/Workflow-v4.xsd" root-name="item1" object-name="workflow:name=generic" id="e3000000-0000-4000-8000-000000000003" version="1.0.0" api-version="6.0.0" allowed-operations="vef" restartMode="1" resumeFromFailedMode="0">
+  <display-name><![CDATA[Dns - Delete Zone]]></display-name>
+  <position y="50.0" x="100.0"></position>
+  <input>
+    <param name="inputProperties" type="Properties">
+      <description><![CDATA[event payload]]></description>
+    </param>
+  </input>
+  <workflow-item name="item0" type="end" end-mode="0">
+    <position y="45.0" x="384.5"></position>
+  </workflow-item>
+  <workflow-item name="item1" out-name="item0" type="task">
+    <display-name><![CDATA[Dns - Delete Zone]]></display-name>
+    <script encoded="false"><![CDATA[var util = System.getModule("com.example.dnsutil");
+var dns = System.getModule("com.example.dns");
+var event = util.readRequestEvent(inputProperties);
+if (!util.shouldDropZone(event.get("eventType"), event.get("status"))) {
+    return;
+}
+var state = util.readZoneState(event.get("deploymentId"));
+var ib = util.getEndpoint("Infoblox");
+var nu = util.getEndpoint("Nuage");
+dns.removeHostRecord(ib, state.ref);
+dns.deleteZone(ib, state.ref);
+dns.deleteNuageObject(nu, "domains", state.domain);
+util.dropZoneState(event.get("deploymentId"));]]></script>
+    <in-binding>
+      <bind name="inputProperties" type="Properties" export-name="inputProperties"></bind>
+    </in-binding>
+    <out-binding></out-binding>
+    <position y="55.0" x="204.5"></position>
+  </workflow-item>
+  <presentation>
+    <p-param name="inputProperties">
+      <desc><![CDATA[inputProperties]]></desc>
+    </p-param>
+  </presentation>
+</workflow>

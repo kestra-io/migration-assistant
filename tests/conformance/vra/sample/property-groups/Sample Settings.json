@@ -1,0 +1,10 @@
+{
+  "type": "CONSTANT",
+  "name": "Sample Settings",
+  "properties": {
+    "ntpServer": {
+      "type": "string",
+      "const": "10.99.88.77"
+    }
+  }
+}

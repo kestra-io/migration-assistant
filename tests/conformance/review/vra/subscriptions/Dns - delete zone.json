@@ -1,0 +1,20 @@
+{
+  "id": "sub-example-33",
+  "type": "RUNNABLE",
+  "name": "Dns - delete zone",
+  "description": "Synthetic subscription",
+  "disabled": false,
+  "eventTopicId": "deployment.request.post",
+  "runnableType": "extensibility.vro",
+  "runnableId": "e3000000-0000-4000-8000-000000000003",
+  "blocking": false,
+  "timeout": 0,
+  "priority": 10,
+  "criteria": "event.data.eventType == \"DESTROY_DEPLOYMENT\"",
+  "contextual": false,
+  "constraints": {
+    "projectNames": [
+      "Example Project"
+    ]
+  }
+}

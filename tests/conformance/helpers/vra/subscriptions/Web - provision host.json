@@ -1,0 +1,20 @@
+{
+  "id": "sub-example-21",
+  "type": "RUNNABLE",
+  "name": "Web - provision host",
+  "description": "Synthetic subscription",
+  "disabled": false,
+  "eventTopicId": "compute.provision.post",
+  "runnableType": "extensibility.vro",
+  "runnableId": "e2000000-0000-4000-8000-000000000001",
+  "blocking": true,
+  "timeout": 5,
+  "priority": 10,
+  "criteria": "",
+  "contextual": false,
+  "constraints": {
+    "projectNames": [
+      "Example Project"
+    ]
+  }
+}

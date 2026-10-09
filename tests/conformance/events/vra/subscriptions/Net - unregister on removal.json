@@ -1,0 +1,20 @@
+{
+  "id": "sub-example-2",
+  "type": "RUNNABLE",
+  "name": "Net - unregister on removal",
+  "description": "Synthetic subscription",
+  "disabled": false,
+  "eventTopicId": "compute.removal.pre",
+  "runnableType": "extensibility.vro",
+  "runnableId": "e1000000-0000-4000-8000-000000000002",
+  "blocking": true,
+  "timeout": 5,
+  "priority": 10,
+  "criteria": "event.data.customProperties.ipamEnabled == \"true\"",
+  "contextual": false,
+  "constraints": {
+    "projectNames": [
+      "Example Project"
+    ]
+  }
+}

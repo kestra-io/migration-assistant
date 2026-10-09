@@ -1,0 +1,40 @@
+{
+ "purpose": "\"Root When Set\" (category VMware.PSCoE) is a three-item, strictly linear vRO workflow whose only substantive content is its execution order: the declared entry point `root_item` is `item2` (\"shouldGoHere\"), NOT the first item in document order (`item0`, the end item). Executed, it runs `item2` (task, no script, no bindings \u2014 a no-op marker), then `item1` (\"waitForEvent\", task, no script, reads the workflow attribute `waitingTimer` of type Date), then reaches `item0`, an end item with `end_mode` \"0\" \u2014 a normal, non-throwing completion. It has no inputs, no outputs, no plugin objects, no SDK calls, no actions, no linked or launched workflows, no configuration-element references, no branches, no joins, no cycles and no unreachable items. Its description field literally reads \"root is shouldGoHere\", confirming this is a fixture/test artifact from the VMware PSCoE (vRO Build Tools) suite that exists to assert that a consumer of the workflow XML honours `root_item` rather than assuming the first `<workflow-item>` is the start. A faithful conversion is therefore: a workflow that starts at the \"shouldGoHere\" step, passes through a \"waitForEvent\" step that is parameterised by a Date attribute, and ends successfully \u2014 with the entry point explicitly pinned to \"shouldGoHere\".",
+ "inputs": [],
+ "outputs": [],
+ "external_systems": [],
+ "decisions": [],
+ "side_effects": [
+  "None observable: neither task carries a script, a script_module (action), a linked_workflow_id, a launched_workflow_id, or any out_bindings, so no state is written, no external system is touched, and no workflow attribute is ever assigned a value.",
+  "Possible execution suspension: the item named 'waitForEvent' (item1) consumes the Date attribute `waitingTimer`. If it is intended as a vRO waiting-timer semantic rather than a plain task, the run would park until that timestamp. As encoded (type 'task', script null), it performs nothing and returns immediately. See open questions.",
+  "Terminates normally. item0 has end_mode '0', so the workflow completes with state 'completed'; it never throws."
+ ],
+ "assumptions": [
+  "Execution order is item2 -> item1 -> item0, taken from root_item and the `next` edges. There are no alt_out_name (false-arm), catch_name (error-path), or switch-condition edges anywhere in this workflow, so there is exactly one path and it is the one listed in root_path_items.",
+  "item2 ('shouldGoHere') is a genuine no-op: type 'task' with script null, no in_bindings, no out_bindings, no script_module. Its only role is to be the entry point named in the workflow description.",
+  "item1 ('waitForEvent') reads the workflow-scope attribute `waitingTimer` (export_name 'waitingTimer', type Date) into its own scope. Because it has no out_bindings and no script, it cannot modify it.",
+  "The workflow attribute `waitingTimer` is declared type Date with value null and is_null_sentinel false \u2014 i.e. it is genuinely unset, not the vRO `__NULL__` sentinel. Nothing in this workflow ever assigns it, so at the moment item1 reads it, it is null unless the platform or an external caller pre-populates it.",
+  "The workflow attribute `counter` (type number, value null) is declared but never referenced by any item binding, script, or condition. It is dead state and can be carried over as an unused/initialised-to-null field, or dropped, without changing behaviour.",
+  "The workflow takes no inputs and produces no outputs, so it is not composable as a data transformation \u2014 it is invoked purely for its control flow.",
+  "'VMware.PSCoE' is the folder/category path in the vRO inventory, not a runtime dependency."
+ ],
+ "open_questions": [
+  {
+   "theme": "scheduling",
+   "question": "Is item1 ('waitForEvent') meant to be a real vRO waiting-timer that suspends the run until the `waitingTimer` Date, or is it literally a no-op task that merely happens to be named that way? It is encoded as type 'task' with a null script, but its display name and its single Date in-binding are exactly the shape of a waiting-timer element.",
+   "why_it_matters": "It is the difference between a workflow that completes in milliseconds and one that suspends indefinitely. If it is a timer, the converted code needs a sleep/await-until primitive and the surrounding runtime needs to support long-lived suspended state; if it is a task, it needs nothing at all."
+  },
+  {
+   "theme": "data shape",
+   "question": "Who is expected to set the `waitingTimer` attribute? No item in this workflow writes it, and there are no inputs, so it is null at the point item1 reads it.",
+   "why_it_matters": "If item1 is a timer, a null Date is either an immediate pass-through or a runtime error depending on the target platform's semantics \u2014 the test built from this spec has to assert one or the other."
+  },
+  {
+   "theme": "scope",
+   "question": "Are the two tasks intentionally empty, or were their script bodies stripped when this workflow was extracted?",
+   "why_it_matters": "If the bodies were stripped, the conversion is a skeleton and the behavioural tests written from this spec would pass against an implementation that does nothing real. Confirming the fixture is genuinely empty lets the tests assert 'no side effects' rather than leaving a gap."
+  }
+ ],
+ "confidence": "medium",
+ "confidence_reason": "The control-flow graph is fully determined and trivially so: 3 items, 2 edges, linear, no branches, no joins, no cycle, nothing unreachable, a single normal-exit end. There is no hidden behaviour behind an action (action_calls is empty), a nested or launched workflow (no linked_workflow_id / launched_workflow_id), a plugin object (plugin_types empty), an SDK call, or a configuration element. What keeps this off 'high' is that both tasks have null scripts, so the workflow's actual work is absent rather than encoded \u2014 the only reading of item1's intent comes from its display name 'waitForEvent' plus its Date binding, which is inference from naming, and it is left unresolved whether that should convert to a real suspend."
+}

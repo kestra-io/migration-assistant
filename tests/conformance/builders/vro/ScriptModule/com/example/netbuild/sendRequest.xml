@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="sendRequest" result-type="Any" api-version="6.0.0" id="a4000000-0000-4000-8000-000000000001" version="1.0.0" allowed-operations="vef"><description/><param n="endpoint" t="Properties"/><param n="method" t="string"/><param n="path" t="string"/><param n="body" t="Any"/><script encoded="false"><![CDATA[var base = RESTHostManager.createHost("net");
+base.url = "https://" + endpoint.get("host");
+var host = RESTHostManager.createTransientHostFrom(base);
+var request = host.createRequest(method, path, body ? JSON.stringify(body) : "");
+request.contentType = "application/json";
+var response = request.execute();
+return { statusCode: response.statusCode, body: response.contentAsString };]]></script></dunes-script-module>

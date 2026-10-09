@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="renderTemplate" result-type="Any" api-version="6.0.0" id="a4000000-0000-4000-8000-000000000004" version="1.0.0" allowed-operations="vef"><description/><param n="name" t="string"/><param n="value" t="string"/><script encoded="false"><![CDATA[var category = Server.getResourceElementCategoryWithPath("Example/Net/Templates");
+var element = category.resourceElements[0];
+var text = element.getContentAsMimeAttachment().content;
+return JSON.parse(text.split("{{value}}").join(value));]]></script></dunes-script-module>

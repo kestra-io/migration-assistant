@@ -1,0 +1,70 @@
+{
+ "purpose": "A self-contained vRO test/demonstration workflow (\"Switch Boolean Cases\", category VMware.PSCoE) that exercises a system-generated switch item with three boolean cases. It reads the workflow-scope boolean attribute `isEnabled` and dispatches to one of three script tasks \u2014 true, false, or a catch-all default \u2014 each of which writes a single fixed line to the vRO system log via System.log, then converges on a normal (non-throwing) end. It has no inputs, no outputs, no external system calls, and no side effects beyond log lines; its entire observable behaviour is which of three log strings is emitted.",
+ "inputs": [],
+ "outputs": [],
+ "external_systems": [
+  {
+   "system": "vRO platform logging (System.log)",
+   "how": "Each of the three branch tasks calls System.log exactly once with a literal string. This is the only external interaction in the workflow; no plugin objects, no configuration elements, no actions, no linked or launched workflows.",
+   "items": [
+    "System.log(\"Feature is enabled\") \u2014 item2 / enableFeature",
+    "System.log(\"Feature is disabled\") \u2014 item3 / disableFeature",
+    "System.log(\"Boolean value is undefined\") \u2014 item4 / handleUndefined"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "item1 \u2014 switch item \"switchByBoolean\" (root_item, the entry point)",
+   "condition": "Value of the workflow attribute `isEnabled` (boolean), bound in as `isEnabled`. The system-generated dispatch script is: if (isEnabled === true) return \"item2\"; else if (isEnabled === false) return \"item3\"; else if (true) return \"item4\". Note strict identity comparison \u2014 no truthiness coercion \u2014 and the third case is an unconditional default with an empty condition name (comparator 6), matching anything the first two do not, including null/undefined.",
+   "branches": [
+    {
+     "when": "isEnabled is strictly boolean true",
+     "goes_to": "item2 (enableFeature)",
+     "does": "Logs \"Feature is enabled\", then flows to item0."
+    },
+    {
+     "when": "isEnabled is strictly boolean false",
+     "goes_to": "item3 (disableFeature)",
+     "does": "Logs \"Feature is disabled\", then flows to item0."
+    },
+    {
+     "when": "isEnabled is anything else \u2014 in practice null/undefined, since the attribute is declared with no value and nothing in this workflow ever assigns it",
+     "goes_to": "item4 (handleUndefined)",
+     "does": "Logs \"Boolean value is undefined\", then flows to item0."
+    }
+   ]
+  },
+  {
+   "item": "item0 \u2014 end item",
+   "condition": "Reached unconditionally from whichever branch ran (item2, item3, or item4 all have out_name = item0).",
+   "branches": [
+    {
+     "when": "Always",
+     "goes_to": "workflow completion",
+     "does": "end_mode \"0\": the workflow finishes normally (success). It does NOT throw. There is no error-throwing end item anywhere in this workflow."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Writes exactly one line to the vRO server log per execution \u2014 one of \"Feature is enabled\", \"Feature is disabled\", or \"Boolean value is undefined\". Exactly one branch runs; the three are mutually exclusive.",
+  "No state is mutated: the `isEnabled` attribute is read-only in practice (bound in to the switch via in_bindings, never written by any out_binding or script).",
+  "No files, no network calls, no other workflows started or invoked, no plugin/inventory objects touched, no secrets involved."
+ ],
+ "assumptions": [
+  "`isEnabled` is a mutable workflow attribute (read_only: false) declared with value null and is_null_sentinel false \u2014 i.e. no value was configured at all, as opposed to an explicit __NULL__ sentinel. Nothing in this workflow assigns it, and there are no inputs, so on a plain run it is null/undefined and the default branch (item4) is the only one that actually executes. The true/false branches are reachable only if an external caller or test harness seeds the attribute before/at start.",
+  "The switch script is the authoritative dispatch logic; the numeric `comparator` codes (0 for the true case, 1 for the false case, 6 for the default) are the vRO encoding of that same script and should not be reimplemented independently. Treat comparator 6 with an empty condition name as \"default\", not as a comparison.",
+  "Comparison is strict (===). A truthy non-boolean value (e.g. the string \"true\", or 1) falls to the default branch, not to item2. A converted implementation must preserve this rather than using loose/truthy checks.",
+  "Execution order within the graph is deterministic and acyclic (depth 2, no cycles, all 5 items reachable, no unreachable items). There is no error handling: no item defines catch_name, so any runtime failure propagates as a workflow failure."
+ ],
+ "open_questions": [
+  {
+   "theme": "scope",
+   "question": "How is `isEnabled` intended to be set? The workflow exposes no inputs and never assigns the attribute, so as written only the default branch is exercisable. Is the true/false behaviour meant to be driven by a test harness seeding the attribute, or was an input parameter intended and omitted?",
+   "why_it_matters": "Determines whether the converted artifact should expose `isEnabled` as a parameter/argument (so all three branches are testable) or keep it as an internal, always-null variable where only the \"undefined\" path can ever run. Test authors need to know whether the true/false cases are legitimately reachable."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The full item graph, the system-generated switch dispatch script, and all three branch scripts are present and self-contained. There are no actions (script_module), no linked or launched workflows, no plugin types, no configuration references, and no OGNL presentation logic \u2014 nothing behind an opaque boundary. The only residual uncertainty is intent around how `isEnabled` gets populated, which affects reachability of branches but not the specified behaviour of any branch."
+}

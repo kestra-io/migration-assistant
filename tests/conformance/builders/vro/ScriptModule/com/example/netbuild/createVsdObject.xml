@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="createVsdObject" result-type="Any" api-version="6.0.0" id="a4000000-0000-4000-8000-000000000002" version="1.0.0" allowed-operations="vef"><description/><param n="endpoint" t="Properties"/><param n="type" t="string"/><param n="body" t="Any"/><script encoded="false"><![CDATA[var net = System.getModule("com.example.netbuild");
+return net.sendRequest(endpoint, "POST", "/nuage/api/v6/" + type, body);]]></script></dunes-script-module>

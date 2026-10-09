@@ -1,0 +1,107 @@
+{
+ "purpose": "A two-item, strictly linear vRO \test-harness workflow (\"Action Edge\", category VMware.PSCoE) whose entire job is to invoke the JavaScript action `test` in the action module `com.vmware.pscoe.onboarding.sgenov.actions`, passing two number values, store whatever it returns in a workflow-scope attribute `actionResult` of vRO type `ActionResult`, and then terminate normally. It declares no workflow inputs and no workflow outputs, so nothing it computes is visible to a caller \u2014 the observable behaviour is the side effect of calling the action plus the workflow's success/failure state. The workflow description in vRO reads \"Goes to end by itself\", confirming it is a fixture that exercises a task\u2192end edge rather than a business process.",
+ "inputs": [
+  {
+   "name": "(none)",
+   "type": "n/a",
+   "meaning": "The workflow declares an empty `inputs` array \u2014 it takes no parameters and can be started with no arguments.",
+   "is_secret": false
+  },
+  {
+   "name": "first",
+   "type": "number (vRO workflow ATTRIBUTE, not an input)",
+   "meaning": "Workflow-scope attribute bound into item1 as the first positional argument of the action call. Its declared value is null with is_null_sentinel=false, i.e. it is genuinely unset \u2014 no default, and not vRO's `__NULL__` sentinel. Because nothing in the graph ever assigns it, at runtime `first` reaches the action as undefined/null. A conversion must preserve this: the first argument is an uninitialised number slot.",
+   "is_secret": false
+  },
+  {
+   "name": "second",
+   "type": "number (vRO workflow ATTRIBUTE, not an input)",
+   "meaning": "Workflow-scope attribute bound into item1 as the second positional argument of the action call. Same state as `first`: declared value null, is_null_sentinel=false, never assigned anywhere in the graph, so it arrives at the action as undefined/null.",
+   "is_secret": false
+  }
+ ],
+ "outputs": [
+  {
+   "name": "(none)",
+   "type": "n/a",
+   "meaning": "The workflow declares an empty `outputs` array. No value is returned to a caller or to a parent workflow. A converted implementation should either return nothing or return a value that no caller depends on."
+  },
+  {
+   "name": "actionResult",
+   "type": "ActionResult (vRO workflow ATTRIBUTE, not an output)",
+   "meaning": "The only value the workflow produces. item1's single out_binding writes the return value of `com.vmware.pscoe.onboarding.sgenov.actions/test(first, second)` into workflow-scope attribute `actionResult`, typed as vRO's generic `ActionResult` wrapper. It is written and then never read, never bound onward, and never exported \u2014 it dies with the workflow token. Its only practical use is inspection of the finished workflow run in the vRO UI/API token variables."
+  }
+ ],
+ "external_systems": [
+  {
+   "system": "vRealize Orchestrator scripting engine \u2014 action module com.vmware.pscoe.onboarding.sgenov.actions",
+   "how": "item1 is a `task` with script_module `com.vmware.pscoe.onboarding.sgenov.actions/test`. Its script body is a single statement: `actionResult = System.getModule(\"com.vmware.pscoe.onboarding.sgenov.actions\").test(first, second);`. This is a synchronous, in-process call into another scripted artifact in the same vRO instance \u2014 not a network call, no endpoint, no credentials. It blocks until `test` returns or throws.",
+   "items": [
+    "System.getModule(\"com.vmware.pscoe.onboarding.sgenov.actions\")",
+    "action `test`, arity 2, called positionally as test(first, second)",
+    "return value assigned to attribute `actionResult`"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "item1 (task \"callTestAction\") \u2014 action call outcome",
+   "condition": "Whether the call to com.vmware.pscoe.onboarding.sgenov.actions/test(first, second) returns normally or throws",
+   "branches": [
+    {
+     "when": "test() returns normally",
+     "goes_to": "item0",
+     "does": "Assigns the return value to attribute `actionResult`, then follows out_name to item0."
+    },
+    {
+     "when": "test() throws (or the module/action cannot be resolved by System.getModule)",
+     "goes_to": "workflow FAILED state",
+     "does": "item1 has catch_name = null, so there is no error handler anywhere in the workflow. The exception propagates out of the workflow, which ends in the failed state and rethrows to its caller. `actionResult` is left unassigned. A conversion must NOT swallow this error."
+    }
+   ]
+  },
+  {
+   "item": "item0 (end)",
+   "condition": "end_mode is \"0\"",
+   "branches": [
+    {
+     "when": "Always, once reached",
+     "goes_to": "terminate",
+     "does": "Normal completion \u2014 end_mode \"0\" finishes the workflow successfully rather than throwing (which would be end_mode \"1\"). No output values are set on the way out."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "No direct side effects are performed by this workflow itself: it makes no network calls, touches no plugin objects (plugin_types is empty), reads no configuration elements (config_refs is empty), launches no other workflow (no linked_workflow_id / launched_workflow_id anywhere), writes no logs, and sends no notifications.",
+  "Any real-world side effect is entirely whatever the action `com.vmware.pscoe.onboarding.sgenov.actions/test` does internally \u2014 that source was not supplied, so it is opaque here.",
+  "Sets the workflow-scope attribute `actionResult` on the running workflow token. Visible in the vRO run's variable list but not exported.",
+  "Produces a vRO workflow run record with state COMPLETED on success, or FAILED with the action's exception on error."
+ ],
+ "assumptions": [
+  "`first` and `second` are never assigned by any item in the graph (the only two items are item1 and item0, and item1 has no script statements other than the action call). They are therefore passed to `test` as undefined. I am treating this as the workflow's actual behaviour, not as a reading error \u2014 if the converted version requires two real numbers, that is a behaviour change.",
+  "`System.getModule(\"...\").test(...)` is vRO's standard synchronous action invocation; it blocks the workflow token until the action completes. Modelled as a plain blocking function call.",
+  "vRO type `ActionResult` is the generic container vRO uses when an action's return type is not statically narrowed; I am treating `actionResult` as \"whatever test returns, untyped\" rather than assuming a specific shape.",
+  "The two entries in `action_calls` for item1 (one with module+action split, one with the combined `module/action` path and a null action) are the same single call reported twice \u2014 once parsed from the script text, once from the item's script_module attribute. There is exactly one action invocation in this workflow.",
+  "The graph is fully linear and acyclic (2 items, 1 edge, 0 branches, 0 joins, depth 1, no unreachable items), so there is no ordering ambiguity, no loop, and no concurrency to preserve."
+ ],
+ "open_questions": [
+  {
+   "theme": "scope",
+   "question": "What does the action com.vmware.pscoe.onboarding.sgenov.actions/test(first, second) actually do and return? Its source was not provided.",
+   "why_it_matters": "It is the workflow's entire substance. Whether the conversion needs a real implementation, a stub, or an external call depends completely on this. A test author cannot assert anything beyond \"the action was called once with two undefined arguments and the workflow completed\" without it."
+  },
+  {
+   "theme": "data shape",
+   "question": "Are `first` and `second` intended to remain permanently unset, or was this fixture meant to declare them as workflow inputs (or attributes with literal defaults) and the values were lost?",
+   "why_it_matters": "Determines whether the converted unit takes two numeric parameters or takes none and passes undefined twice. If test() dereferences its arguments, the as-written workflow would fail at runtime \u2014 so a converter guessing \"they must be inputs\" would silently produce different behaviour from the original."
+  },
+  {
+   "theme": "error semantics",
+   "question": "Is an exception from test() an expected outcome this fixture exists to exercise, or is a successful run the only intended path?",
+   "why_it_matters": "There is no catch_name and no end_mode \"1\" item, so any throw becomes a workflow failure. Whether the test suite should assert on a failure path or only on the happy path hinges on this."
+  }
+ ],
+ "confidence": "low",
+ "confidence_reason": "The control flow is fully determined and trivial \u2014 two items, one edge, no branches, no loops, no error handlers, a normal-mode end \u2014 and the single script line is unambiguous. But essentially all of the workflow's meaning sits behind the action `com.vmware.pscoe.onboarding.sgenov.actions/test`, whose source was not supplied, and the two arguments it is called with are declared-but-never-assigned number attributes. So the structure is certain while the behaviour is not: I can state exactly what call is made and in what order, but not what it computes, returns, or affects."
+}

@@ -1,0 +1,87 @@
+{
+ "purpose": "WF_test2 is a deliberately trivial smoke-test workflow (\"tests.vro-package-diff\" category) whose stated reason for existing is to be a fixture for the `vro-package-diff` tool. Functionally it is a single scripted task named \"Log hello\" that writes the literal line `Hello beautifull world` to the vRO server log at DEBUG level and then ends successfully. It accepts a string and a live vCenter VM-folder object as inputs and declares a string output, but the script body reads none of its inputs and assigns none of its outputs \u2014 the data bindings exist purely as wiring. Its only other behaviour is an error route: if the task fails (including failure to resolve its input bindings), control goes to an exception-style end element that aborts the workflow with an error instead of completing.",
+ "inputs": [
+  {
+   "name": "inputA",
+   "type": "string",
+   "meaning": "Free-form string, described only as \"description A\". Passed into the \"Log hello\" task's scripting scope via an in-binding but never read by the script. No default, no validation, no mandatory flag present in the definition.",
+   "is_secret": false
+  },
+  {
+   "name": "inputB",
+   "type": "VC:VmFolder",
+   "meaning": "A vCenter Server VM folder plugin object \u2014 at runtime this is a live, authenticated handle to a folder in a registered vCenter inventory, not a string id. Described only as \"description B\". Bound into the task scope but never read. Its presentation carries a `linkedEnumeration` qualifier whose expression is the vRO null sentinel (__NULL__), i.e. an empty/unset UI hint that has no runtime effect.",
+   "is_secret": false
+  }
+ ],
+ "outputs": [
+  {
+   "name": "outA",
+   "type": "string",
+   "meaning": "Declared workflow output, wired as the out-binding of the \"Log hello\" task. The task script never assigns a variable named `outA`, so on the normal path the workflow completes with outA unset (undefined in script scope, surfacing as null/empty at workflow scope). Nothing else in the workflow writes it."
+  }
+ ],
+ "external_systems": [
+  {
+   "system": "vRealize Orchestrator server log",
+   "how": "The task script calls System.debug(\"Hello beautifull world\"), emitting one DEBUG-level line to the workflow run log / server log. This is the only observable effect of a successful run.",
+   "items": [
+    "System.debug"
+   ]
+  },
+  {
+   "system": "vCenter Server (vRO vCenter plugin, \"VC\" namespace)",
+   "how": "Referenced only through typed data, never through an API call. The input `inputB` is a VC:VmFolder plugin object, so starting the workflow requires a reachable, registered vCenter endpoint and a resolvable folder MOR; vRO must inflate that object (and pass it into the task's scope) before the script runs. The attribute `att1` is typed Array/VC:Task but is never populated or read. No vCenter mutation occurs.",
+   "items": [
+    "VC:VmFolder (input inputB)",
+    "Array/VC:Task (attribute att1)"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "item1 \u2014 task \"Log hello\" (root item, the workflow entry point)",
+   "condition": "Whether execution of the task element raises an exception (binding resolution of inputA/inputB/att0/att1/att2 into script scope, or the script body itself)",
+   "branches": [
+    {
+     "when": "The task completes without throwing (the normal case \u2014 System.debug on a literal cannot fail)",
+     "goes_to": "item0",
+     "does": "item0 is an end element with end_mode \"0\": the workflow finishes normally/successfully, returning outA (unset \u2192 null/empty)."
+    },
+    {
+     "when": "The task throws \u2014 in practice only reachable if vRO fails to bind an input, e.g. inputB's VC:VmFolder cannot be resolved against vCenter",
+     "goes_to": "item2",
+     "does": "item2 is an end element with end_mode \"1\": the workflow terminates by throwing, so the run is marked failed and the error propagates to the caller rather than completing. No logging, cleanup, or compensation happens on this path."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Writes exactly one DEBUG log line, the literal text \"Hello beautifull world\" (note the misspelling of \"beautiful\" \u2014 reproduce it verbatim, tests will assert on it), to the vRO run/server log via System.debug.",
+  "On the error path, ends the run in a failed/thrown state (end_mode 1) rather than returning normally.",
+  "No writes to vCenter, no files, no network calls, no other workflows launched, no configuration elements read, no actions invoked."
+ ],
+ "assumptions": [
+  "The task element's script is the complete body: `System.debug(\"Hello beautifull world\");` \u2014 a single statement, no conditionals, no loops, no return value.",
+  "Because the script never assigns `outA`, the workflow's declared string output is empty/null on every successful run. A converted implementation should reproduce that (return null/empty) rather than inventing a value.",
+  "The five in-bindings on item1 (inputA, inputB, att0, att1, att2) are dead wiring: they make those values visible in script scope but the script reads none of them. They still matter for conversion only insofar as resolving inputB requires a live vCenter object.",
+  "Attribute initial values: errorCode = \"\" (empty string), att0 = \"\" (empty string), att2 = \"Value\" (literal). att1 is typed Array/VC:Task with an empty value, i.e. an unset/empty array. None of these attributes are read or written by any item \u2014 errorCode in particular is declared by convention but is not bound to the throwing end element in this definition.",
+  "No input is marked mandatory in the definition supplied, so both inputA and inputB are treated as optional at start time; inputB may legitimately arrive as null.",
+  "The supplied graph summary lists item2 as \"unreachable\" and reports 0 branches \u2014 that analysis follows only `next` edges. item2 IS reachable via item1's catch/error edge; do not drop it as dead code.",
+  "The workflow is started on demand (no schedule, trigger, or policy is part of this definition) and runs with no user interaction, no waits, and no long-running elements."
+ ],
+ "open_questions": [
+  {
+   "theme": "error semantics",
+   "question": "What error value should the throwing end element (item2, end_mode \"1\") surface? The definition declares an `errorCode` string attribute but does not bind it to that end element or to any item, so it is unclear whether the intended failure payload is the caught exception itself or the (always empty) errorCode attribute.",
+   "why_it_matters": "Determines what the converted workflow throws and what a test asserting on the failure path can match: a re-raise of the original exception versus a distinct error carrying an empty errorCode are observably different."
+  },
+  {
+   "theme": "data shape",
+   "question": "Is outA left unset on purpose (fixture behaviour) or is this an unfinished script that was meant to assign it?",
+   "why_it_matters": "The conversion either returns null/empty for outA \u2014 and the test asserts that \u2014 or the target implementation is expected to produce a real string, which would change both the code and the test."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The item graph is fully resolved (3 items, 2 edges, one linear path plus one catch edge, no loops, no joins, no switches) and the only script is a single self-contained System.debug call with a literal argument. There are no action calls, no linked or launched workflows, no configuration element references, and no foreach bodies \u2014 so nothing behavioural sits behind code that was not supplied. The only residual uncertainty is intent, not behaviour: what the throwing end element should carry as an error, and whether the unassigned outA is deliberate. Both are recorded as open questions."
+}

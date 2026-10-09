@@ -1,0 +1,35 @@
+{
+ "purpose": "A three-item, strictly linear vRO workflow in category VMware.PSCoE named \"Root Default First\" whose only real content is its control flow: it exists to prove that a workflow's `root_item` is honoured even when the default/first item in document order is not the entry point (the `end` item `item0` is listed first, but execution starts at `item1`). Execution runs `item1` (\"waitForEvent\") \u2192 `item2` (\"shouldGoHere\") \u2192 `item0` (normal end). Both `task` items have a null script body and no out_bindings, so neither performs any computation, I/O, or state change; the workflow has no inputs, no outputs, no plugin objects, no SDK calls, no action calls, no configuration element references, and no nested or launched workflows. Its observable behaviour is: start, traverse two no-op steps in order, finish successfully. It is almost certainly a converter/parser test fixture rather than production automation, and the correct conversion is a two-step linear sequence of empty steps ending in a successful (non-throwing) terminus.",
+ "inputs": [],
+ "outputs": [],
+ "external_systems": [],
+ "decisions": [],
+ "side_effects": [
+  "None. Neither task item carries a script, an action reference (`script_module` is null on both), a linked or launched workflow id, nor any out_bindings, so nothing is written, called, or emitted.",
+  "Workflow-scope attribute `waitingTimer` (type Date) is read into `item1` via an in_binding (export_name `waitingTimer`) but is never assigned and its initial value is null, so the read yields null and is discarded.",
+  "Workflow-scope attribute `counter` (type number, initial value null) is declared but never bound to any item, never read, and never written \u2014 it is dead state.",
+  "Terminates via the `end` item `item0` with `end_mode` \"0\", i.e. a normal successful completion, never a thrown error."
+ ],
+ "assumptions": [
+  "`end_mode` \"0\" on `item0` means normal termination (success), not an exception; the workflow therefore always ends successfully.",
+  "A `task` item with `script` null and `script_module` null executes as a no-op: the runtime enters the step, resolves its in_bindings, produces no out_bindings, and follows `out_name`.",
+  "The item `display_name` values (\"waitForEvent\", \"shouldGoHere\") are labels only. Despite the name, `item1` is NOT a vRO waiting-timer item (its `type` is `task`, not the waiting-timer type), so it does not suspend the workflow and does not schedule a resume on `waitingTimer`. The converted step must not introduce a sleep, timer, or event wait.",
+  "`counter` initialised to null (not 0) \u2014 `value: null` with `is_null_sentinel: false` means no value was serialised, so the attribute starts unset/null. Since nothing reads it, this cannot affect behaviour.",
+  "Neither task has a `catch_name`, so any runtime failure propagates out of the workflow as a failed run rather than being handled internally.",
+  "`root_item` is authoritative: `item1` is the entry point even though `item0` appears first in the `items` array. Document order carries no execution meaning."
+ ],
+ "open_questions": [
+  {
+   "theme": "scheduling",
+   "question": "Was `item1` intended to be a vRO waiting-timer (suspend the run until the `waitingTimer` Date) and downgraded to a plain `task` in this fixture, or is it deliberately a no-op named \"waitForEvent\"?",
+   "why_it_matters": "If a real wait was intended, the converted step must suspend/resume on a timestamp and the workflow becomes long-running and non-deterministic; as written it is an instantaneous no-op. The two conversions and their tests are completely different. The evidence in this file (type `task`, null script) supports the no-op reading."
+  },
+  {
+   "theme": "data shape",
+   "question": "Who is supposed to populate `waitingTimer` and `counter`? There are no workflow inputs, no out_bindings anywhere, and no serialised initial values, so both attributes are permanently null.",
+   "why_it_matters": "Determines whether the converted target should declare these as unset variables (faithful to the XML) or as required parameters/initialised state. If a test asserts on them, it can only assert null/undefined as written."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The item graph is fully explicit and closed: 3 items, 2 edges, no branches, no joins, no cycle, no unreachable items, and every item reachable from `root_item`. There are no scripts, actions, linked/launched workflows, plugin types, SDK calls, or config references that could hide behaviour off-page, so nothing in the runtime path is opaque to me. The only inference is intent behind the display name \"waitForEvent\", which does not change the determined behaviour (a `task` with a null script is a no-op regardless of its label); that ambiguity is recorded as an open question rather than an unknown in the execution path."
+}

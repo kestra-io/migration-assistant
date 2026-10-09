@@ -1,0 +1,127 @@
+{
+ "purpose": "Self-contained vRO test fixture (\"VMware.PSCoE\" category) that exercises every switch comparator type. It takes no inputs and produces no outputs. Execution starts at a single generated switch item (`item1`, display name \"switchElement\") that evaluates a fixed if/else-if chain of 13 conditions over three workflow attributes (`var_str` string, `var_num` number, `var_bool` boolean) and jumps to one of five logging tasks. Critically, the five tasks are chained with unconditional `out_name` edges (item2\u2192item3\u2192item4\u2192item5\u2192item6\u2192end), so the switch behaves like a C switch with no `break`: whichever case is selected, that task and every task after it in the chain run, emitting their System.log lines in order, before reaching the normal end item. The only observable effect is 1\u20135 lines written to the vRO server log. Two static facts matter for conversion: (a) none of the three attributes is ever assigned by any item, an input, or a default value, so they enter the switch as null; (b) given the condition ordering, only item2, item3 and item4 are actually reachable as switch targets \u2014 item5 and item6 can only be entered by fall-through.",
+ "inputs": [],
+ "outputs": [],
+ "external_systems": [
+  {
+   "system": "vRealize Orchestrator platform logging (System.log)",
+   "how": "Each of the five task items writes one fixed string to the vRO server/workflow log. No other SDK call, plugin object, action (`script_module` is null everywhere), configuration element, or nested/launched workflow is used. `plugin_types`, `action_calls`, `config_refs` are all empty.",
+   "items": [
+    "System.log(\"Handling empty string\") \u2014 item2",
+    "System.log(\"Handling string operation\") \u2014 item3",
+    "System.log(\"Handling numeric operation\") \u2014 item4",
+    "System.log(\"Handling boolean operation\") \u2014 item5",
+    "System.log(\"Handling default case\") \u2014 item6"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "item1 \"switchElement\" (type: switch, root_item \u2014 the workflow entry point)",
+   "condition": "A system-generated, non-editable script evaluates 13 conditions as a single ordered if / else-if chain over the workflow attributes var_str, var_num, var_bool, and returns the name of the first matching target item. First match wins; no condition is evaluated after a match. The authoritative semantics are the generated script body, which in three places disagrees with the exported comparator codes (see open questions). Comparator codes as they map to the script: for number \u2014 1 = !==, 2 = >, 3 = <, 4 = ===, 5 = >=, 6 = <=; for string \u2014 0 = ===, 2 = regex match; for boolean \u2014 0 = ===, 1 = !==. The `edges[].label` values are the compared literal values, not case names; the exporter emits label \"(default)\" for the empty-string comparison to item2, which is NOT the default arm.",
+   "branches": [
+    {
+     "when": "var_str === \"\"",
+     "goes_to": "item2 (handleEmpty)",
+     "does": "Logs \"Handling empty string\", then falls through item3, item4, item5, item6 \u2014 logging all five messages in order \u2014 then ends normally."
+    },
+    {
+     "when": "var_str.includes(\"test\") \u2014 substring containment, not equality",
+     "goes_to": "item3 (handleStringOp)",
+     "does": "Logs \"Handling string operation\", then falls through item4, item5, item6 (four messages total), then ends normally."
+    },
+    {
+     "when": "var_str.match(\"pattern\") !== null \u2014 regex match of the literal 'pattern' against var_str",
+     "goes_to": "item3 (handleStringOp)",
+     "does": "Same as above: logs \"Handling string operation\" then falls through to the end."
+    },
+    {
+     "when": "var_str !== \"value\" \u2014 note the script uses inequality even though the exported comparator code is 1, the same code used for `includes` above",
+     "goes_to": "item3 (handleStringOp)",
+     "does": "Same as above. Combined with the two preceding string conditions, any non-empty var_str other than exactly \"value\" reaches item3."
+    },
+    {
+     "when": "var_num !== 1",
+     "goes_to": "item4 (handleNumeric)",
+     "does": "Logs \"Handling numeric operation\", then falls through item5 and item6 (three messages total), then ends normally. Reaching any numeric condition at all requires var_str === \"value\"."
+    },
+    {
+     "when": "var_num > 5",
+     "goes_to": "item4 (handleNumeric)",
+     "does": "Same as above. Unreachable in practice: it is only evaluated when var_num === 1, and 1 > 5 is false."
+    },
+    {
+     "when": "var_num < 10",
+     "goes_to": "item4 (handleNumeric)",
+     "does": "Same as above. This is the condition that actually fires when var_str === \"value\" and var_num === 1."
+    },
+    {
+     "when": "var_num >= 0",
+     "goes_to": "item4 (handleNumeric)",
+     "does": "Same as above. Unreachable: the preceding `var_num < 10` already captures the only value (1) that can reach here."
+    },
+    {
+     "when": "var_num <= 100",
+     "goes_to": "item4 (handleNumeric)",
+     "does": "Same as above. Unreachable for the same reason."
+    },
+    {
+     "when": "var_num === 0",
+     "goes_to": "item4 (handleNumeric)",
+     "does": "Same as above. Unreachable for the same reason."
+    },
+    {
+     "when": "var_bool === true",
+     "goes_to": "item5 (handleBoolean)",
+     "does": "Would log \"Handling boolean operation\" then fall through item6 (two messages) and end normally. Statically unreachable via the switch: control can only get past the numeric block when var_num === 1, which always matches `var_num < 10` first. item5 is therefore only ever entered by fall-through from item4."
+    },
+    {
+     "when": "var_bool !== false",
+     "goes_to": "item5 (handleBoolean)",
+     "does": "Same as above; statically unreachable via the switch."
+    },
+    {
+     "when": "true \u2014 the unconditional default arm (condition with empty attribute name and empty value; this is the real default, not the \"(default)\"-labelled edge to item2)",
+     "goes_to": "item6 (handleDefault)",
+     "does": "Would log \"Handling default case\" and go to item0 (end, end_mode \"0\" = normal completion). Statically unreachable via the switch for the same reason as the boolean arms; item6 is only ever entered by fall-through from item5."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Writes between one and five fixed lines to the vRO server log via System.log, depending on which case is selected. Because of the unconditional fall-through chain, the emitted sequences are exactly: entering item2 \u2192 [\"Handling empty string\", \"Handling string operation\", \"Handling numeric operation\", \"Handling boolean operation\", \"Handling default case\"]; entering item3 \u2192 the last four; entering item4 \u2192 the last three; entering item5 \u2192 the last two; entering item6 \u2192 the last one.",
+  "No state is mutated: no attribute is written, no in_bindings or out_bindings exist on any item, nothing is persisted, and no external system is contacted.",
+  "Termination: the single end item is item0 with end_mode \"0\", i.e. normal completion. There is no item with end_mode \"1\", so the workflow never deliberately throws. No item defines catch_name, so any runtime error in the switch script or a task script propagates as an unhandled workflow failure."
+ ],
+ "assumptions": [
+  "The generated switch script is taken as the authoritative behaviour where it disagrees with the exported comparator codes, since that script is what vRO actually executes.",
+  "`var_str`, `var_num` and `var_bool` are declared with value null and is_null_sentinel false, meaning no value element was exported \u2014 they are genuinely unset. Nothing in the workflow assigns them. On a real run they therefore reach the switch as null, `var_str === \"\"` is false, and `var_str.includes(\"test\")` raises a TypeError inside the switch script, which (with no catch_name) fails the workflow before any task runs. I assume this is a fixture whose attributes are expected to be seeded externally (debugger/test harness) rather than intentional failure behaviour.",
+  "The `edges[]` array carries comparison literals in its `label` field, not case identifiers; the two \"(default)\" labels are an exporter artefact of an empty compared value and an empty condition, so only the second (item1\u2192item6) denotes the real default arm.",
+  "String comparisons are case-sensitive and `match` is treated as a regular-expression match of the literal 'pattern' (which for this literal is equivalent to substring containment).",
+  "Reachability analysis assumes the three attributes hold values of their declared types; it holds for null/NaN as well, since null !== 1 and NaN !== 1 both route to item4."
+ ],
+ "open_questions": [
+  {
+   "theme": "data shape",
+   "question": "For string conditions, comparator code \"1\" is emitted for both `var_str.includes(\"test\")` and `var_str !== \"value\"`. Which is the true meaning of string comparator 1, and is one of the two generated lines an export/generation bug? This matters if the converter regenerates branch logic from the condition metadata rather than transliterating the script.",
+   "why_it_matters": "Choosing `includes` for the third string condition instead of `!==` changes which inputs reach item3 versus fall through to the numeric block, and therefore changes the log output for most inputs."
+  },
+  {
+   "theme": "scope",
+   "question": "Should the converted form expose var_str, var_num and var_bool as parameters (inputs) of the target unit, or keep them as internal uninitialised variables? Nothing in this workflow ever assigns them, so as exported the switch has no data to act on.",
+   "why_it_matters": "Determines the signature of the converted artifact and whether it is testable at all \u2014 a test writer cannot exercise any branch without a way to set the three attributes."
+  },
+  {
+   "theme": "error semantics",
+   "question": "With the attributes left null, the generated switch script throws a TypeError on `var_str.includes(...)` and the workflow fails with no catch handler. Should the conversion faithfully reproduce that throw, or guard against null (e.g. treat null as the empty string, which would select item2)?",
+   "why_it_matters": "It decides the expected result of the default/no-input test case: an unhandled error versus five log lines."
+  },
+  {
+   "theme": "scope",
+   "question": "Are the statically unreachable branches (the four redundant numeric comparisons, both boolean comparisons, and the default arm) meant to be preserved verbatim as a comparator-coverage fixture, or pruned as dead code?",
+   "why_it_matters": "If the point of the fixture is to prove every comparator type is translated, pruning them destroys the test's purpose; if not, half the emitted branch logic is unverifiable."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The graph is small, fully reachable from root, acyclic, and every task script is inline and trivial \u2014 there are no actions (`script_module` null throughout), no linked or launched workflows, no plugin objects, no bindings and no configuration elements hiding behaviour. The generated switch script states the branch logic literally, so routing and the fall-through chain are fully determined. Confidence is not lowered to medium because the two residual unknowns \u2014 the comparator-code/script mismatch for string comparator 1, and the fact that the attributes are never seeded \u2014 are precisely identified and recorded as open questions rather than guessed at."
+}

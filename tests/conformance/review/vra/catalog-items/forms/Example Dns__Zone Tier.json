@@ -1,0 +1,10 @@
+{
+  "id": "f3000000-0000-4000-8000-000000000001",
+  "name": "Zone Tier",
+  "form": "{\"layout\": {\"pages\": [{\"id\": \"p1\", \"title\": \"General\", \"sections\": [{\"id\": \"s1\", \"fields\": [{\"id\": \"hostCount\", \"display\": \"integerField\"}]}]}]}, \"schema\": {\"hostCount\": {\"label\": \"Hosts\", \"type\": {\"dataType\": \"integer\", \"isMultiple\": false}, \"default\": 2, \"constraints\": {\"required\": true}}}, \"options\": {\"externalValidations\": []}}",
+  "styles": null,
+  "sourceType": "com.vmw.blueprint",
+  "type": "requestForm",
+  "status": "ON",
+  "formFormat": "JSON"
+}

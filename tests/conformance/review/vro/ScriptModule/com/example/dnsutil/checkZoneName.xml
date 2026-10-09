@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="checkZoneName" result-type="string" api-version="6.0.0" id="a3000000-0000-4000-8000-000000000020" version="1.0.0" allowed-operations="vef"><description/><param n="name" t="string"/><param n="suffix" t="string"/><script encoded="false"><![CDATA[if (!name || name.length > 63) {
+    throw "bad zone name " + name;
+}
+return name + "." + suffix;]]></script></dunes-script-module>

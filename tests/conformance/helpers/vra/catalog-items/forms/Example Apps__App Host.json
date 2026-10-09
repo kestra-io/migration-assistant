@@ -1,0 +1,10 @@
+{
+  "id": "f2000000-0000-4000-8000-000000000001",
+  "name": "App Host",
+  "form": "{\"layout\": {\"pages\": [{\"id\": \"p1\", \"title\": \"General\", \"sections\": [{\"id\": \"s1\", \"fields\": [{\"id\": \"project\", \"display\": \"dropDown\"}]}, {\"id\": \"s2\", \"fields\": [{\"id\": \"hostCount\", \"display\": \"integerField\"}]}]}]}, \"schema\": {\"project\": {\"label\": \"Project\", \"type\": {\"dataType\": \"string\", \"isMultiple\": false}, \"constraints\": {\"required\": true}}, \"hostCount\": {\"label\": \"Hosts\", \"type\": {\"dataType\": \"integer\", \"isMultiple\": false}, \"default\": 1, \"constraints\": {\"required\": true}}}, \"options\": {\"externalValidations\": []}}",
+  "styles": null,
+  "sourceType": "com.vmw.blueprint",
+  "type": "requestForm",
+  "status": "ON",
+  "formFormat": "JSON"
+}

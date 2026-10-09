@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties>
+<comment></comment>
+<entry key="categoryPath">Example.Dns.Endpoints</entry>
+<entry key="name">Infoblox</entry>
+<entry key="type">ConfigurationElement</entry>
+<entry key="id">c3000000-0000-4000-8000-000000000002</entry>
+</properties>

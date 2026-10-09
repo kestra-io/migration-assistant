@@ -1,0 +1,23 @@
+{
+  "id": "sub-sample-install",
+  "type": "RUNNABLE",
+  "name": "Sample - Install on provision",
+  "description": "Runs Install after a machine is provisioned",
+  "ownerId": "jdoe-sample",
+  "subscriberId": "vro-gateway-Sample0001",
+  "orgId": "0a1b2c3d-sample-org",
+  "disabled": false,
+  "eventTopicId": "compute.provision.post",
+  "runnableType": "extensibility.vro",
+  "runnableId": "3617107975829378234967908345654834235",
+  "blocking": true,
+  "timeout": 5,
+  "priority": 10,
+  "criteria": "event.data.customProperties.install == \"true\"",
+  "contextual": false,
+  "constraints": {
+    "projectNames": [
+      "Sample Project"
+    ]
+  }
+}

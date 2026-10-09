@@ -1,0 +1,149 @@
+{
+ "purpose": "\"Switch Edge Cases\" (VMware.PSCoE) is a self-contained vRO test/fixture workflow that exercises three chained `switch` items and a long fall-through chain of logging tasks. It takes no inputs and produces no outputs; its only observable effect is a sequence of System.log lines. It branches on three workflow attributes \u2014 errorCode (number), priority (number), status (string) \u2014 using deliberately mismatched/edge-case operators (strict equality, negated equality, string `includes`, `<`, `>`, and an always-true default), and each branch target falls through into every subsequent task in item order rather than jumping to the end. Because the three attributes have no initial value and there are no inputs to populate them, every real execution takes exactly one path: item1 \u2192 item5 \u2192 item6 \u2192 \u2026 \u2192 item15 \u2192 end(normal), emitting 11 log lines beginning with \"500 - Internal server error\".",
+ "inputs": [
+  {
+   "name": "errorCode",
+   "type": "number (workflow ATTRIBUTE, not an input parameter; initial value is null \u2014 not the __NULL__ sentinel, simply unset)",
+   "meaning": "HTTP-style error code switched on by item1 (switchErrorCodes). Never assigned anywhere in the workflow, so it is always null at runtime.",
+   "is_secret": false
+  },
+  {
+   "name": "priority",
+   "type": "number (workflow ATTRIBUTE, not an input parameter; initial value null)",
+   "meaning": "Priority level switched on by item2 (switchPriority). Never assigned anywhere in the workflow, so it is always null at runtime.",
+   "is_secret": false
+  },
+  {
+   "name": "status",
+   "type": "string (workflow ATTRIBUTE, not an input parameter; initial value null)",
+   "meaning": "Status string switched on by item3 (switchStatus). Never assigned anywhere in the workflow, so it is always null at runtime.",
+   "is_secret": false
+  }
+ ],
+ "outputs": [],
+ "external_systems": [
+  {
+   "system": "vRO orchestrator logging (System.log)",
+   "how": "Each of the 12 task items writes one fixed string to the vRO workflow/server log. No other system is touched \u2014 there are no actions (script_module), no linked or launched workflows, no plugin objects, no configuration element references, and no HTTP/REST/vCenter calls.",
+   "items": [
+    "System.log(\"404 - Resource not found\") \u2014 item4 handleNotFound",
+    "System.log(\"500 - Internal server error\") \u2014 item5 handleServerError",
+    "System.log(\"403 - Access forbidden\") \u2014 item6 handleForbidden",
+    "System.log(\"Low priority task (<=1)\") \u2014 item7 lowPriority",
+    "System.log(\"Medium priority task (>5)\") \u2014 item8 mediumPriority",
+    "System.log(\"High priority task (>=10)\") \u2014 item9 highPriority",
+    "System.log(\"Invalid priority level\") \u2014 item10 handleInvalidPriority",
+    "System.log(\"Processing active status\") \u2014 item11 processActive",
+    "System.log(\"Processing pending status (not equal to 'pending')\") \u2014 item12 processPending",
+    "System.log(\"Processing inactive status (not strictly equal to 'inactive')\") \u2014 item13 processInactive",
+    "System.log(\"Unknown status - using default handler\") \u2014 item14 handleUnknownStatus",
+    "System.log(\"Unhandled error code - using fallback\") \u2014 item15 fallbackHandler"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "item1 \u2014 switch \"switchErrorCodes\" (ROOT ITEM, entry point). Reads attribute errorCode. Authoritative generated script: `if (errorCode === 404) return \"item4\"; else if (errorCode !== 500) return \"item5\"; else if (true) return \"item2\";`  NOTE: the declared condition metadata labels the third arm \"(default)\", but because the SECOND arm is a NEGATED comparison (comparator \"1\" = !==), the so-called default arm is actually reachable only when errorCode === 500. The edge label \"500\" \u2192 item5 in the edge list is misleading; item5 is the NOT-500 arm.",
+   "condition": "value of attribute errorCode (always null in practice \u2014 no input sets it)",
+   "branches": [
+    {
+     "when": "errorCode === 404 (strict equality, number)",
+     "goes_to": "item4 (handleNotFound)",
+     "does": "logs \"404 - Resource not found\", then falls through the entire remaining chain item5\u2192item6\u2192\u2026\u2192item15\u2192item0"
+    },
+    {
+     "when": "errorCode !== 500 \u2014 this includes null, undefined, 404-is-already-handled-above, and every other value",
+     "goes_to": "item5 (handleServerError)",
+     "does": "logs \"500 - Internal server error\", then falls through item6\u2192\u2026\u2192item15\u2192item0. THIS IS THE PATH TAKEN ON EVERY REAL RUN, because errorCode is null."
+    },
+    {
+     "when": "errorCode === 500 (the only way to reach the `else if (true)` arm)",
+     "goes_to": "item2 (switchPriority)",
+     "does": "evaluates the second switch; no logging on this hop"
+    }
+   ]
+  },
+  {
+   "item": "item2 \u2014 switch \"switchPriority\". Reads attribute priority. Authoritative generated script: `if (priority < 1) return \"item7\"; else if (priority > 5) return \"item8\"; else if (true) return \"item3\";` Comparator \"3\" = less-than, \"2\" = greater-than, \"6\" = always-true default. Reachable only when errorCode === 500.",
+   "condition": "value of attribute priority (always null if this item is ever reached)",
+   "branches": [
+    {
+     "when": "priority < 1 (note: item7's log text claims \"<=1\" but the actual test is strictly <1; 1 itself does NOT match)",
+     "goes_to": "item7 (lowPriority)",
+     "does": "logs \"Low priority task (<=1)\", then falls through item8\u2192item9\u2192\u2026\u2192item15\u2192item0"
+    },
+    {
+     "when": "priority > 5",
+     "goes_to": "item8 (mediumPriority)",
+     "does": "logs \"Medium priority task (>5)\", then falls through item9\u2192\u2026\u2192item15\u2192item0"
+    },
+    {
+     "when": "otherwise \u2014 1 <= priority <= 5, or priority is null/undefined/NaN (both relational comparisons are false for null/NaN in JS, so null lands here)",
+     "goes_to": "item3 (switchStatus)",
+     "does": "evaluates the third switch; no logging on this hop"
+    }
+   ]
+  },
+  {
+   "item": "item3 \u2014 switch \"switchStatus\". Reads attribute status. Authoritative generated script: `if (status === \"active\") return \"item11\"; else if (status.includes(\"pending\")) return \"item12\"; else if (true) return \"item4\";` NOTE: the condition metadata declares comparator \"1\" (not-equals) with value \"pending\", and item12's own log text says \"(not equal to 'pending')\", but the generated script performs a SUBSTRING CONTAINS test (`String.prototype.includes`). The script is what vRO executes.",
+   "condition": "value of attribute status",
+   "branches": [
+    {
+     "when": "status === \"active\" (strict string equality)",
+     "goes_to": "item11 (processActive)",
+     "does": "logs \"Processing active status\", then falls through item12\u2192item13\u2192item14\u2192item15\u2192item0"
+    },
+    {
+     "when": "status contains the substring \"pending\" (e.g. \"pending\", \"pending-approval\", \"repending\")",
+     "goes_to": "item12 (processPending)",
+     "does": "logs \"Processing pending status (not equal to 'pending')\", then falls through item13\u2192item14\u2192item15\u2192item0"
+    },
+    {
+     "when": "any other non-null string",
+     "goes_to": "item4 (handleNotFound)",
+     "does": "logs \"404 - Resource not found\" and then runs the WHOLE chain item5\u2192item6\u2192\u2026\u2192item15\u2192item0 \u2014 i.e. the status-default arm re-enters at the top of the error handlers, logging all 12 task messages. The graph is still acyclic (item4 never leads back to a switch)."
+    },
+    {
+     "when": "status is null or undefined AND not equal to \"active\"",
+     "goes_to": "ERROR \u2014 unhandled TypeError",
+     "does": "`status.includes(...)` throws \"Cannot read property 'includes' of null\". item3 has no catch_name and no enclosing error handler exists anywhere in the workflow, so the workflow run FAILS with that exception instead of reaching any end item."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Writes fixed strings to the vRO server log via System.log. Nothing else: no attribute is ever written, no output parameter exists, no external object is created, modified, or deleted.",
+  "All 12 task items are pure log statements with empty in_bindings and out_bindings \u2014 none of them reads or writes errorCode, priority, or status.",
+  "Control flow is FALL-THROUGH, not switch-with-break: every task item's out_name points at the next task in numeric order (item4\u21925\u21926\u21927\u21928\u21929\u219210\u219211\u219212\u219213\u219214\u219215\u2192item0). Entering a branch target therefore executes that task AND every task after it. A converted implementation must reproduce this; modelling the branches as an exclusive switch/case with independent bodies would be wrong.",
+  "Termination: item0 is the only end item, end_mode \"0\" = normal completion (does NOT throw). The only abnormal termination is the uncaught TypeError described in item3.",
+  "Deterministic real behaviour: with no inputs and null attributes, every execution follows item1 \u2192 item5 \u2192 item6 \u2192 item7 \u2192 item8 \u2192 item9 \u2192 item10 \u2192 item11 \u2192 item12 \u2192 item13 \u2192 item14 \u2192 item15 \u2192 item0 and emits exactly these 11 lines in order: \"500 - Internal server error\", \"403 - Access forbidden\", \"Low priority task (<=1)\", \"Medium priority task (>5)\", \"High priority task (>=10)\", \"Invalid priority level\", \"Processing active status\", \"Processing pending status (not equal to 'pending')\", \"Processing inactive status (not strictly equal to 'inactive')\", \"Unknown status - using default handler\", \"Unhandled error code - using fallback\". Then it ends normally.",
+  "Dead code under real conditions: item2, item3, and item4 are unreachable as long as errorCode stays null, and item9 (highPriority) / item10 / item13 / item14 have no condition arm pointing at them at all \u2014 they are reachable only by fall-through.",
+  "Log-text vs. logic mismatches that must be preserved verbatim if the log strings are kept: item7 says \"<=1\" but the test is `< 1`; item9 says \">=10\" but no condition tests >=10; item12 says \"not equal to 'pending'\" but the test is `.includes(\"pending\")`; item13 says \"not strictly equal to 'inactive'\" but no condition tests \"inactive\" at all."
+ ],
+ "assumptions": [
+  "The generated switch script is authoritative over the declared conditions[] metadata and over the `edges[].label` values where they disagree (item1's \"500\"\u2192item5 label vs. `errorCode !== 500`; item3's not-equals comparator vs. `status.includes(\"pending\")`). vRO executes the script to pick the target item name, so the script defines behaviour.",
+  "Comparator code mapping inferred from the generated scripts in this workflow: \"0\" = strict equals, \"1\" = strict not-equals for numbers / substring-contains for strings, \"2\" = greater-than, \"3\" = less-than, \"6\" = unconditional default.",
+  "Attributes with `value: null` and `is_null_sentinel: false` start as JavaScript null (unset), not as the string \"null\" and not as the __NULL__ sentinel.",
+  "JavaScript comparison semantics apply: `null < 1` and `null > 5` are both false (null coerces to 0 for relational ops, so 0<1 is actually TRUE \u2014 see note), and `null !== 500` is true. CORRECTION TO WATCH: in JS `null < 1` evaluates to true (null \u2192 0). If the target language coerces differently, item2's null case would go to item7 rather than item3. This only matters if item2 ever becomes reachable, which requires errorCode === 500.",
+  "The workflow is a conversion/regression test fixture (category VMware.PSCoE, description says \"Switch test covering edge cases\"), so the log lines and the exact traversal order \u2014 not any business outcome \u2014 are the thing under test."
+ ],
+ "open_questions": [
+  {
+   "theme": "scope",
+   "question": "Should errorCode, priority, and status remain internal attributes (in which case all three are permanently null and only one path is ever executable), or is the intent that a converted implementation expose them as settable inputs/parameters so the branches are exercisable?",
+   "why_it_matters": "If they stay internal nulls, the entire specification collapses to one fixed 11-line log sequence and every test is a single trace assertion. If they become parameters, all 9 branch arms plus the item3 null-crash path need test coverage. This is the single biggest fork in how to convert and test this workflow."
+  },
+  {
+   "theme": "error semantics",
+   "question": "When status is null and not \"active\", item3 calls `status.includes(...)` and throws an uncaught TypeError with no catch_name and no end item reached. Should the converted form reproduce that crash faithfully, or guard the null and take the default arm to item4?",
+   "why_it_matters": "It is the difference between a failed workflow run and a normal completion that logs 12 lines. A converter that 'helpfully' null-guards changes observable behaviour; a test author needs to know whether to assert a thrown exception or a log trace."
+  },
+  {
+   "theme": "data shape",
+   "question": "For item1 and item3, is the declared metadata (comparator \"1\" = not-equals, edge labels \"500\" and \"pending\") or the generated script (`errorCode !== 500`, `status.includes(\"pending\")`) the intended semantics \u2014 i.e. is the mismatch a deliberate edge case under test or a stale/buggy fixture?",
+   "why_it_matters": "Two of the nine branch arms invert or widen depending on the answer: item5 is either the ==500 arm or the !=500 arm, and item12 matches either every string except \"pending\" or only strings containing \"pending\". Tests written from the labels would contradict tests written from the script."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The graph is fully closed and acyclic with no unreachable items, and every behaviour sits in inline script visible here \u2014 no actions (action_calls is empty), no linked or launched workflows, no plugin objects, no configuration elements. The only SDK call is System.log. The three switch scripts fully determine branching, so the traversal is derivable exactly. Confidence is not absolute only because the declared condition metadata contradicts the generated scripts in two places (item1's 500 arm, item3's pending arm), forcing a judgement about which vRO honours at runtime \u2014 I took the script, which is what the vRO switch engine actually evaluates."
+}

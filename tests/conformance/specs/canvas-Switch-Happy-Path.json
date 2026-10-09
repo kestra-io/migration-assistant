@@ -1,0 +1,95 @@
+{
+ "purpose": "A self-contained vRO test/demo workflow (\"Switch Happy Path\", category VMware.PSCoE) that exercises a multi-case switch element. It reads the numeric workflow attribute `operationType` and dispatches to exactly one of four mutually exclusive scripted tasks \u2014 createResource (1), updateResource (2), deleteResource (3), or logUnknownOperation (anything else) \u2014 each of which does nothing but write a single System.log line, and then all four converge on one normal end. It has no inputs, no outputs, no external system calls, no actions, and no nested workflows: its entire observable behaviour is which one of four log strings is emitted.",
+ "inputs": [
+  {
+   "name": "operationType",
+   "type": "number (vRO workflow attribute, NOT a workflow input parameter)",
+   "meaning": "The operation selector that drives the switch. Declared as an attribute (read_only=false) with value null and is_null_sentinel=false, i.e. it has no default and is never assigned by any item in this workflow. It is bound into the switch item item1 via in_bindings with export_name 'operationType'. Because nothing in the workflow ever writes it, at runtime it is undefined/null unless a caller or the vRO UI sets it externally, and the switch therefore falls through to the default case.",
+   "is_secret": false
+  }
+ ],
+ "outputs": [
+  {
+   "name": "(none)",
+   "type": "void",
+   "meaning": "The workflow declares no outputs and no item has out_bindings. Nothing is returned to a caller. The only externally visible result is the set of log lines written (see side_effects) and normal (non-error) completion."
+  }
+ ],
+ "external_systems": [
+  {
+   "system": "vRO server log / workflow execution log (System.log)",
+   "how": "Each of the four leaf tasks calls System.log exactly once with a fixed literal string. No other SDK call, plugin type, action (action_calls empty), configuration element (config_refs empty), linked workflow, or launched workflow is referenced anywhere in the workflow.",
+   "items": [
+    "\"Creating resource\" \u2014 item2 / createResource",
+    "\"Updating resource\" \u2014 item3 / updateResource",
+    "\"Deleting resource\" \u2014 item4 / deleteResource",
+    "\"Unknown operation type\" \u2014 item5 / logUnknownOperation"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "item1 (switch element, display name \"switchElement\") \u2014 the root_item and the only branch point in the graph",
+   "condition": "Strict numeric equality of the attribute `operationType` against the literals 1, 2, 3, evaluated in that declared order, with a final unconditional default case. The three value conditions use comparator \"0\" (equals) on type number with is_null_check=false; the fourth condition has an empty name, type boolean, comparator \"6\", empty value \u2014 this is the default/always-true arm. The system-generated switch script is exactly: if (operationType === 1) return \"item2\"; else if (operationType === 2) return \"item3\"; else if (operationType === 3) return \"item4\"; else if (true) return \"item5\"; \u2014 note `===`, so a string \"1\" would NOT match case 1 and would land in the default arm.",
+   "branches": [
+    {
+     "when": "operationType === 1",
+     "goes_to": "item2 (task \"createResource\")",
+     "does": "Runs System.log(\"Creating resource\"); then follows out_name to item0 and ends normally."
+    },
+    {
+     "when": "operationType === 2",
+     "goes_to": "item3 (task \"updateResource\")",
+     "does": "Runs System.log(\"Updating resource\"); then follows out_name to item0 and ends normally."
+    },
+    {
+     "when": "operationType === 3",
+     "goes_to": "item4 (task \"deleteResource\")",
+     "does": "Runs System.log(\"Deleting resource\"); then follows out_name to item0 and ends normally."
+    },
+    {
+     "when": "Default \u2014 any other value, including null/undefined (which is the state on a plain run, since nothing assigns the attribute), 0, negative numbers, non-integers such as 1.5, or a numeric string",
+     "goes_to": "item5 (task \"logUnknownOperation\")",
+     "does": "Runs System.log(\"Unknown operation type\"); then follows out_name to item0 and ends normally."
+    }
+   ]
+  },
+  {
+   "item": "item0 (end element)",
+   "condition": "Reached unconditionally from whichever single task ran (four 'next' edges converge here; graph joins = 1)",
+   "branches": [
+    {
+     "when": "Always, once any one leaf task completes",
+     "goes_to": "(workflow termination)",
+     "does": "end_mode \"0\" = normal completion. The workflow does NOT throw. There is no end item with end_mode \"1\" anywhere in this workflow."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Writes exactly one line to the vRO execution/server log per run, via System.log, chosen by the switch: \"Creating resource\", \"Updating resource\", \"Deleting resource\", or \"Unknown operation type\". Exactly one of the four runs on any given execution \u2014 never zero, never two.",
+  "No state is mutated: no attribute is written, no out_bindings exist on any item, no object is created/updated/deleted in any external system despite the task display names (createResource / updateResource / deleteResource are log-only stubs).",
+  "No error handling exists anywhere: no item defines catch_name, and no alt_out_name is used (the switch dispatches purely through conditions[].label). An unexpected runtime error in a task would propagate as a workflow failure with no in-workflow recovery path."
+ ],
+ "assumptions": [
+  "comparator \"0\" on a numeric switch condition means equality, and comparator \"6\" with an empty name/value is vRO's default ('always') arm \u2014 corroborated by the system-generated switch script, which is authoritative here and encodes `===` plus a terminal `else if (true)`.",
+  "The generated script's strict equality (`===`) is the real dispatch semantics, so type coercion does not happen: only an actual JavaScript number equal to 1, 2 or 3 takes a non-default branch.",
+  "Because `operationType` is declared with value null, is_null_sentinel false, and is written by no item, a default (no-external-assignment) run always takes the default arm to item5. A converted implementation should still expose all four paths \u2014 this is a switch-coverage test fixture, so the three value cases are meant to be exercisable by setting the variable, not dead code to be optimised away.",
+  "The task display names (createResource, updateResource, deleteResource, logUnknownOperation) describe intent only; the scripts perform no resource operations, and the conversion must not add any.",
+  "Case-evaluation order matters only nominally here since the three literals are distinct and mutually exclusive; no input can match two non-default cases."
+ ],
+ "open_questions": [
+  {
+   "theme": "scope",
+   "question": "How is `operationType` intended to be populated? It is a workflow attribute with no default and no writer, and the workflow declares no inputs \u2014 so is the target implementation expected to take it as a function/workflow parameter, or to keep it as an internal variable that is null on every real run (making item5 the only reachable leaf)?",
+   "why_it_matters": "This decides the converted unit's signature. If it becomes a parameter, tests can drive all four branches directly; if it stays an unset internal variable, the honest port has one reachable path and the other three are unreachable, which changes both the code shape and what the test suite can assert."
+  },
+  {
+   "theme": "data shape",
+   "question": "For the default arm, must the converted code preserve strict-equality semantics \u2014 i.e. that the string \"2\", the value 2.0-as-string, or a boxed Number all fall to 'Unknown operation type' rather than matching a case?",
+   "why_it_matters": "A port to a language or construct with loose/coerced matching (or one that parses the value first) would silently move inputs out of the default branch, changing which log line is emitted for exactly the edge inputs a switch-coverage test is most likely to probe."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The graph is fully determined and fully reachable (6 items, 6 reachable from root, no unreachable items, no cycle, depth 2, one branch and one join), and every behavioural detail is in-line: the switch's own generated script gives exact comparison semantics, all four task scripts are single literal System.log calls, and the single end item is end_mode \\\"0\\\" (normal). Nothing is hidden behind an action, a linked/launched workflow, a plugin object, or a configuration element \u2014 action_calls, config_refs, plugin_types and presentation_ognl are all empty. The only genuine unknown is external: who, if anyone, sets `operationType`."
+}

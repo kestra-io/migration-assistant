@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="removeHostRecord" result-type="Any" api-version="6.0.0" id="a3000000-0000-4000-8000-000000000005" version="1.0.0" allowed-operations="vef"><description/><param n="endpoint" t="Properties"/><param n="ref" t="string"/><script encoded="false"><![CDATA[return System.getModule("com.example.dns").callDns(endpoint, "DELETE", "/wapi/v2.12/record:host/" + ref);]]></script></dunes-script-module>

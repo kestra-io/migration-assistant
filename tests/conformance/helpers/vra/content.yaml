@@ -1,0 +1,14 @@
+---
+# Synthetic vRA export for vro2k's helper and replacement tests. Every name in it is invented.
+blueprint:
+  - App Host
+subscription:
+  - Web - provision host
+catalog-item:
+  - Example Apps__App Host
+content-source:
+  - Example Apps
+catalog-entitlement:
+  - Example Apps
+custom-resource: []
+resource-action: []

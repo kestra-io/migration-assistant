@@ -1,0 +1,20 @@
+{
+  "id": "sub-example-3",
+  "type": "RUNNABLE",
+  "name": "Net - clean up failed request",
+  "description": "Synthetic subscription",
+  "disabled": false,
+  "eventTopicId": "deployment.request.post",
+  "runnableType": "extensibility.vro",
+  "runnableId": "e1000000-0000-4000-8000-000000000002",
+  "blocking": false,
+  "timeout": 0,
+  "priority": 10,
+  "criteria": "event.data.eventType == \"CREATE_DEPLOYMENT\" && event.data.status == \"FAILED\"",
+  "contextual": false,
+  "constraints": {
+    "projectNames": [
+      "Example Project"
+    ]
+  }
+}

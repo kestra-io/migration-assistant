@@ -1,0 +1,30 @@
+vro2k
+
+LICENCE PENDING REVIEW
+
+This repository has no licence yet. Until one is chosen and added, all rights are reserved: the
+code and documentation written for this project may not be copied, modified or redistributed
+outside Kestra.
+
+The intended split, subject to that review:
+
+  vro2k_assess/    intended to be released as open source (the discovery side a customer can run
+                   on their own network: parse, cluster, sanitize, intake check, stages 0 to 2)
+
+tests/test_boundary.py enforces that vro2k_assess stands alone.
+
+Third-party files keep their own licences. Each licence file sits next to the files it covers:
+
+  samples/avi/                                         Apache License 2.0 (LICENSE, SOURCE.md)
+  samples/nuage/                                       BSD 3-Clause (LICENSE, SOURCE.md)
+  tests/conformance/                                   BSD 2-Clause and MIT (licences/, CONFORMANCE.md)
+  vro2k_assess/assets/vendor/mermaid/                  MIT (LICENSE)
+  vro2k_assess/assets/vendor/anthropic-code-modernization/
+                                                       Apache License 2.0 (LICENSE)
+  vro2k_assess/assets/explorer-viewer.html             Apache License 2.0, adapted from the file
+                                                       above (changes listed in its header); inlines
+                                                       a d3 v7 subset, ISC, Copyright Mike Bostock
+  vro2k_assess/assets/vendor/mona-sans/                SIL Open Font License 1.1 (OFL.txt)
+  vro2k_assess/assets/brand/                           Kestra logo, a Kestra trademark, unmodified
+
+Copies of the vendored files in an estate's report carry the same licences.

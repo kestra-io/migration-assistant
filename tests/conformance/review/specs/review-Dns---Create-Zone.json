@@ -1,0 +1,54 @@
+{
+ "purpose": "Creates a DNS zone in Infoblox and a matching Nuage domain and zone when a deployment is requested, and records them in the zone registry.",
+ "inputs": [
+  {
+   "name": "inputProperties",
+   "type": "Properties",
+   "meaning": "vRA event payload"
+  }
+ ],
+ "outputs": [],
+ "external_systems": [
+  {
+   "system": "Infoblox",
+   "how": "WAPI over REST"
+  },
+  {
+   "system": "Nuage VSD",
+   "how": "REST"
+  }
+ ],
+ "decisions": [],
+ "side_effects": [
+  "writes the zone registry"
+ ],
+ "assumptions": [],
+ "open_questions": [
+  {
+   "question": "Should a failed Infoblox call be retried before the step fails?",
+   "why_it_matters": "retry policy",
+   "theme": "error semantics"
+  },
+  {
+   "question": "Which TTL should new zones get in production?",
+   "why_it_matters": "settings",
+   "theme": "scope"
+  }
+ ],
+ "suspected_defects": [
+  {
+   "what": "the rendered body is parsed without checking for placeholders left unfilled",
+   "evidence": "renderBody: JSON.parse(text) after split/join",
+   "question": "Should a template with an unfilled placeholder stop the run?"
+  }
+ ],
+ "state_records": [
+  {
+   "where": "Example/Dns/State, Zone Registry, one attribute per deployment id",
+   "shape": "JSON: zone, ref, domain (strings)",
+   "written_when": "after the zone is created"
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "synthetic spec for the review tests"
+}

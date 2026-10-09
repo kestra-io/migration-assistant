@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="getSettings" result-type="Properties" api-version="6.0.0" id="a3000000-0000-4000-8000-000000000013" version="1.0.0" allowed-operations="vef"><description/><script encoded="false"><![CDATA[var category = Server.getConfigurationElementCategoryWithPath("Example/Dns/Settings");
+var element = category.configurationElements[0];
+var out = new Properties();
+out.put("suffix", element.getAttributeWithKey("suffix").value);
+out.put("ttl", element.getAttributeWithKey("ttl").value);
+return out;]]></script></dunes-script-module>

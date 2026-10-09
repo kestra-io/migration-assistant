@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<config-element id="0badc0de-2222-4333-8444-555566667777" version="0.0.1">
+  <display-name><![CDATA[Settings]]></display-name>
+  <atts>
+    <att name="endpoint" type="string" read-only="false">
+      <value encoded="n"><![CDATA[https://avi-ctrl.lab.example.net]]></value>
+      <description><![CDATA[Avi controller]]></description>
+    </att>
+    <att name="serviceUser" type="string" read-only="false">
+      <value encoded="n"><![CDATA[svc-vro-deploy]]></value>
+    </att>
+    <att name="servicePassword" type="SecureString" read-only="false">
+      <value encoded="n"><![CDATA[Pl@ntedPassw0rd]]></value>
+    </att>
+    <att name="unused" type="string" read-only="false">
+      <value encoded="n"><![CDATA[__NULL__]]></value>
+    </att>
+  </atts>
+</config-element>

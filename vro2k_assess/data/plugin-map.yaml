@@ -1,0 +1,301 @@
+# vRO plugin types -> how Kestra reaches the same system.
+#
+# Read by Assess and Brief.
+#
+# Checked 2026-09-25 against the Kestra plugin catalogue behind kestra.io/plugins
+# (api.kestra.io/v1/plugins/subgroups, 2,067 task and trigger classes) and the
+# per-task pages. kestra.io shows its generic catalogue page for a plugin slug
+# that does not exist, so "no plugin" means zero catalogue matches for the
+# search terms listed, not a 404.
+#
+# reach:
+#   plugin   a Kestra plugin covers the operations this estate uses
+#   http     no Kestra plugin; the system has a REST API that
+#            io.kestra.plugin.core.http.Request can call
+#   replace  vRO-internal state (its inventory, plugin endpoint registry,
+#            trusted certificate store). There is nothing to call from
+#            Kestra: the design changes instead (secrets, namespace
+#            variables, plugin defaults). Not a blocker, but a rebuild signal
+#            when it is what a workflow is for.
+#   none     nothing in Kestra reaches it, and no API route is known (not yet)
+# confirmed: true only when the Kestra side was read on kestra.io. Anything else
+#   is marked unconfirmed and treated as such by the triage.
+
+targets:
+
+  nuage-vsd:
+    category: network controller
+    name: Nokia Nuage VSD
+    kestra_group: null
+    kestra_search_words: [nuage, vsd, vspk]
+    short_name: Nuage VSD
+    rest_signatures:
+      paths: ["^/nuage/api/"]
+      headers: ["^X-Nuage-Organization$"]
+    vro_plugin: VSPK
+    vro_type_prefixes: [VSPK]
+    reach: http
+    confirmed: true
+    kestra_tasks: [io.kestra.plugin.core.http.Request]
+    kestra_evidence: https://kestra.io/plugins/core/http/io.kestra.plugin.core.http.request
+    kestra_search: "nuage, vsd, vspk: 0 catalogue matches; no kestra-io repository"
+    api: "VSD REST API, https://<vsd>:8443/nuage/api/v<N>/<resource> (me, enterprises, l2domains, vports, vms)"
+    api_auth: "GET /me with Basic login:password returns an APIKey; later calls send Basic login:APIKey and X-Nuage-Organization"
+    api_evidence: https://nuagenetworks.github.io/vsd-api-documentation/usage.html
+    sdk_alternative: "vspk on PyPI (SDK for the VSD API), usable from io.kestra.plugin.scripts.python.Script"
+    unconfirmed:
+      - "The exact API version the estate's VSD runs (the export says VSPK plugin 4.0.6 only)"
+      - "The base path /nuage/api/v6 is from the VSPK v6 docs naming, not from a page that states it"
+
+  avi-controller:
+    category: load balancer
+    kestra_group: null        # no plugin: the coverage view searches the snapshot for the words below
+    kestra_search_words: [avi, nsx alb, nsx advanced load balancer]
+    name: VMware Avi Load Balancer controller
+    short_name: Avi
+    rest_signatures:
+      paths: ["^/api/(virtualservice|vsvip|healthmonitor|poolgroup|serviceengine|serviceenginegroup|applicationprofile|networkprofile|sslkeyandcertificate)(/|$)"]
+      headers: ["^X-Avi-(Version|Tenant)$"]
+    vro_plugin: Avi (NSX Advanced Load Balancer vRO plugin)
+    vro_type_prefixes: [Avi]
+    reach: http
+    confirmed: true
+    kestra_tasks: [io.kestra.plugin.core.http.Request]
+    kestra_evidence: https://kestra.io/plugins/core/http/io.kestra.plugin.core.http.request
+    kestra_search: "avi, nsx, load balancer: 0 Avi or NSX matches; the only load balancer tasks are DigitalOcean"
+    api: "Avi REST API, https://<controller>/api/<object> (virtualservice, pool, poolgroup, vsvip, healthmonitor, cloud, cluster)"
+    api_auth: "POST /login for a session cookie; X-CSRFToken on writes; optional X-Avi-Version"
+    api_evidence: https://techdocs.broadcom.com/us/en/vmware-security-load-balancing/avi-load-balancer/avi-load-balancer/31-2/automation-guide/using-the-rest-api.html
+    sdk_alternative: "avisdk on PyPI (github.com/vmware/alb-sdk), usable from io.kestra.plugin.scripts.python.Script"
+    unconfirmed:
+      - "The vRO plugin batches changes per workflow run (initVroWorkflow / executeWorkflow). The REST API has no such batch; each call commits on its own."
+
+  f5-bigip:
+    category: load balancer
+    name: F5 BIG-IP (iControl REST)
+    short_name: F5 BIG-IP
+    vro_plugin: (none; reached with the HTTP-REST plugin or a REST helper action)
+    vro_type_prefixes: [F5]
+    reach: plugin
+    confirmed: true
+    enterprise_only: true
+    kestra_group: io.kestra.plugin.ee.f5
+    kestra_tasks:
+      - io.kestra.plugin.ee.f5.pool.Create
+      - io.kestra.plugin.ee.f5.poolmember.Add
+      - io.kestra.plugin.ee.f5.virtualserver.Create
+    kestra_evidence: "Kestra plugin snapshot (kestra-reference/plugins/): plugin-ee-f5, installed and in the catalogue"
+    api: "iControl REST, https://<big-ip>/mgmt/tm/ltm/<collection> (virtual, pool, pool/<p>/members, node, monitor/<type>)"
+    rest_signatures:
+      paths: ["^/mgmt/tm/", "^/mgmt/shared/"]
+      headers: ["^X-F5-Auth-Token$"]
+    # Operation -> the plugin task that does the same, checked against the task list in the snapshot.
+    op_tasks:
+      - {match: "^POST .*/ltm/pool/.*members", task: poolmember.Add}
+      - {match: "^DELETE .*/ltm/pool/.*members", task: poolmember.Remove}
+      - {match: "^GET .*/ltm/pool/.*members", task: poolmember.List}
+      - {match: "^(PUT|PATCH) .*/ltm/pool/.*members", task: poolmember.Update}
+      - {match: "^POST .*/ltm/pool", task: pool.Create}
+      - {match: "^DELETE .*/ltm/pool", task: pool.Delete}
+      - {match: "^GET .*/ltm/pool", task: pool.Get}
+      - {match: "^(PUT|PATCH) .*/ltm/pool", task: pool.Update}
+      - {match: "^POST .*/ltm/virtual", task: virtualserver.Create}
+      - {match: "^DELETE .*/ltm/virtual", task: virtualserver.Delete}
+      - {match: "^GET .*/ltm/virtual", task: virtualserver.Get}
+      - {match: "^(PUT|PATCH) .*/ltm/virtual", task: virtualserver.Update}
+      - {match: "^POST .*/ltm/node", task: node.Create}
+      - {match: "^DELETE .*/ltm/node", task: node.Delete}
+      - {match: "^GET .*/ltm/node", task: node.Get}
+      - {match: "^POST .*/ltm/monitor", task: monitor.Create}
+      - {match: "^DELETE .*/ltm/monitor", task: monitor.Delete}
+      - {match: "^GET .*/ltm/monitor", task: monitor.Get}
+
+  vcloud-director:
+    name: VMware Cloud Director
+    kestra_group: null
+    kestra_search_words: [vcloud, cloud director, vcd]
+    short_name: Cloud Director
+    rest_signatures:
+      paths: ["^/cloudapi/"]
+      headers: ["^application/\\*\\+(json|xml);version="]
+    vro_plugin: vCloud Director
+    vro_type_prefixes: [vCloud]
+    reach: http
+    confirmed: true
+    kestra_tasks: [io.kestra.plugin.core.http.Request]
+    kestra_evidence: https://kestra.io/plugins/core/http/io.kestra.plugin.core.http.request
+    kestra_search: "vcloud, vcd, cloud director: 0 catalogue matches"
+    api: "Legacy vCloud API at https://<vcd>/api and the OpenAPI at https://<vcd>/cloudapi, bearer token auth"
+    api_evidence: https://developer.broadcom.com/xapis/vmware-cloud-director-openapi/latest/
+    unconfirmed:
+      - "Vendor API page is from a search result and was not opened"
+      - "The notification feed (AMQP) the vspk Process-*-Notification workflows react to has no Kestra trigger confirmed here"
+
+  vcenter:
+    category: hypervisor
+    name: VMware vCenter
+    kestra_group: io.kestra.plugin.ee.vmware
+    # What a vRA cloud template creates, when vRA is replaced and Kestra creates it instead.
+    vra_resource_types: [Cloud.vSphere.]
+    resource_tasks:
+      Cloud.vSphere.Machine: [vcenter.CloneTemplate, vcenter.CreateVm, vcenter.DeleteVm]
+      Cloud.vSphere.Network: []
+    short_name: vCenter
+    rest_signatures:
+      paths: ["^/(rest|api)/vcenter/", "^/rest/com/vmware/cis/session", "^/api/session$"]
+      headers: ["^vmware-api-session-id$"]
+    vro_plugin: vCenter (VC)
+    vro_type_prefixes: [VC]
+    reach: plugin
+    confirmed: true
+    enterprise_only: true
+    kestra_tasks:
+      - io.kestra.plugin.ee.vmware.vcenter.CreateVm
+      - io.kestra.plugin.ee.vmware.vcenter.CloneVm
+      - io.kestra.plugin.ee.vmware.vcenter.UpdateVm
+      - io.kestra.plugin.ee.vmware.vcenter.DeleteVm
+      - io.kestra.plugin.ee.vmware.vcenter.ListVms
+      - io.kestra.plugin.ee.vmware.vcenter.StartVm
+      - io.kestra.plugin.ee.vmware.vcenter.StopVm
+      - io.kestra.plugin.ee.vmware.vcenter.CreateVmSnapshot
+      - io.kestra.plugin.ee.vmware.vcenter.Trigger
+    kestra_evidence: https://kestra.io/plugins/plugin-ee-vmware/vcenter
+    covers: "VM lifecycle, power, snapshots, clone, templates, CPU, memory, disk, first NIC port group by name, custom attributes"
+    gaps:
+      # Operation-level exceptions. Assess marks an operation that matches one of
+      # these as reach http, not plugin.
+      - match: "DistributedVirtualPortgroup|reconfigureDVPortgroup"
+        reach: http
+        note: "No task creates or edits a distributed port group or sets a VLAN override. Use the vSphere REST or VI/JSON API (vCenter 8.0U1+) through Request, or PowerCLI in a PowerShell task."
+      - match: "VmFolder"
+        reach: http
+        note: "No task or property for VM folders."
+      - match: "VC:Task|vim3WaitTaskEnd|WaitTaskEnd"
+        reach: http
+        note: "No task exposes vCenter Task objects. Whether plugin tasks wait for the vCenter task is unconfirmed."
+      - match: "reconfigVM_Task"
+        reach: plugin
+        note: "UpdateVm covers CPU, memory, disk and first NIC. Other reconfigure specs need the VI/JSON API."
+    api: "vSphere Automation REST API, https://<vcenter>/api/vcenter/<resource> (vm, network, folder), and the VI/JSON API (8.0U1+)"
+    api_evidence: https://developer.broadcom.com/xapis/virtual-infrastructure-json-api/latest/
+
+  ssh-host:
+    name: SSH hosts
+    short_name: SSH
+    vro_plugin: SSH
+    vro_type_prefixes: [SSH]
+    reach: plugin
+    confirmed: true
+    kestra_tasks: [io.kestra.plugin.fs.ssh.Command]
+    kestra_evidence: https://kestra.io/plugins/plugin-fs/ssh/io.kestra.plugin.fs.ssh.command
+
+  rest-host:
+    name: REST hosts (vRO HTTP-REST plugin)
+    short_name: REST hosts
+    vro_plugin: HTTP-REST
+    vro_type_prefixes: [REST, HTTP]
+    reach: plugin
+    confirmed: true
+    kestra_tasks: [io.kestra.plugin.core.http.Request]
+    kestra_evidence: https://kestra.io/plugins/core/http/io.kestra.plugin.core.http.request
+
+  mail:
+    name: Mail server
+    short_name: mail
+    vro_plugin: Mail
+    vro_type_prefixes: [Mail]
+    reach: plugin
+    confirmed: true
+    kestra_tasks: [io.kestra.plugin.email.MailSend]
+    kestra_evidence: https://kestra.io/plugins/plugin-email/io.kestra.plugin.email.mailsend
+    note: "io.kestra.plugin.notifications.mail.MailSend is deprecated in favour of plugin-email"
+
+  sql-database:
+    name: SQL databases
+    short_name: SQL
+    vro_plugin: SQL
+    vro_type_prefixes: [SQL]
+    reach: plugin
+    confirmed: true
+    kestra_tasks: ["io.kestra.plugin.jdbc.<database>.Query"]
+    kestra_evidence: https://kestra.io/plugins/plugin-jdbc-postgres
+    note: "One plugin per database; there is no single generic JDBC task"
+
+  powershell-host:
+    name: PowerShell hosts
+    short_name: PowerShell
+    vro_plugin: PowerShell
+    vro_type_prefixes: [PowerShell]
+    reach: plugin
+    confirmed: true
+    kestra_tasks: [io.kestra.plugin.scripts.powershell.Script, io.kestra.plugin.scripts.powershell.Commands]
+    kestra_evidence: https://kestra.io/plugins/plugin-script-powershell
+
+  servicenow:
+    name: ServiceNow
+    short_name: ServiceNow
+    rest_signatures:
+      paths: ["^/api/now/"]
+      headers: []
+    vro_plugin: ServiceNow
+    vro_type_prefixes: [ServiceNow, SNOW]
+    reach: plugin
+    confirmed: true
+    kestra_tasks: [io.kestra.plugin.servicenow.Get, io.kestra.plugin.servicenow.Post, io.kestra.plugin.servicenow.Update]
+    kestra_evidence: https://kestra.io/plugins/plugin-servicenow
+
+  infoblox:
+    category: IP address manager
+    name: Infoblox
+    short_name: Infoblox
+    rest_signatures:
+      paths: ["^/wapi/v\\d"]
+      headers: []
+    vro_plugin: Infoblox IPAM
+    vro_type_prefixes: [IPAM, Infoblox]
+    reach: plugin
+    confirmed: true
+    enterprise_only: true
+    kestra_tasks: [io.kestra.plugin.ee.infoblox.ipam.address.AllocateNextAvailable]
+    kestra_evidence: https://kestra.io/plugins/plugin-ee-infoblox
+
+  vro-platform:
+    name: vRO platform services
+    short_name: vRO
+    vro_plugin: (built in)
+    vro_type_prefixes: []
+    reach: plugin
+    confirmed: true
+    kestra_tasks: [io.kestra.plugin.core.flow.Subflow, io.kestra.plugin.core.log.Log]
+    kestra_evidence: https://kestra.io/plugins/core
+    note: >
+      Nested workflow calls, logging, sleeps and inventory lookups inside vRO
+      itself. Calls to another workflow become Subflow tasks; logging becomes
+      Log. vRO-only services with no Kestra counterpart (the trusted
+      certificate store, plugin endpoint registration, Server.findForType
+      inventory lookups) are listed per operation in the target inventory.
+    gaps:
+      - match: "certificate|addVroClient|removeVroClient|Server\\.find"
+        reach: replace
+        note: "vRO-internal state with no Kestra equivalent; the design changes (secrets, plugin defaults) rather than a call being translated."
+      - match: "configuration element"
+        reach: replace
+        note: "State or settings kept in a vRO configuration element. Settings become namespace variables or secrets; state written at run time goes to the KV store."
+      - match: "resource element"
+        reach: replace
+        note: "A file kept in a vRO resource element (a template, a properties file). It becomes a namespace file, read with read() or rendered with Pebble."
+
+  vra:
+    name: VMware vRA
+    short_name: vRA
+    vro_plugin: (the trigger source, not a vRO plugin)
+    vro_type_prefixes: []
+    reach: http
+    confirmed: false
+    kestra_group: null
+    kestra_search_words: [vra, aria automation, vrealize automation]
+    api: "vRA REST API (/iaas/api, /deployment/api, /catalog/api), bearer token from /iaas/api/login"
+    note: "Listed for the plugin coverage view only: vRA starts the workflows (entry points); it is not called by them."
+
+# vRO types that name an object but not a remote system. Not targets.
+not_targets: [Array, CompositeType, Properties, string, number, boolean, Date, Any, SecureString]

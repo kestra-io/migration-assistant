@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="callApi" result-type="Properties" api-version="6.0.0" id="a1000000-0000-4000-8000-000000000001" version="1.0.0" allowed-operations="vef"><description/><param n="endpoint" t="Properties"/><param n="method" t="string"/><param n="path" t="string"/><param n="body" t="Any"/><script encoded="false"><![CDATA[var prototype = RESTHostManager.createHost("ipam");
+prototype.url = "https://" + endpoint.get("host");
+var host = RESTHostManager.createTransientHostFrom(prototype);
+var request = host.createRequest(method, path, body ? JSON.stringify(body) : "");
+request.contentType = "application/json";
+var response = request.execute();
+var result = new Properties();
+result.put("statusCode", response.statusCode);
+result.put("body", response.contentAsString);
+return result;]]></script></dunes-script-module>

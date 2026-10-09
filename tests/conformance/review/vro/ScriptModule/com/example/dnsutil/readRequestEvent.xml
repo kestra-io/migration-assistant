@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="readRequestEvent" result-type="Properties" api-version="6.0.0" id="a3000000-0000-4000-8000-000000000010" version="1.0.0" allowed-operations="vef"><description/><param n="inputProperties" t="Properties"/><script encoded="false"><![CDATA[var id = inputProperties.get("deploymentId");
+if (!id) {
+    throw "payload has no deploymentId";
+}
+var event = new Properties();
+event.put("deploymentId", id);
+event.put("eventType", inputProperties.get("eventType") || "");
+event.put("status", inputProperties.get("status") || "");
+return event;]]></script></dunes-script-module>

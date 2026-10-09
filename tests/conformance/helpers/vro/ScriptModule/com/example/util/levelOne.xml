@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="levelOne" result-type="string" api-version="6.0.0" id="a2000000-0000-4000-8000-000000000006" version="1.0.0" allowed-operations="vef"><description/><param n="x" t="string"/><script encoded="false"><![CDATA[var u = System.getModule("com.example.util");
+var y = x.trim();
+if (y.length === 0) {
+    throw "empty name";
+}
+y = y.toLowerCase();
+return u.levelTwo(y);]]></script></dunes-script-module>

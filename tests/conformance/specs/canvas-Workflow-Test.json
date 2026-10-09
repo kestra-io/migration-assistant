@@ -1,0 +1,149 @@
+{
+ "purpose": "Self-contained vRO demo/test workflow (\"Workflow Test\", category VMware.PSCoE) that exercises three engine features in one graph: a self-retry loop driven by a waiting-timer, a scripted decision element, and a synchronous call into another workflow with input/output binding. Concretely it logs \"Starting workflow\", then enters a loop: a scripted task increments an internal counter and, while counter < 2, sets the attribute `waitingTimer` to now + 5 seconds; a custom condition tests `waitingTimer !== null` and, when a timer is set, suspends the workflow token in a waiting-timer item until that date before re-entering the same task. On the second pass the counter reaches 2, `waitingTimer` is set to null, the condition takes its false arm, a task hardcodes first=1 and second=2, a link item calls child workflow 9e4503db-cbaa-435a-9fad-144409c08df0 synchronously passing first and second and receiving `result`, and a final task logs \"Result: \" + result before ending normally. Net effect: exactly one 5-second suspension, two log lines per loop pass, one child-workflow execution, and one result log line. No workflow inputs, no workflow outputs, no external system touched beyond the vRO engine and its log. Workflow-scope attributes (all initially null / unset): waitingTimer (Date) \u2014 the resume time for the waiting-timer item and the flag the decision reads; counter (number) \u2014 loop-pass count, persisted across the suspension; first (number) and second (number) \u2014 arguments to the child workflow, hardcoded to 1 and 2; result (number) \u2014 value returned by the child workflow; errorMessage (string) \u2014 declared but never read, written or bound by any item (dead attribute, no error handling exists in the graph).",
+ "inputs": [],
+ "outputs": [],
+ "external_systems": [
+  {
+   "system": "vRealize Orchestrator scripting/log subsystem (System.log)",
+   "how": "Four System.log calls write to the workflow run's scripting log: item6 logs the literal \"Starting workflow\"; item5 logs \"Counter: \" + counter and \"Waiting Timer: \" + waitingTimer (a Date rendered as a string, or the literal null on the final pass) on every loop pass; item4 logs \"Result: \" + result once. These are the workflow's only observable output \u2014 nothing is returned to the caller.",
+   "items": [
+    "Starting workflow",
+    "Counter: <n>",
+    "Waiting Timer: <date|null>",
+    "Result: <number>"
+   ]
+  },
+  {
+   "system": "vRO workflow engine \u2014 child workflow invocation",
+   "how": "item3 is a link item with linked_workflow_id 9e4503db-cbaa-435a-9fad-144409c08df0: it runs that workflow synchronously and blocks until it completes. in_bindings pass workflow attributes first and second (both number) into child input parameters named `first` and `second`; out_bindings copy the child's output parameter named `result` (number) back into the parent attribute `result`. Binding is by parameter name, not position. The child's name, category and body are not part of this document.",
+   "items": [
+    "9e4503db-cbaa-435a-9fad-144409c08df0"
+   ]
+  },
+  {
+   "system": "vRO workflow engine \u2014 waiting-timer / scheduler",
+   "how": "item7 is a waiting-timer item whose `timer.date` input is bound to the attribute waitingTimer. The engine suspends the workflow token (state WAITING, state persisted to the vRO database) until that absolute Date passes, then resumes at item7's out edge. This is a durable suspension, not an in-script sleep; it holds no thread and survives across the wait.",
+   "items": [
+    "timer.date <- waitingTimer"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "item5 \"execute\" (task) \u2014 counter initialisation guard",
+   "condition": "JavaScript `if (!counter)` \u2014 true when counter is null, undefined, 0, or NaN (vRO number attribute with no value arrives as null on the first pass)",
+   "branches": [
+    {
+     "when": "counter is null/undefined/0 (first pass)",
+     "goes_to": "same script, next statement",
+     "does": "Sets counter = 0, then counter++ makes it 1"
+    },
+    {
+     "when": "counter already holds a non-zero number (second and later passes)",
+     "goes_to": "same script, next statement",
+     "does": "Leaves counter as-is, then counter++ makes it 2"
+    }
+   ]
+  },
+  {
+   "item": "item5 \"execute\" (task) \u2014 timer scheduling",
+   "condition": "`counter < 2` evaluated after the increment",
+   "branches": [
+    {
+     "when": "counter == 1 (first pass)",
+     "goes_to": "item1 via out_name",
+     "does": "waitingTimer = new Date(Date.now() + 5000), i.e. five seconds in the future; both counter and waitingTimer are written back to workflow scope by out_bindings"
+    },
+    {
+     "when": "counter >= 2 (second pass)",
+     "goes_to": "item1 via out_name",
+     "does": "waitingTimer = null, which clears the attribute and ends the loop; counter (2) is written back"
+    }
+   ]
+  },
+  {
+   "item": "item1 \"decisionElement\" (custom-condition)",
+   "condition": "Scripted condition `return waitingTimer !== null;` over the in-bound Date attribute waitingTimer (strict inequality against null)",
+   "branches": [
+    {
+     "when": "true \u2014 waitingTimer holds a Date (first pass)",
+     "goes_to": "item7 \"waitForEvent\" (out_name)",
+     "does": "Enters the waiting-timer item, suspending until waitingTimer; on resume item7 routes back to item5, closing the only cycle in the graph"
+    },
+    {
+     "when": "false \u2014 waitingTimer is null (second pass)",
+     "goes_to": "item2 \"prepareItems\" (alt_out_name)",
+     "does": "Leaves the loop and proceeds to the child-workflow call sequence"
+    }
+   ]
+  },
+  {
+   "item": "Loop termination (emergent, not a single item)",
+   "condition": "counter reaches 2",
+   "branches": [
+    {
+     "when": "always, given counter starts unset",
+     "goes_to": "item2 \u2192 item3 \u2192 item4 \u2192 item0",
+     "does": "item5 executes exactly twice, item7 suspends exactly once for ~5 seconds, then the workflow does the child call and ends. Total wall-clock \u2248 5s plus child workflow duration."
+    }
+   ]
+  },
+  {
+   "item": "item0 \"end\" (end, end_mode \"0\")",
+   "condition": "Reached from item4",
+   "branches": [
+    {
+     "when": "always",
+     "goes_to": "workflow completion",
+     "does": "Ends the workflow normally (state COMPLETED). end_mode 0 means normal end, not throw. There is no end item with end_mode 1 anywhere in this workflow, so no path deliberately throws."
+    }
+   ]
+  },
+  {
+   "item": "item8 (end, end_mode \"0\") \u2014 unreachable",
+   "condition": "No edge in the graph targets item8",
+   "branches": [
+    {
+     "when": "never",
+     "goes_to": "nowhere",
+     "does": "Dead element left over from editing the diagram. It must not be represented as a reachable exit in the converted workflow; it changes nothing at runtime."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Writes four kinds of line to the vRO workflow run log (see external_systems); on a normal run the exact sequence is: \"Starting workflow\", \"Counter: 1\", \"Waiting Timer: <date ~now+5s>\", \"Counter: 2\", \"Waiting Timer: null\", \"Result: <n>\".",
+  "Suspends the workflow run for approximately five seconds in a durable WAITING state (vRO persists the token); the run's elapsed time and any SLA/timeout accounting include this wait.",
+  "Executes child workflow 9e4503db-cbaa-435a-9fad-144409c08df0 exactly once per run, with first=1 and second=2; any side effects of that child workflow are side effects of this one.",
+  "Mutates its own workflow-scope attributes counter, waitingTimer, first, second and result; these are per-run state and are not exposed as outputs. errorMessage is never written.",
+  "No files, no REST calls, no plugin objects (VC:, VSPK:, etc.), no configuration elements, no actions (script_module is null on every task), no credentials or SecureStrings are involved."
+ ],
+ "assumptions": [
+  "An unset vRO `number` attribute arrives in script scope as null, so `!counter` is true on the first pass and counter begins at 1 \u2014 this is why the loop runs exactly two passes and waits exactly once.",
+  "An unset/cleared vRO `Date` attribute arrives in the condition script as JavaScript null, so the strict test `waitingTimer !== null` is false on the second pass. If a conversion target represents 'no timer' as undefined rather than null, the strict inequality would evaluate true and the workflow would loop forever \u2014 the converted condition should test for 'no value' (null or undefined), not identity with null.",
+  "Binding into the child workflow is by parameter name: the child is assumed to declare number inputs named exactly `first` and `second` and a number output named exactly `result`.",
+  "item3 is a link (linked_workflow_id), not launched_workflow_id, so the parent blocks until the child finishes; `result` is read only after the child completes.",
+  "The five-second delay is a literal constant in item5 (5 * 1000 ms) computed from server time at the moment the task runs; it is not configurable and not driven by any input.",
+  "counter and waitingTimer must survive the waiting-timer suspension, i.e. loop state lives in persisted workflow scope rather than in a local script variable.",
+  "first and second are unconditionally overwritten with the literals 1 and 2 by item2 on every run; their in_bindings on item2 are vestigial (the script reads neither before assigning), so the child workflow is always called with 1 and 2 and `result` is deterministic for a deterministic child."
+ ],
+ "open_questions": [
+  {
+   "theme": "scope",
+   "question": "What does child workflow 9e4503db-cbaa-435a-9fad-144409c08df0 actually compute, and what exactly are its input/output parameter names and types? The whole value of `result` (and therefore the only interesting log line) comes from it; the name 'callOtherWf' and the 1/2 arguments suggest a trivial arithmetic helper (e.g. first + second = 3) but that is a guess.",
+   "why_it_matters": "The converter must resolve the UUID to a concrete callable and match parameter names `first`/`second`/`result`; a test author needs the expected value of the \"Result: \" log line."
+  },
+  {
+   "theme": "error semantics",
+   "question": "What should happen if the child workflow at item3 fails, or if any task throws? No item has a catch_name, and the declared `errorMessage` attribute is never bound to anything \u2014 was error handling intended and dropped, or is an unhandled failure of the whole run the accepted behaviour?",
+   "why_it_matters": "Determines whether the converted workflow needs a failure path / error output at all, or should simply propagate the exception and fail the run; also decides whether `errorMessage` is carried over or deleted as dead state."
+  },
+  {
+   "theme": "scheduling",
+   "question": "Must the five-second pause be a durable, restart-surviving suspension (as vRO's waiting-timer is), or is an in-process sleep acceptable in the target runtime?",
+   "why_it_matters": "If durability is required, the target must persist counter/waitingTimer and resume on a scheduler rather than blocking a worker; this changes the shape of the loop construct and how tests must drive time."
+  }
+ ],
+ "confidence": "medium",
+ "confidence_reason": "The control flow is fully determined: every item, edge, binding and inline script is present, the single cycle and its exit condition (counter reaches 2 after exactly two passes, one ~5s wait) are computable from the source, and there are no actions, plugin objects, configuration elements or presentation logic to hide behaviour. The one gap is item3's target workflow 9e4503db-cbaa-435a-9fad-144409c08df0, whose body was not provided \u2014 the produced `result` and any side effects it has are unknown, so the final log line's value cannot be stated. That is a contained unknown at a well-defined interface (two number inputs in, one number out) rather than a hole in the orchestration, hence medium rather than low."
+}

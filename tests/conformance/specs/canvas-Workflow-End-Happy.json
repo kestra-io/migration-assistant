@@ -1,0 +1,48 @@
+{
+ "purpose": "Smoke-test / template workflow (\"Workflow End Happy\", category VMware.PSCoE) whose only job is to start at a scripted decision item and terminate normally. It takes no inputs, produces no outputs, touches no vCenter/plugin object, calls no action or nested workflow, and reads/writes no external system. Its sole runtime behaviour is: evaluate the custom condition `return true;` at item1 (display name \"initiateWorkflow\"), which is a constant, and follow the true edge to end item `item0`, which ends the run with end_mode \"0\" (normal completion, no exception thrown). The false edge to a second normal end item (`item2`) exists in the graph but is unreachable because the condition is a literal `true`. The workflow declares one workflow-scope attribute, `endMode` (number, value null), which no item binds to or reads \u2014 it is dead state. Effectively this is a single-branch no-op that always succeeds.",
+ "inputs": [],
+ "outputs": [],
+ "external_systems": [],
+ "decisions": [
+  {
+   "item": "item1 (custom-condition, display name \"initiateWorkflow\", root_item / entry point)",
+   "condition": "JavaScript body is exactly `return true;` \u2014 a constant with no inputs, no in_bindings, and no reference to the `endMode` attribute, so it evaluates to boolean true on every execution",
+   "branches": [
+    {
+     "when": "condition is true (always, in practice)",
+     "goes_to": "item0",
+     "does": "item0 is an `end` item with end_mode \"0\": the workflow finishes normally (state COMPLETED). No outputs are set, nothing is thrown."
+    },
+    {
+     "when": "condition is false (alt_out_name / false arm \u2014 structurally present, dynamically unreachable given `return true;`)",
+     "goes_to": "item2",
+     "does": "item2 is also an `end` item with end_mode \"0\": identical normal completion. The two end items are behaviourally indistinguishable."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "None. No file, network, vCenter/plugin, configuration-element, resource-element, or logging side effects. No `System.log`/`System.warn` calls, no attribute writes (the `endMode` attribute is never assigned), no in_bindings or out_bindings anywhere in the graph.",
+  "Exit semantics: both terminal items use end_mode \"0\", so the workflow always ends normally; there is no end_mode \"1\" item, therefore this workflow can never throw a workflow-level exception by design. No catch_name (error handler) is set on any item, so an unexpected runtime error in the condition script would propagate as a failed run rather than being handled."
+ ],
+ "assumptions": [
+  "`end_mode` \"0\" is interpreted as normal workflow completion and \"1\" as throw/error end; both end items here are \"0\".",
+  "A `custom-condition` item's script returning a truthy value routes to `out_name` and a falsy value routes to `alt_out_name`; `return true;` therefore always routes to item0.",
+  "The false arm (item1 \u2192 item2) is preserved in the spec as graph structure for fidelity, but a converted implementation would never execute it; a faithful conversion may keep it as an explicit unreachable branch or collapse it, as long as the observable behaviour (normal completion, no output) is unchanged.",
+  "The `endMode` attribute is genuinely unused rather than referenced indirectly \u2014 there is no scripting in the workflow other than `return true;`, and no bindings exist that could read or write it."
+ ],
+ "open_questions": [
+  {
+   "theme": "scope",
+   "question": "Must the unused workflow attribute `endMode` (type number, initial value null) be carried over into the converted artifact, or can it be dropped as dead state?",
+   "why_it_matters": "If this workflow is a fixture used to assert round-trip fidelity of attribute declarations (the name suggests it pairs with an 'unhappy'/throwing variant that does use endMode), silently dropping the attribute would break that assertion; if it is only functional behaviour that matters, keeping it adds noise."
+  },
+  {
+   "theme": "scope",
+   "question": "Is the intent of this fixture to exercise the two-distinct-end-items case (a branch converging on separate normal ends), such that a conversion collapsing item0 and item2 into one exit would be considered wrong?",
+   "why_it_matters": "It determines whether tests should assert on graph shape (two terminal nodes, one branch) or only on observable behaviour (runs, completes normally, no output) \u2014 the two ends are behaviourally identical, so only structural tests can tell them apart."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The entire graph is three items with a single literal script (`return true;`), no bindings, no inputs/outputs, no action or nested-workflow calls, no plugin types, and no SDK calls \u2014 the runtime behaviour is fully determined by the supplied JSON with nothing hidden behind an external action or sub-workflow. The only residual uncertainty is intent (why the dead `endMode` attribute and the unreachable second end exist), not behaviour."
+}

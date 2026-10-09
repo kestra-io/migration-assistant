@@ -1,0 +1,4 @@
+name: Sample Templates
+type: CatalogSourceIdentifier
+sourceType: com.vmw.blueprint
+projectName: Sample Project

@@ -1,0 +1,86 @@
+{
+ "purpose": "WF_test2 is a deliberately trivial test fixture for the `vro-package-diff` tool (category path `tests.vro-package-diff`). Functionally it is a single-step workflow: it runs one JavaScript scriptable task named \"Log hello\" that writes the literal string \"Hello beautifull world\" to the vRO system debug log via `System.debug`, then terminates normally. It accepts two inputs (a string and a vCenter VM folder object) and declares one string output, but the script body reads none of the inputs and assigns none of the outputs \u2014 the bindings exist purely as wiring. Its real reason for existing is to be a stable, diffable workflow definition (inputs, outputs, attributes, one task, one normal end, one error end) rather than to perform useful automation, so a conversion must preserve the declared signature and the error-path structure even though neither carries data today.",
+ "inputs": [
+  {
+   "name": "inputA",
+   "type": "string",
+   "meaning": "Free-form string input, documented only as \"description A\". Bound into the scriptable task's scope but never read by the script. No default, no validation, no presentation constraint.",
+   "is_secret": false
+  },
+  {
+   "name": "inputB",
+   "type": "VC:VmFolder",
+   "meaning": "A vCenter Server VM folder plugin object (arrives as a live, authenticated vSphere inventory reference, not an ID or a path string), documented only as \"description B\". Bound into the scriptable task's scope but never read. Its presentation has a `linkedEnumeration` qualifier whose expression is the vRO null sentinel `__NULL__`, i.e. an effectively empty/no-op qualifier that constrains nothing.",
+   "is_secret": false
+  }
+ ],
+ "outputs": [
+  {
+   "name": "outA",
+   "type": "string",
+   "meaning": "Declared workflow output, wired as an out-binding of the scriptable task (script-scope `outA` \u2192 workflow-scope `outA`). The script never assigns `outA`, so on the normal path the workflow completes with `outA` unset \u2014 in vRO this surfaces as null/undefined rather than a computed value. On the error path the workflow throws and produces no output at all."
+  }
+ ],
+ "external_systems": [
+  {
+   "system": "vRealize Orchestrator platform (System scripting object)",
+   "how": "The one and only runtime side effect: `System.debug(\"Hello beautifull world\")` writes a DEBUG-level line to the workflow run's system log. Note the misspelling \"beautifull\" is in the source and should be reproduced verbatim if log output is asserted on.",
+   "items": [
+    "System.debug"
+   ]
+  },
+  {
+   "system": "vCenter Server (vRO vCenter plugin)",
+   "how": "Referenced by type only, never called. `inputB` is typed `VC:VmFolder` and attribute `att1` is typed `Array/VC:Task`, so the workflow's signature depends on the vCenter plugin being installed, but no vSphere API call, lookup, or task wait is performed anywhere in the graph.",
+   "items": [
+    "VC:VmFolder (input type)",
+    "Array/VC:Task (attribute type)"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "item1 \u2014 scriptable task \"Log hello\" (root item, the entry point)",
+   "condition": "Whether the task's script body throws a JavaScript/vRO exception",
+   "branches": [
+    {
+     "when": "The script completes without throwing (the expected case \u2014 `System.debug` on a literal string cannot realistically fail)",
+     "goes_to": "item0",
+     "does": "item0 is an `end` item with end_mode \"0\": the workflow finishes successfully, returning `outA` (never assigned, therefore null/empty)."
+    },
+    {
+     "when": "The script throws (catch edge, `catch_name` = item2)",
+     "goes_to": "item2",
+     "does": "item2 is an `end` item with end_mode \"1\": the workflow terminates by throwing, i.e. the run is marked failed and the error propagates to the caller. No error variable is bound into item2 and the `errorCode` attribute is never written, so no specific message or code is attached by this workflow \u2014 whatever exception the script raised is what surfaces."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Writes exactly one DEBUG log line, \"Hello beautifull world\", to the vRO system log per run. Nothing else is mutated.",
+  "No vCenter object is created, modified, moved, or deleted; no VC:Task is launched or awaited despite the `Array/VC:Task` attribute.",
+  "No other workflow is called (`link`) or launched (`launched_workflow_id`), no action is invoked (`action_calls` is empty, no item carries a `script_module`), and no configuration element is read (`config_refs` is empty).",
+  "The four workflow attributes are inert state: `errorCode` (string, default \"\"), `att0` (string, default \"\"), `att1` (Array/VC:Task, default empty), `att2` (string, default \"Value\"). `att0`, `att1`, and `att2` are passed *into* the task as in-bindings but are never read by the script and never written back \u2014 there are no out-bindings for them. `errorCode` is not bound to any item at all. All four retain their initial values for the whole run."
+ ],
+ "assumptions": [
+  "Read the graph, not document order: `root_item` is item1, so execution starts at the task even though item0 appears first in the items list.",
+  "item2 is listed under `unreachable_items` and `reachable_from_root` is 2 only because that reachability analysis follows normal (`next`) edges. item2 IS reachable \u2014 via item1's `catch_name` error edge. It must be preserved as the error terminator, not dropped as dead code.",
+  "The task's in-bindings for inputA, inputB, att0, att1, att2 are copy-in wiring only; since the script text references none of them, a faithful conversion may keep them as unused locals but must not change the workflow's declared input signature.",
+  "Because `outA` is declared and out-bound but never assigned, the normal completion yields an unset output. I am treating this as intentional fixture behaviour (the point is the declaration diffing), not as a bug to fix during conversion.",
+  "The `linkedEnumeration` presentation qualifier on inputB with expression `__NULL__` carries no constraint \u2014 `__NULL__` is vRO's null sentinel, not the literal string \"__NULL__\" \u2014 so no enumeration/value-list UI behaviour needs porting."
+ ],
+ "open_questions": [
+  {
+   "theme": "error semantics",
+   "question": "When the catch path reaches item2 (end_mode \"1\"), what error value should the workflow throw? The item has no bound error/exception variable and the `errorCode` attribute is never populated, so the XML does not specify a message, code, or exception type.",
+   "why_it_matters": "A test author needs to know whether to assert on a specific thrown message/code or merely on \"the run failed\". The converter must decide whether to rethrow the original exception verbatim or synthesize one, and whether `errorCode` is meant to be surfaced."
+  },
+  {
+   "theme": "data shape",
+   "question": "Is `outA` intended to remain unset (null) on success, or is the missing assignment a defect in the fixture that the target implementation should correct (e.g. to the logged string)?",
+   "why_it_matters": "It determines the expected value of the workflow's only output \u2014 null vs. a string \u2014 which is directly assertable and would differ between the two readings."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The graph is fully determined and tiny: three items, two edges, no branches, no joins, no cycles, depth 1. The single script body is given in full and contains one SDK call. There are no actions (`script_module` is null everywhere, `action_calls` empty), no linked or launched sub-workflows, and no configuration elements, so no behaviour is hidden behind code I was not shown. The only residual uncertainty is intent \u2014 the unassigned `outA` output, the never-written `errorCode`/`att*` attributes, and the bare throwing end item \u2014 which is characteristic of a diff-tool test fixture rather than missing information about what the code does."
+}

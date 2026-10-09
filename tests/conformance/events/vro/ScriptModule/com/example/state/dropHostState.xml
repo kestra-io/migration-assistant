@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="dropHostState" result-type="void" api-version="6.0.0" id="a1000000-0000-4000-8000-000000000009" version="1.0.0" allowed-operations="vef"><description/><param n="id" t="string"/><script encoded="false"><![CDATA[var s = System.getModule("com.example.state");
+s.stateElement().removeAttributeWithKey(id);]]></script></dunes-script-module>

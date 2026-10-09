@@ -1,0 +1,49 @@
+{
+ "purpose": "A three-item test/demonstration fixture workflow (\"Waiting Timer Happy\", category VMware.PSCoE) whose only real behaviour is to suspend its own execution at a vRO waiting timer and then, when the timer fires, resume into a single scripted task item named \"shouldGoHere\" and finish normally. The stated description \u2014 \"Waiting timer will point with target to shouldGoHere\" \u2014 makes clear the point of the workflow is to assert the topology: the waiting-timer item's continuation target must be the item displayed as \"shouldGoHere\", not the end item or anything else. There is no business logic, no external system is touched, no input is read and no output is produced; the workflow is a happy-path control-flow shape, almost certainly used as a fixture for a vRO-to-something converter/test suite.",
+ "inputs": [],
+ "outputs": [],
+ "external_systems": [
+  {
+   "system": "vRealize Orchestrator scheduler / workflow engine",
+   "how": "The `waiting-timer` item (item1, display name \"waitForEvent\") is a native vRO suspend point. On reaching it the engine persists the workflow token, moves the run to the WAITING/suspended state, registers a timer with the vRO scheduler for the absolute Date supplied in the `timer.date` binding, and releases the execution thread. When that absolute time is reached the engine rehydrates the token and continues at the timer's out target. No other external system, plugin endpoint, action, or nested workflow is contacted \u2014 `plugin_types`, `sdk_calls`, `action_calls`, `config_refs` and `presentation_ognl` are all empty.",
+   "items": [
+    "timer.date <- workflow attribute `waitingTimer` (Date)",
+    "workflow token state transition RUNNING -> WAITING -> RUNNING -> COMPLETED"
+   ]
+  }
+ ],
+ "decisions": [],
+ "side_effects": [
+  "Suspends the running workflow instance at item1 until the absolute Date held in the `waitingTimer` attribute is reached; execution is paused, not busy-waiting, and the workflow token is persisted across the pause (it survives an engine restart in vRO).",
+  "Registers a scheduled resume entry with the vRO scheduler for that Date.",
+  "Emits the normal vRO execution-log entries for entering/leaving each item; no files, no objects, no messages, no state outside the workflow token are created or modified.",
+  "Ends via item0 with end_mode \"0\" \u2014 a normal successful completion, NOT a thrown error."
+ ],
+ "assumptions": [
+  "item1 (`waiting-timer`, display name \"waitForEvent\") is the entry point: `root_item` is \"item1\" and it has no inbound edges.",
+  "Execution order is fully linear and deterministic: item1 -> item2 -> item0. `graph.linear` is true, branches=0, joins=0, cycle=false, all 3 items reachable, no unreachable items.",
+  "No item has a `catch_name`, so there is no error handling anywhere: any failure (including a failure to schedule the timer) propagates as a workflow failure with the default vRO semantics.",
+  "item2 is a `task` whose `script` is null and which has no `in_bindings` and no `out_bindings` \u2014 I read it as a deliberate no-op placeholder that exists only to be the timer's continuation target. A converted version must still keep it as a distinct, observable step called \"shouldGoHere\", because the whole assertion of this fixture is that control lands there.",
+  "The two workflow attributes are declared with `value: null` and `is_null_sentinel: false` \u2014 i.e. genuinely unset at design time, not vRO's `__NULL__` sentinel. `waitingTimer` (Date) is therefore undefined when item1 reads it, and `counter` (number) is declared but never read or written by any item \u2014 it is dead state carried over from a sibling fixture (there is presumably a \"Waiting Timer Unhappy\" / looping counterpart).",
+  "Because nothing in this workflow ever assigns `waitingTimer`, a real run of this definition as given would hit the timer with no date. The intended, tested behaviour is that the workflow nonetheless proceeds to \"shouldGoHere\" \u2014 that is what \"Happy\" in the name denotes."
+ ],
+ "open_questions": [
+  {
+   "theme": "scheduling",
+   "question": "What is the required behaviour when `waitingTimer` is null/undefined at the moment item1 executes \u2014 resume immediately, wait forever, or fail the workflow? Nothing in this definition ever sets the attribute, so this is the actual runtime path.",
+   "why_it_matters": "It is the single behavioural fork in the whole workflow. If the converted implementation blocks on a null date the run hangs and the fixture never reaches \"shouldGoHere\"; if it resumes immediately the workflow is effectively a straight line. The test author needs to know which one to assert."
+  },
+  {
+   "theme": "scope",
+   "question": "Is `waitingTimer` expected to be populated externally before/while this workflow runs (e.g. the workflow is started by a parent that pre-seeds the attribute, or a human edits the token while it is suspended), or is it genuinely always null here?",
+   "why_it_matters": "Determines whether the converted form needs a way to inject the resume time at all, or whether the timer can be modelled as a zero-length suspend point."
+  },
+  {
+   "theme": "error semantics",
+   "question": "Does the target runtime need to preserve the *durable* nature of the vRO suspend (token persisted, survives process restart, resumable), or is an in-process sleep acceptable?",
+   "why_it_matters": "A `waiting-timer` in vRO is a persisted continuation, not a thread sleep. Converting it to a sleep silently changes restart and long-duration behaviour, which no test on this three-item graph would catch."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The graph is completely determined and tiny: 3 items, 2 edges, no branches, no joins, no cycles, nothing unreachable. There are no scripts, no `script_module` action calls, no `linked_workflow_id`/`launched_workflow_id` calls, no plugin types and no config references, so there is no hidden behaviour behind anything I was not given. The single binding (`timer.date` <- `waitingTimer`) and the end mode (\"0\" = normal completion) are explicit. The only thing I cannot settle from the code is the runtime meaning of firing the timer with an unset Date, which I have raised as an open question rather than guessed at."
+}

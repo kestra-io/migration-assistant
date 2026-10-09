@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties>
+<comment>10.20.30.40:8281</comment>
+<entry key="pkg-name">com.acme.planted</entry>
+<entry key="pkg-owner">O=Acme,OU=Platform,CN=vro01.acme-internal.corp jane.doe</entry>
+<entry key="used-plugins">VC#7.0.0</entry>
+<entry key="vso-version">8.10.2</entry>
+</properties>

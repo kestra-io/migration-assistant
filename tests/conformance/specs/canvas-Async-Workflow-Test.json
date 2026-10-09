@@ -1,0 +1,79 @@
+{
+ "purpose": "A self-contained vRO demonstration/test workflow (\"Async Workflow Test\", category VMware.PSCoE) that fire-and-forget launches a second, hard-coded vRO workflow (id 9e4503db-cbaa-435a-9fad-144409c08df0) with two numeric parameters, captures the returned WorkflowToken, logs that token's id and state, and ends normally. It takes no inputs, returns no outputs, and never waits for the launched workflow to finish \u2014 its entire observable result is three lines in the vRO system log plus one child workflow execution started on the server. It exists to prove that asynchronous launch plus in/out binding of a WorkflowToken works.",
+ "inputs": [],
+ "outputs": [],
+ "external_systems": [
+  {
+   "system": "vRealize Orchestrator server (local Server API)",
+   "how": "item1 calls Server.getWorkflowWithId(\"9e4503db-cbaa-435a-9fad-144409c08df0\") to resolve a Workflow object from the local vRO workflow inventory, then calls workflowToLaunch.execute(workflowParameters) on it. execute() starts a NEW workflow run asynchronously and returns immediately with a WorkflowToken handle; the caller does not block on completion. The item also carries launched_workflow_id = 9e4503db-cbaa-435a-9fad-144409c08df0 (launch-without-waiting), which is the designer-level declaration of the same asynchronous launch the script performs in code.",
+   "items": [
+    "Server.getWorkflowWithId",
+    "Workflow.execute(Properties) -> WorkflowToken",
+    "WorkflowToken.id",
+    "WorkflowToken.state"
+   ]
+  },
+  {
+   "system": "vRO system log (System.log sink, visible in the workflow run's Logs tab / server log)",
+   "how": "Three log lines are written on the happy path: \"Starting workflow\" (item4), \"Workflow token: <token id> and state: <token state>\" (item3), \"Workflow finished\" (item3).",
+   "items": [
+    "System.log"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "item1 (\"asyncCall\") \u2014 child workflow lookup guard",
+   "condition": "Server.getWorkflowWithId(\"9e4503db-cbaa-435a-9fad-144409c08df0\") returns null (workflow id not present in this vRO server's inventory, e.g. package not imported)",
+   "branches": [
+    {
+     "when": "lookup returns null",
+     "goes_to": "no item \u2014 the script executes `throw \"Workflow not found\"`",
+     "does": "Throws a bare JavaScript STRING (not an Error object). item1 has no catch_name, and no item in the workflow has a catch handler, so the exception propagates out and the whole workflow run terminates in FAILED state with error message \"Workflow not found\". Nothing is launched, wfToken is never set, and item3/item0 never run. The replacement implementation must fail the run here, not continue with a null handle."
+    },
+    {
+     "when": "lookup returns a Workflow object",
+     "goes_to": "same script continues, then out_name item3",
+     "does": "Builds a vRO Properties map with key \"first\" = attribute first (1) and key \"second\" = attribute second (2), calls execute(properties), assigns the returned WorkflowToken to the wfToken attribute via out_binding, and flows to item3."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Starts one execution of the vRO workflow with id 9e4503db-cbaa-435a-9fad-144409c08df0 on the vRO server, passing input parameters first=1 (number) and second=2 (number). This run outlives the parent: the parent reaches its end node while the child may still be running. Nothing cancels, polls, joins, or reads the child's outputs.",
+  "Writes \"Starting workflow\" to the vRO system log (item4, the root item).",
+  "Writes \"Workflow token: <wfToken.id> and state: <wfToken.state>\" to the vRO system log (item3). Because item3 runs immediately after the launch with no wait, the state string is whatever the child token holds at that instant \u2014 in practice \"running\" (or \"waiting\"/\"initializing\"), essentially never \"completed\".",
+  "Writes \"Workflow finished\" to the vRO system log (item3). This line is misleading: it means the PARENT is about to finish, not the launched child.",
+  "Mutates workflow-scope attributes: first := 1, second := 2 (item2), wfToken := the returned WorkflowToken (item1). These are internal state only; the workflow declares no outputs so none of this is returned to a caller.",
+  "On the null-lookup path only: terminates the run in a failed/error state (uncaught throw of the string \"Workflow not found\")."
+ ],
+ "assumptions": [
+  "Execution order is strictly linear with no branches, joins, loops, or error handlers: item4 (start) -> item2 (prepareItems) -> item1 (asyncCall) -> item3 (printAsync) -> item0 (end). item0 has end_mode \"0\", i.e. a normal successful finish, NOT a throw.",
+  "The five workflow-scope attributes all start as null (value null, is_null_sentinel false \u2014 genuinely unset, not vRO's __NULL__ sentinel). Only first, second and wfToken are ever used.",
+  "Attributes `waitingTimer` (Date) and `counter` (number) are declared but never read or written by any item, and no item is of type waitTimer/sleep. They are dead leftovers from the async/wait-for-timer template this test was derived from. A conversion should drop them, or keep them only as inert declarations; there is no timer behaviour to reproduce.",
+  "item2 (\"prepareItems\") declares in_bindings for first and second but its script unconditionally overwrites both (first = 1; second = 2). The inbound bindings are therefore irrelevant \u2014 the values are always literals 1 and 2, never parameterised. The out_bindings are what matter: they publish 1 and 2 to workflow scope.",
+  "item1's in_bindings make the workflow-scope attributes first and second visible to the script as local variables of the same name; its out_binding publishes the script's local wfToken back to the workflow-scope attribute wfToken (export_name \"wfToken\"). item3 reads that attribute back in via its in_binding. This is the whole point of the test: a WorkflowToken survives an out-binding/in-binding round trip between items.",
+  "The parameter names put into the Properties map (\"first\", \"second\") are assumed to match input parameter names declared by the child workflow 9e4503db-cbaa-435a-9fad-144409c08df0, and to be of type number. vRO's execute() does not validate extra/missing keys the way a typed call would; a name mismatch would surface inside the child, not here.",
+  "No plugin objects, no SecureString, no configuration elements, no actions (script_module null everywhere), and no nested synchronous workflow calls (linked_workflow_id null everywhere) are involved. The only SDK surface used is Server.getWorkflowWithId, Workflow.execute, WorkflowToken.id/.state and System.log.",
+  "The workflow has no presentation/OGNL, so there is no input form and nothing to prompt a user for; it is run headless with zero arguments."
+ ],
+ "open_questions": [
+  {
+   "theme": "endpoint identity",
+   "question": "What is the workflow with id 9e4503db-cbaa-435a-9fad-144409c08df0 \u2014 its name, its declared input parameters, and what it does with two numbers (the names first/second suggest an add/sum test workflow)?",
+   "why_it_matters": "The id is a vRO-instance-specific UUID and will not exist in the target system. Whoever converts this must substitute a concrete reference to the migrated child, and whoever writes tests needs to know what a successful child run looks like and what signature it accepts. The parent itself never inspects the child's result, so the child's semantics do not affect the parent's control flow \u2014 only the reference does."
+  },
+  {
+   "theme": "error semantics",
+   "question": "Should a missing child workflow remain a hard failure of the whole run, and must the thrown value stay the bare string \"Workflow not found\" (as opposed to a typed error)?",
+   "why_it_matters": "vRO lets you throw a raw string; most target runtimes want an Error/exception type with a code. Since there is no catch_name anywhere, the difference is invisible to this workflow but fully visible to whatever invokes it and to any test asserting the failure message."
+  },
+  {
+   "theme": "scheduling",
+   "question": "Is the immediate read of wfToken.state in item3 intended to observe a still-running child (a deliberate demonstration that execute() does not block), or was a wait-for-completion step meant to exist here \u2014 as the unused waitingTimer/counter attributes hint?",
+   "why_it_matters": "It decides whether a test may assert a specific state string. If the async behaviour is the point, the test can only assert that a token id exists and that the state is a non-terminal value; asserting \"completed\" would be a race. It also decides whether the converted version should add a join/await that the XML does not contain."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The graph is linear with five reachable items, no branches, joins, cycles, catch handlers or unreachable nodes, and every item's script is present in full \u2014 so the parent's control flow, its state mutations, its three log lines, its single error path and its normal-mode end are fully determined by what was given. The only opacity is the launched child workflow behind UUID 9e4503db-cbaa-435a-9fad-144409c08df0, and because the launch is fire-and-forget (launched_workflow_id, execute() returning a token, no wait and no reading of child outputs) the child's internals cannot change this workflow's behaviour \u2014 only the reference to it needs resolving at conversion time."
+}

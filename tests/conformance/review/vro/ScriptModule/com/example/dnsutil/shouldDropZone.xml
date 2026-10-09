@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="shouldDropZone" result-type="boolean" api-version="6.0.0" id="a3000000-0000-4000-8000-000000000012" version="1.0.0" allowed-operations="vef"><description/><param n="eventType" t="string"/><param n="status" t="string"/><script encoded="false"><![CDATA[var failed = status === "FAILED";
+if (eventType === "DESTROY_DEPLOYMENT") {
+    return true;
+}
+if (eventType === "CREATE_DEPLOYMENT") {
+    return failed;
+}
+return false;]]></script></dunes-script-module>

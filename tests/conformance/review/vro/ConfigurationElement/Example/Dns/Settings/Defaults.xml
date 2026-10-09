@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config-element id="c3000000-0000-4000-8000-000000000001" version="1.0.0">
+  <display-name><![CDATA[Defaults]]></display-name>
+  <atts>
+    <att name="suffix" type="string" read-only="false">
+      <value encoded="n"><![CDATA[zones.example.test]]></value>
+    </att>
+    <att name="ttl" type="number" read-only="false">
+      <value encoded="n"><![CDATA[300]]></value>
+    </att>
+  </atts>
+</config-element>

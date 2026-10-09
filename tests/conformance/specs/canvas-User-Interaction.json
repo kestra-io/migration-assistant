@@ -1,0 +1,175 @@
+{
+ "purpose": "A vRO 8 demonstration/regression workflow from the VMware PSCoE library (\"VMware.PSCoE\" category) that exercises the three variants of vRO's user-interaction (\"input\") item. It logs a start line, then suspends execution three times waiting for a human to answer through the vRO client/REST API: (1) an unrestricted, untimed gate that collects nothing, (2) a gate restricted to specific LDAP/SSO principals with an absolute timeout date that collects one string answer and publishes it as the workflow output `userInteractionAnswer`, and (3) a second unrestricted gate that has an exception handler wired to it. Whichever way item4 finishes \u2014 normally or by throwing \u2014 a scriptable task logs an exit line and the workflow ends normally. Its real content is the user-interaction configuration (assignees, assignee groups, group, timeout date) and the error routing, not any business logic: there are no plugin calls, no actions, no nested workflows, and the only SDK call in the whole workflow is System.log.",
+ "inputs": [
+  {
+   "name": "security_assignees",
+   "type": "Array/Any (in vRO practice Array/LdapUser or Array/string principal ids)",
+   "meaning": "The set of individual principals allowed to answer the second user interaction (item3, \"userInteraction2Enter\"). Bound to that item's reserved `security.assignees` parameter. Only these users see the task in their vRO \"Waiting for user input\" inbox and may submit the answer.",
+   "is_secret": false
+  },
+  {
+   "name": "security_assignee_groups",
+   "type": "Array/Any (in vRO practice Array/LdapGroup)",
+   "meaning": "The set of groups whose members are allowed to answer item3. Bound to that item's reserved `security.assignee.groups` parameter. Union with security_assignees for authorization.",
+   "is_secret": false
+  },
+  {
+   "name": "security_group",
+   "type": "Any (in vRO practice LdapGroup)",
+   "meaning": "Single legacy group authorized to answer item3; bound to the reserved `security.group` parameter of the same item.",
+   "is_secret": false
+  },
+  {
+   "name": "timeout_date",
+   "type": "Any (must be a Date for vRO to accept it; `__NULL__`/absent means no timeout)",
+   "meaning": "Absolute wall-clock deadline for item3 only. Bound to that item's reserved `timeout.date` parameter. If the date passes before someone answers, the item raises a timeout exception. Note this is NOT relative \u2014 it is a point in time, so a caller passing a stale date makes item3 fail almost immediately.",
+   "is_secret": false
+  }
+ ],
+ "outputs": [
+  {
+   "name": "userInteractionAnswer",
+   "type": "string",
+   "meaning": "The string the answering human typed into the second user interaction (item3). This is the only value the workflow actually collects: item3's out_binding writes the item's answer parameter `userInteractionAnswer` to the workflow-scope output of the same name. Empty/null if the answerer left the field blank and it was not mandatory."
+  },
+  {
+   "name": "timeoutDate",
+   "type": "Any (intended Date)",
+   "meaning": "Declared output written by whichever exit task runs (item5 or item6) via an out_binding. Neither script ever assigns the variable, and nothing binds `timeout_date` into it, so in practice it is always unset (undefined/null) when the workflow ends. Anyone reimplementing this should treat the observable value as null unless told otherwise \u2014 see open questions."
+  }
+ ],
+ "external_systems": [
+  {
+   "system": "vRealize Orchestrator workflow engine \u2014 user interaction subsystem",
+   "how": "Three `input` items suspend the running token in state \"waiting\" and create a user-interaction task. The token resumes only when an authorized principal answers it (vRO client \"Answer\" action, or the Orchestrator REST API user-interaction/answer endpoint). This makes the workflow long-running and unbounded in duration: item2 and item4 have no timeout date at all and will wait forever. Any reimplementation needs an equivalent human-task / suspend-resume mechanism, not a synchronous prompt.",
+   "items": [
+    "item2 \"userInteraction1Enter\" \u2014 no security bindings, no timeout, no answer collected (pure acknowledge-and-continue gate; anyone with rights on the workflow token may release it)",
+    "item3 \"userInteraction2Enter\" \u2014 restricted to security_assignees / security_assignee_groups / security_group, deadline timeout_date, collects one string `userInteractionAnswer`",
+    "item4 \"userInteraction3Enter\" \u2014 no security bindings, no timeout, no answer collected; the only item with an error handler"
+   ]
+  },
+  {
+   "system": "vRO authorization backend (vSphere SSO / LDAP / VMware Identity provider) ",
+   "how": "Read-only: the principal objects passed in as security_assignees, security_assignee_groups and security_group are resolved by the engine to decide who is permitted to answer item3. The workflow itself never queries the directory.",
+   "items": [
+    "security.assignees",
+    "security.assignee.groups",
+    "security.group"
+   ]
+  },
+  {
+   "system": "vRO logging (System.log \u2192 workflow execution log and server log)",
+   "how": "Three write-only log lines, one per scriptable task.",
+   "items": [
+    "\"Starting workflow\" (item1)",
+    "\"User Interaction exit at <timeoutDate.toUTCString()>\" (item5)",
+    "\"User Interaction exit on exception at <timeoutDate.toUTCString()>\" (item6)"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "item4 \"userInteraction3Enter\" \u2014 outcome of the third user interaction",
+   "condition": "Does the user-interaction item complete normally, or does it raise an exception (e.g. the execution is cancelled/failed while waiting, or the answer is rejected)?",
+   "branches": [
+    {
+     "when": "Answered normally",
+     "goes_to": "item5 \"exit\"",
+     "does": "Logs \"User Interaction exit at \" + timeoutDate?.toUTCString(), writes the (unassigned) timeoutDate out-binding, then falls through to item0."
+    },
+    {
+     "when": "An exception is thrown by the item",
+     "goes_to": "item6 \"exitOnException\" (catch_name edge)",
+     "does": "Logs \"User Interaction exit on exception at \" + timeoutDate?.toUTCString(), writes the same unassigned timeoutDate out-binding, then falls through to item0. The exception is swallowed \u2014 the workflow still ends via the normal end (end_mode \"0\"), so a caller sees success, not a failure."
+    }
+   ]
+  },
+  {
+   "item": "item3 \"userInteraction2Enter\" \u2014 timeout.date bound to timeout_date",
+   "condition": "Is the answer submitted before timeout_date elapses?",
+   "branches": [
+    {
+     "when": "Answered in time",
+     "goes_to": "item4",
+     "does": "Publishes the answered string to the workflow output userInteractionAnswer and continues."
+    },
+    {
+     "when": "timeout_date passes with no answer",
+     "goes_to": "no handler \u2014 item3 has no catch_name",
+     "does": "The timeout exception propagates out of the workflow: the execution ends in state \"failed\". userInteractionAnswer and timeoutDate are never produced. This asymmetry (the timed item is unprotected, the untimed item is protected) is what the graph says; confirm it is intentional."
+    },
+    {
+     "when": "timeout_date is __NULL__/not supplied",
+     "goes_to": "item3 stays suspended",
+     "does": "No deadline is registered; the item waits indefinitely, like item2 and item4."
+    }
+   ]
+  },
+  {
+   "item": "item3 \u2014 answer authorization",
+   "condition": "Is the principal attempting to answer contained in security_assignees, in security_assignee_groups, or in security_group?",
+   "branches": [
+    {
+     "when": "Yes",
+     "goes_to": "item3 resumes",
+     "does": "Answer accepted, userInteractionAnswer set."
+    },
+    {
+     "when": "No",
+     "goes_to": "item3 stays suspended",
+     "does": "vRO does not surface the task to that user / refuses the answer; the token keeps waiting until an authorized principal answers or the timeout fires."
+    },
+    {
+     "when": "All three security inputs are empty/__NULL__",
+     "goes_to": "item3 stays suspended until anyone with workflow rights answers",
+     "does": "With no assignees configured the item falls back to the engine default (the execution's own credentials / users with rights on the workflow), i.e. it behaves like item2 and item4."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Suspends the workflow execution three separate times in vRO's \"waiting\" state; the execution can stay alive indefinitely (items 2 and 4 have no timeout at all). Any conversion must preserve durable suspend/resume, not block a thread.",
+  "Creates three user-interaction tasks visible in the vRO inbox; the second one is scoped to the supplied principals and carries a deadline.",
+  "Writes three lines to the workflow/server log via System.log. Because `timeoutDate` is never assigned in either exit script, the two exit lines render literally as \"...exit at undefined\" / \"...exit on exception at undefined\".",
+  "Sets workflow outputs userInteractionAnswer (from the human answer at item3) and timeoutDate (always unset).",
+  "Swallows any exception thrown by item4: the workflow finishes through the normal end item (end_mode \"0\") instead of failing.",
+  "No external mutation of any kind \u2014 no vCenter/plugin objects, no actions, no nested or launched workflows, no configuration elements."
+ ],
+ "assumptions": [
+  "The `input` item type is vRO's user-interaction item; `security.assignees`, `security.assignee.groups`, `security.group` and `timeout.date` are its reserved configuration parameters rather than ordinary data inputs. Their names in the export confirm this.",
+  "timeout_date is expected to be a java.util.Date-compatible value: both exit scripts call `.toUTCString()` on a value of the same conceptual type, and vRO's timeout.date only accepts a Date.",
+  "item2 and item4 collect nothing from the human (they have no out_bindings), so they are acknowledge/continue gates. If the original vRO presentation attached extra external input parameters to them, those are not present in this export.",
+  "The scripts are TypeScript compiled down by vRealize Build Tools \u2014 `timeoutDate === null || timeoutDate === void 0 ? void 0 : timeoutDate.toUTCString()` is a downleveled `timeoutDate?.toUTCString()`. The source presumably intended timeoutDate to hold a value; the binding that would supply it is missing.",
+  "The graph metadata's `unreachable_items: [\"item6\"]` is an artifact of walking only `next` edges. item6 IS reachable, via item4's catch edge, and must be implemented.",
+  "Both exit paths converge on item0, an end item with end_mode \"0\" = normal completion (not a throw)."
+ ],
+ "open_questions": [
+  {
+   "theme": "data shape",
+   "question": "Where should the `timeoutDate` output come from? It is declared as a workflow output and bound out of both exit tasks, but neither script assigns it and nothing binds the `timeout_date` input into it \u2014 so as written it is always null. Should the reimplementation echo the `timeout_date` input (making the log lines meaningful), or faithfully reproduce the always-null behaviour?",
+   "why_it_matters": "Determines whether the converted workflow returns a real date or null, and whether the two log lines read as a timestamp or as \"undefined\". Tests will assert on this."
+  },
+  {
+   "theme": "data shape",
+   "question": "What does the answering human actually see and fill in at userInteraction1Enter (item2) and userInteraction3Enter (item4)? The export carries no external input parameters or presentation for them, and no out_bindings.",
+   "why_it_matters": "If they are meant to present a form, the converted human tasks need those fields; if they are bare acknowledgements, a simple \"continue\" approval suffices."
+  },
+  {
+   "theme": "endpoint identity",
+   "question": "What concrete types are security_assignees, security_assignee_groups and security_group at runtime \u2014 LdapUser/LdapGroup plugin objects, or plain principal-name strings? All three are declared as untyped Any/Array/Any.",
+   "why_it_matters": "The target system must resolve them against the same directory to reproduce who may answer; a string list and a directory-object list need different lookup code."
+  },
+  {
+   "theme": "error semantics",
+   "question": "Is the asymmetry deliberate \u2014 the timed interaction (item3) has no catch so a timeout fails the whole workflow, while the untimed interaction (item4) has a catch that swallows exceptions and ends normally? And which exception classes is item4's handler expected to see, given it can never time out?",
+   "why_it_matters": "It decides whether a timeout surfaces as a workflow failure or as the 'exitOnException' path, which is the single most visible behavioural difference for a caller and for tests."
+  },
+  {
+   "theme": "scope",
+   "question": "Is this a production workflow or a PSCoE sample/integration fixture that exists only to prove user-interaction bindings serialize correctly?",
+   "why_it_matters": "If it is a fixture, the conversion target is the binding configuration and the graph shape; if it is production, the indefinite waits on items 2 and 4 are a real operational concern that should be given a deadline."
+  }
+ ],
+ "confidence": "medium",
+ "confidence_reason": "The control flow is fully determined \u2014 six reachable items, one error edge, one normal end, no branches, no cycles, no actions, no nested workflows, and all three scripts are trivial System.log calls that are quoted in full. What is not determined by the export is the human-facing side: the presentation/form of items 2 and 4 is absent, the runtime types behind the untyped Any security inputs have to be inferred from the reserved parameter names, and the `timeoutDate` output is provably never assigned, which reads more like a defect in the source than a specification. Those gaps affect what a reimplementation must show the user and what it returns, so this is not a high."
+}

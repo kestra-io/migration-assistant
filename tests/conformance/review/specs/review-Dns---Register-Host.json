@@ -1,0 +1,37 @@
+{
+ "purpose": "Adds a host record in Infoblox for every machine of the deployment, under the zone the registry holds for it.",
+ "inputs": [
+  {
+   "name": "inputProperties",
+   "type": "Properties",
+   "meaning": "vRA event payload"
+  }
+ ],
+ "outputs": [],
+ "external_systems": [
+  {
+   "system": "Infoblox",
+   "how": "WAPI over REST"
+  },
+  {
+   "system": "Nuage VSD",
+   "how": "REST"
+  }
+ ],
+ "decisions": [],
+ "side_effects": [
+  "writes the zone registry"
+ ],
+ "assumptions": [],
+ "open_questions": [
+  {
+   "question": "Should a failed Infoblox call be retried before the workflow fails?",
+   "why_it_matters": "retry policy",
+   "theme": "error semantics"
+  }
+ ],
+ "suspected_defects": [],
+ "state_records": [],
+ "confidence": "high",
+ "confidence_reason": "synthetic spec for the review tests"
+}

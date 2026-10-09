@@ -1,0 +1,66 @@
+{
+ "purpose": "A minimal vRO reference/demo workflow (\"Default Error Handler Custom Item\", category VMware.PSCoE) whose only real work is writing two lines to the vRO system log. The happy path logs \"Initiating workflow execution\" and ends normally. Separately, the workflow defines a custom default (workflow-level) error handler consisting of a scripted task that logs the captured error message and then reaches its own normal-completion end point. It exists to demonstrate/regression-test that a vRO workflow's default error handler can be redirected to an arbitrary custom workflow item rather than to the built-in handler; it touches no external system, no plugin object, no action, and no other workflow.",
+ "inputs": [],
+ "outputs": [],
+ "external_systems": [
+  {
+   "system": "vRealize Orchestrator platform logging (System.log)",
+   "how": "Two scripted tasks call System.log(). item1 (\"initiateWorkflow\") writes the literal \"Initiating workflow execution\". item3 (\"processError\") writes \"Processing error using custom task with message '<errorMessage>'\" where <errorMessage> is the workflow attribute errorMessage concatenated into the string. Output goes to the vRO server log / workflow run log only.",
+   "items": [
+    "System.log(\"Initiating workflow execution\")",
+    "System.log(\"Processing error using custom task with message '\".concat(errorMessage, \"'\"))"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "Whether the workflow run raises an error",
+   "condition": "An exception is thrown anywhere during execution of the normal path (item1 or item2)",
+   "branches": [
+    {
+     "when": "No error \u2014 normal execution",
+     "goes_to": "item1 -> item2 -> item0",
+     "does": "item1 logs \"Initiating workflow execution\"; item2 (\"goToEnd\") is an empty scripted task with no script, no bindings \u2014 a pure pass-through/routing node; item0 is an end item with end_mode \"0\", i.e. the workflow finishes successfully."
+    },
+    {
+     "when": "An error occurs and the workflow-level default error handler fires",
+     "goes_to": "item3 -> item5",
+     "does": "item3 (\"processError\") reads the workflow attribute errorMessage (in_binding errorMessage : string, export_name errorMessage) and logs \"Processing error using custom task with message '<errorMessage>'\"; item5 is an end item with end_mode \"0\", so the run terminates as COMPLETED, not FAILED \u2014 the error is swallowed, not rethrown."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Writes exactly one log line to the vRO run log on the success path: \"Initiating workflow execution\".",
+  "Writes exactly one log line on the error path: \"Processing error using custom task with message '<errorMessage>'\" (single-quoted around the message text).",
+  "Sets/consumes the workflow-scope attribute errorMessage (string, initial value null/unset). On the error path vRO populates it with the caught exception text before item3 runs; nothing in the workflow's own scripts ever assigns it.",
+  "No state is changed outside the run: no file, database, VM, REST call, configuration element, or other workflow is touched. sdk_calls is exactly [System.log]; action_calls, config_refs, plugin_types are all empty.",
+  "The error path does NOT propagate failure: because item5 has end_mode \"0\", a handled error yields a successfully-completed workflow token."
+ ],
+ "assumptions": [
+  "item3/item5 are reported as unreachable_items because the extraction models only item-to-item edges (next/alt/catch). No item carries catch_name, yet the workflow description says \"error handler redirecting to a workflow item\" and item3's only input is the errorMessage attribute \u2014 so I read item3 as the target of the workflow-level default error handler (vRO's workflow-scope error-handler binding), not as dead code. A converted implementation should therefore wrap the whole run in a try/catch whose catch branch executes item3's logging and then completes normally.",
+  "errorMessage is assumed to be populated by the vRO runtime from the thrown exception (vRO's default error handler binds the error text into the attribute named in its output binding). It is never assigned by any script here, so on a hypothetical direct invocation of item3 it would be null and the log line would read \"... with message 'null'\".",
+  "item2 (\"goToEnd\") carries no script and no bindings; it is treated as a no-op routing node whose only purpose is graph shape, and can be collapsed into a direct edge item1 -> item0 without changing behaviour.",
+  "The out_binding errorMessage on end item item5 is treated as inert: the workflow declares no outputs, so there is nothing for it to write into. It is an artifact of how the error-handler end point was authored.",
+  "The attributes entry errorMessage has value null with is_null_sentinel false, i.e. genuinely unset rather than vRO's __NULL__ sentinel."
+ ],
+ "open_questions": [
+  {
+   "theme": "error semantics",
+   "question": "Is item3 wired as the workflow's default/global error handler (catching any exception from any item), or is it an orphaned fragment left in the workflow with no attachment at all?",
+   "why_it_matters": "The supplied graph has zero edges into item3 and no catch_name on any item. If it is the global handler, the conversion must wrap the entire body in try/catch; if it is truly orphaned, the correct conversion is a two-line linear workflow and the error-handling code should be dropped. The two readings produce materially different targets and different tests."
+  },
+  {
+   "theme": "error semantics",
+   "question": "Should a handled error leave the run marked successful (end_mode \"0\" on item5) or should the target runtime surface it as a failure?",
+   "why_it_matters": "As written the workflow swallows errors and reports success, which is unusual for a handler. A converter that maps \"error handler\" to a failing/rethrowing path would change observable run status and break any caller that branches on it."
+  },
+  {
+   "theme": "data shape",
+   "question": "What exact string does the vRO runtime place in errorMessage \u2014 the exception message only, or a stringified exception/stack?",
+   "why_it_matters": "The only observable behaviour of the error path is the formatted log line, so a test asserting on that line needs the exact substitution. Nothing in the workflow determines it."
+  }
+ ],
+ "confidence": "medium",
+ "confidence_reason": "The reachable graph and both scripts are fully determined: three items, one linear path, two literal log calls, no actions, no nested workflows, no plugin objects, no external calls. The uncertainty is entirely structural \u2014 the workflow's stated purpose is its error handler, but the extraction shows no edge attaching item3 to anything, so the attachment (and the population of errorMessage) has to be inferred from the workflow name/description and the binding rather than read off the graph."
+}

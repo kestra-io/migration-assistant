@@ -1,0 +1,79 @@
+{
+ "purpose": "\"Decision Happy\" (category VMware.PSCoE) is a minimal branch-shape test workflow: it evaluates a single custom decision on the workflow attribute `waitingTimer` (a Date, initialised to null) and either passes through a do-nothing task named `shouldGoHere` or goes straight to the end element. It touches no external system, has no inputs, no outputs, and produces no side effects \u2014 its entire observable behaviour is which of the two paths through the item graph is taken. Per the workflow's own description, the intent is that the decision's \"else\"/false arm goes to the end element and its \"target\"/true arm goes to `shouldGoHere`, which then also goes to the end element.",
+ "inputs": [
+  {
+   "name": "waitingTimer",
+   "type": "Date \u2014 workflow ATTRIBUTE, not an input parameter",
+   "meaning": "Workflow-scope attribute declared with type Date, read_only=false, and value null (the XML carries a real null, not the vRO `__NULL__` sentinel \u2014 is_null_sentinel is false). It is never assigned by any item in this workflow, so at run time it holds whatever the platform gives an unset Date attribute (null). It is bound into the decision item `item1` under the same export_name `waitingTimer` and is the only piece of state the workflow reads.",
+   "is_secret": false
+  }
+ ],
+ "outputs": [],
+ "external_systems": [],
+ "decisions": [
+  {
+   "item": "item1 \u2014 display name \"decisionElement\", type custom-condition, the workflow's root_item (entry point)",
+   "condition": "Custom decision script, verbatim: `return waitingTimer !== null;` \u2014 a JavaScript strict-inequality test against null on the in-bound `waitingTimer` Date attribute. Note the operator is `!==`, not `!=`: an `undefined` value would satisfy it (true), whereas a genuine `null` would not.",
+   "branches": [
+    {
+     "when": "Script returns true (waitingTimer is a non-null value \u2014 i.e. an actual Date, or anything that is not strictly null)",
+     "goes_to": "item2 (out_name / \"next\" edge)",
+     "does": "Runs the task `shouldGoHere`, then falls through to item0."
+    },
+    {
+     "when": "Script returns false (waitingTimer is strictly null \u2014 which is the case for the shipped attribute default, since nothing ever sets it)",
+     "goes_to": "item0 (alt_out_name / \"alt\" edge \u2014 the false arm)",
+     "does": "Ends the workflow normally, bypassing `shouldGoHere` entirely."
+    }
+   ]
+  },
+  {
+   "item": "item2 \u2014 display name \"shouldGoHere\", type task",
+   "condition": "No condition \u2014 unconditional single successor. This task has script = null, in_bindings = [], out_bindings = [] and no script_module, so it calls no action and executes nothing. It is a pure no-op / graph marker.",
+   "branches": [
+    {
+     "when": "Always, once reached",
+     "goes_to": "item0 (out_name / \"next\" edge)",
+     "does": "Does nothing observable, then ends the workflow normally."
+    }
+   ]
+  },
+  {
+   "item": "item0 \u2014 type end, end_mode \"0\"",
+   "condition": "Terminal element reached from both arms (the graph's single join point). end_mode \"0\" means normal completion, NOT a throw.",
+   "branches": [
+    {
+     "when": "Always",
+     "goes_to": "(workflow terminates)",
+     "does": "Completes the workflow successfully with no outputs."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "None. No item writes any out_binding, no attribute is mutated, no output parameter exists, no file/log/e-mail/API call is made.",
+  "No error handling exists anywhere: no item defines catch_name, and the single end element uses end_mode \"0\" (normal completion), so the workflow has no failure path of its own. The only way it can fail is if the decision script itself throws.",
+  "No workflow is called or launched (no linked_workflow_id, no launched_workflow_id), no action is invoked (script_module is null on every item, action_calls is empty), no plugin objects or SecureStrings are involved (plugin_types, sdk_calls, config_refs all empty).",
+  "No presentation/OGNL logic, so no input-form behaviour to reproduce."
+ ],
+ "assumptions": [
+  "With the attribute left at its declared null value and no item ever assigning it, the true-arm task `shouldGoHere` is unreachable in a default, unparameterised run: the decision evaluates false and control goes directly to the end element. The true arm is only exercised if `waitingTimer` is pre-seeded (e.g. by a caller setting the attribute, by a vRO debug/run-time value, or by a future edit).",
+  "`shouldGoHere` being an empty task is taken as intentional \u2014 a placeholder proving the branch target is wired, not an item whose body was lost. There is no script text to convert.",
+  "The whole workflow is read as a fixture/test artefact for decision-element graph shape (name \"Decision Happy\", description describing the wiring rather than a business outcome, category VMware.PSCoE). A converter should preserve the branch topology exactly rather than optimise the no-op task away, because the topology is the thing under test.",
+  "Graph is fully reachable and acyclic: 3 items, 3 edges, 1 branch, 1 join, depth 2, no unreachable items. Both arms converge on the same end element."
+ ],
+ "open_questions": [
+  {
+   "theme": "error semantics",
+   "question": "Should the target implementation preserve the strict `!==` semantics (so an `undefined`/absent value takes the TRUE arm while a null takes the FALSE arm), or normalise both null and undefined to \"not set\" (both take the FALSE arm)?",
+   "why_it_matters": "Most target languages have a single absent value, so a naive translation to `waitingTimer != null` or `is not None` silently flips the branch for the undefined case. If a test seeds the attribute as undefined rather than null, the two readings produce opposite paths through the graph, which is precisely the behaviour this fixture appears to exist to pin down."
+  },
+  {
+   "theme": "scope",
+   "question": "Is `waitingTimer` intended to be externally settable (promoted to an input parameter or otherwise injectable by the caller/test harness), or is it strictly internal state that is always null at the decision point?",
+   "why_it_matters": "It decides whether the true arm through `shouldGoHere` is reachable at all. If it stays internal-and-never-assigned, the converted workflow has exactly one executable path and the true arm can only be covered by dead-code inspection; if it is injectable, a test must be able to set it to exercise both arms."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The item graph is complete and small (3 items, 3 edges, no cycles, nothing unreachable), the only decision logic is one line of inline JavaScript given verbatim, and there are no actions, linked or launched workflows, plugin objects, configuration elements, or SDK calls hiding behaviour outside what was supplied. The only genuine ambiguities are the null-vs-undefined semantics of `!==` and whether the never-assigned `waitingTimer` attribute is meant to be settable from outside \u2014 both recorded as open questions rather than unknown behaviour."
+}

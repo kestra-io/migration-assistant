@@ -1,0 +1,69 @@
+{
+ "purpose": "Workflow \"Install\" (category VMware.PSCOE.VRBT_Demo) is a single-step stub that accepts one string input named `json`, parses it as JSON, and writes the re-serialized result to the vRealize Orchestrator server log via System.log. It performs no installation, no provisioning, and no call to any external or plugin system \u2014 despite its name, its only observable effect is a log line. Structurally it is linear: root_item `item1` (scriptable task \"Install\") \u2192 `item0` (end item, end_mode \"0\" = normal completion). The only practical behaviours a converter must preserve are (a) the input parses as JSON and the workflow fails loudly if it does not, and (b) the canonical JSON form of that parsed value is emitted to the log.",
+ "inputs": [
+  {
+   "name": "json",
+   "type": "string",
+   "meaning": "A JSON document supplied as a raw string. It is bound into the single task item under the same workflow-scope export_name `json`. Its content is never inspected field-by-field \u2014 the script only parses it and re-serializes it \u2014 so no schema is implied or enforced by this workflow. It must be syntactically valid JSON (any JSON value: object, array, string, number, boolean, or null), otherwise JSON.parse throws.",
+   "is_secret": false
+  }
+ ],
+ "outputs": [],
+ "external_systems": [
+  {
+   "system": "vRealize Orchestrator server log (System.log)",
+   "how": "The single scriptable task calls System.log(JSON.stringify(arg)) exactly once, where `arg` is JSON.parse(json). This writes one INFO-level line to the vRO workflow/server log, visible in the workflow run's Logs tab. This is the only outbound interaction in the entire workflow \u2014 there are no plugin types, no configuration element references, no action calls, and no linked or launched child workflows.",
+   "items": [
+    "System.log \u2014 one call per run, argument is the canonicalized JSON string of the parsed input"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "item1 (scriptable task \"Install\")",
+   "condition": "Whether the `json` input string is syntactically valid JSON, as judged by JSON.parse. This branch is implicit in the script \u2014 it is NOT modelled in the item graph (item1 has no catch_name and no alt_out_name), so there is no error-handling item to route to.",
+   "branches": [
+    {
+     "when": "`json` parses successfully (including the degenerate valid values \"null\", \"0\", \"\\\"\\\"\", \"[]\", \"{}\")",
+     "goes_to": "item0 (end, end_mode \"0\")",
+     "does": "Logs JSON.stringify(parsed) and completes the workflow normally with no outputs. Note that JSON.stringify of a round-tripped value is not byte-identical to the input: whitespace is removed, object key order follows the parsed object's insertion order, and a parsed value of `undefined` cannot occur but a parsed `null` yields the literal string \"null\"."
+    },
+    {
+     "when": "`json` is malformed, empty, or vRO's __NULL__ (i.e. the input was left unset, so JSON.parse receives null)",
+     "goes_to": "no item \u2014 the exception propagates out of item1",
+     "does": "JSON.parse throws a SyntaxError. Because item1 defines no catch_name, the exception is unhandled and the workflow run terminates in the FAILED state with that SyntaxError as the error. Nothing is logged in this case, because System.log is on the line after the parse."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Writes exactly one line to the vRO server/workflow log containing the full canonicalized JSON payload. If the caller ever passes credentials, tokens, or other sensitive material inside `json`, this workflow leaks them verbatim into the log \u2014 the input is typed `string`, not `SecureString`, and the script applies no redaction.",
+  "No state is mutated anywhere else: no files, no vCenter/plugin objects, no configuration elements, no workflow outputs, no attributes (the workflow declares none), and no child workflows are started or waited on.",
+  "On invalid input, the run is recorded in vRO's run history as FAILED \u2014 which is itself an observable side effect for anything polling run state."
+ ],
+ "assumptions": [
+  "The parsed value `arg` is deliberately discarded \u2014 it is assigned and then used only as the argument to JSON.stringify. There is no dead-code branch, no later item consuming it, and no out_bindings on item1, so the variable exists purely to force validation-by-parsing. A faithful conversion must keep the parse (it is the only thing that can fail) even though the parsed object is otherwise unused.",
+  "The workflow name \"Install\" and the category suffix \"VRBT_Demo\" suggest this is a scaffold/demo placeholder \u2014 most likely the entry point of a vRealize Build Tools demo where real install logic is expected to be filled in later. Nothing in the code performs an install, so a converter should reproduce the logging stub, not invent installation behaviour.",
+  "System.log is assumed to be the intended observable output (INFO level). vRO also offers System.debug/warn/error; the choice of log() means the payload is visible at default log verbosity.",
+  "The workflow is assumed to be invoked with `json` always supplied; there is no default value and no presentation constraint (presentation_ognl is empty), so an unset input reaching the script as vRO's null sentinel is possible and results in the failure branch described above."
+ ],
+ "open_questions": [
+  {
+   "theme": "data shape",
+   "question": "What is the expected schema of the `json` payload \u2014 which keys and value types will real callers send?",
+   "why_it_matters": "The script never touches a single field, so the XML gives zero evidence about structure. A test author cannot write a meaningful positive-case fixture beyond 'any valid JSON', and a converter cannot introduce a typed model or validation without inventing one. If this stub is later filled in, the schema is the missing contract."
+  },
+  {
+   "theme": "error semantics",
+   "question": "Is failing the whole run on malformed JSON the intended contract, or should invalid input be caught and reported (e.g. logged and completed normally)?",
+   "why_it_matters": "There is no catch_name on item1, so today any parse error fails the run with an uncaught SyntaxError. A converted implementation could just as easily swallow the error, and the two behaviours are indistinguishable to callers that don't check run state. This must be pinned down before the target-language version chooses between throw and log-and-continue."
+  },
+  {
+   "theme": "scope",
+   "question": "Who invokes this workflow, and is it expected to eventually produce an output or perform a real installation?",
+   "why_it_matters": "The workflow declares no outputs and no attributes, so it is currently write-only. If a caller is expected to consume a result, or if the 'Install' behaviour is meant to be ported from somewhere else, the conversion target's signature (void vs. returning a value) differs, and the test suite would need cases that do not exist in the current code."
+  }
+ ],
+ "confidence": "high",
+ "confidence_reason": "The graph is fully determined: two items, one edge, no branches, joins, or cycles, everything reachable from root, and the single script is two lines of plain JavaScript with no action call, no linked/launched workflow, no plugin type, and no configuration reference. Every runtime behaviour \u2014 the parse, the one System.log call, normal termination via end_mode \\\"0\\\", and the unhandled-exception path \u2014 is readable directly from the supplied code. Confidence is about *what it does*, not *why*: the intent behind the name \\\"Install\\\" is genuinely unknown, which is captured in the open questions rather than lowering the behavioural confidence."
+}

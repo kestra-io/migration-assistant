@@ -1,0 +1,26 @@
+formatVersion: 1
+inputs:
+  serverCount:
+    type: integer
+    title: Servers
+    default: 1
+  dnsServer:
+    type: string
+    title: DNS server
+    default: ns1.sample-internal.corp
+resources:
+  web:
+    type: Cloud.vSphere.Machine
+    properties:
+      count: ${input.serverCount}
+      image: sample-image
+      dns: ${input.dnsServer}
+      networks:
+        - network: ${resource.web_net.id}
+  web_net:
+    type: Cloud.vSphere.Network
+    properties:
+      networkType: existing
+      networkName: SAMPLE-DMZ-VLAN42
+      constraints:
+        - tag: net:sample-dmz

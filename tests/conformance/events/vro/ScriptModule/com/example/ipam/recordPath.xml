@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="recordPath" result-type="string" api-version="6.0.0" id="a1000000-0000-4000-8000-000000000002" version="1.0.0" allowed-operations="vef"><description/><param n="kind" t="string"/><param n="name" t="string"/><script encoded="false"><![CDATA[var p = "/wapi/v2.12/" + kind;
+if (name) {
+    p += "?name=" + name;
+}
+return p;]]></script></dunes-script-module>

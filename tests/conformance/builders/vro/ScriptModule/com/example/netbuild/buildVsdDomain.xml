@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="buildVsdDomain" result-type="Any" api-version="6.0.0" id="a4000000-0000-4000-8000-000000000005" version="1.0.0" allowed-operations="vef"><description/><param n="endpoint" t="Properties"/><param n="name" t="string"/><script encoded="false"><![CDATA[var body = { name: name, description: "domain " + name };
+return System.getModule("com.example.netbuild").createVsdObject(endpoint, "domains", body);]]></script></dunes-script-module>

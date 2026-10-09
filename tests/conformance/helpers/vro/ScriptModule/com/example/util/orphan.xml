@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="orphan" result-type="string" api-version="6.0.0" id="a2000000-0000-4000-8000-000000000010" version="1.0.0" allowed-operations="vef"><description/><param n="x" t="string"/><script encoded="false"><![CDATA[return x + x;]]></script></dunes-script-module>

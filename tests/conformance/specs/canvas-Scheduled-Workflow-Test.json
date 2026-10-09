@@ -1,0 +1,88 @@
+{
+ "assumptions": [
+  "`launched_workflow_id` on item1 (9e4503db-cbaa-435a-9fad-144409c08df0) is metadata describing the same target that the script hardcodes in `Server.getWorkflowWithId(\"9e4503db-cbaa-435a-9fad-144409c08df0\")`; there is only one target workflow, resolved by that literal GUID at runtime.",
+  "`Workflow.schedule(parameters, date, recurrencePattern, recurrenceCycle)` with both trailing arguments `undefined` means a one-shot (non-recurring) schedule.",
+  "The target workflow accepts two numeric input parameters literally named `first` and `second`; nothing else is passed to it.",
+  "`System.getDate(\"1 minute from now\", undefined)` resolves against the vRO server clock/locale, producing a Date roughly 60 seconds in the future; the second argument (`undefined`) means no explicit reference/base date.",
+  "item1's in_bindings for `first`/`second`/`workflowScheduleDate` are read-only reads of the attributes set by item2; only `scheduledTask` is written back out of item1.",
+  "The workflow returns as soon as the task is registered \u2014 it never waits for, polls, or cancels the scheduled run.",
+  "`throw \"Workflow not found\"` is a raw JavaScript string throw, which in vRO fails the workflow item; with no `catch_name` on item1 the whole workflow run ends in FAILED state with that string as the error."
+ ],
+ "confidence": "medium",
+ "confidence_reason": "The item graph is strictly linear with no branches, joins, cycles, catches, or unreachable items, and all four task scripts are given in full, so this workflow's own behaviour is fully determined. What is not determined is the callee: workflow 9e4503db-cbaa-435a-9fad-144409c08df0 was not supplied, so its name, its input parameter contract (names/types of `first` and `second`), and what it actually does when the scheduled task fires are all inferred from the put keys alone. The exact arity/semantics of the trailing `undefined, undefined` arguments to `Workflow.schedule` also rests on the vRO SDK signature rather than on anything in this document.",
+ "decisions": [
+  {
+   "branches": [
+    {
+     "does": "Execute `throw \"Workflow not found\"`. item1 has no `catch_name`, so the error propagates and the workflow run fails immediately. item3 and item0 are never reached, no task is scheduled, and `scheduledTask` stays null.",
+     "goes_to": "workflow failure (no item)",
+     "when": "`Server.getWorkflowWithId(\"9e4503db-cbaa-435a-9fad-144409c08df0\")` returns null \u2014 i.e. no workflow with that GUID exists on this vRO server (wrong environment, workflow deleted, or package not imported)"
+    },
+    {
+     "does": "Build a `Properties` map with first=1 and second=2, call `workflowToLaunch.schedule(params, workflowScheduleDate, undefined, undefined)`, and store the returned Task in the `scheduledTask` attribute.",
+     "goes_to": "item3",
+     "when": "the workflow with that GUID is found"
+    }
+   ],
+   "condition": "item1 (`scheduleOtherWf`): is the target workflow resolvable by GUID?",
+   "item": "item1"
+  }
+ ],
+ "external_systems": [
+  {
+   "how": "`Server.getWorkflowWithId(\"9e4503db-cbaa-435a-9fad-144409c08df0\")` looks up a workflow definition on the local vRO server by GUID. Returns null (not an exception) when absent.",
+   "items": [
+    "Workflow definition 9e4503db-cbaa-435a-9fad-144409c08df0 (name unknown; not supplied)"
+   ],
+   "system": "vRealize Orchestrator workflow repository (local Server object)"
+  },
+  {
+   "how": "`Workflow.schedule(Properties parameters, Date startDate, undefined, undefined)` registers a one-shot future execution of the target workflow at `workflowScheduleDate` with inputs first=1, second=2. Returns a `Task` object (persisted server-side scheduler entry) which is kept in the `scheduledTask` attribute. This workflow does NOT wait for, monitor, or cancel that task \u2014 it is fire-and-forget, and the target workflow runs about one minute after this workflow finishes.",
+   "items": [
+    "Scheduled Task (id, state)"
+   ],
+   "system": "vRO scheduler / Task service"
+  },
+  {
+   "how": "`System.getDate(\"1 minute from now\", undefined)` parses the natural-language relative-time string against the vRO server's clock to produce a Date one minute in the future.",
+   "system": "vRO date/time service (server clock)"
+  },
+  {
+   "how": "Three `System.log` calls write to the workflow run log: \"Starting workflow\" (item4) and \"Scheduled task: <id>, [<state>]\" (item3). Nothing else is emitted.",
+   "system": "vRO run log"
+  }
+ ],
+ "inputs": [],
+ "open_questions": [
+  {
+   "question": "Which workflow is 9e4503db-cbaa-435a-9fad-144409c08df0, and what is its input parameter contract? The GUID is hardcoded in the script body of item1 (and duplicated in `launched_workflow_id`), and only the parameter names `first` and `second` are observable.",
+   "theme": "endpoint identity",
+   "why_it_matters": "A GUID means nothing outside the original vRO instance. The conversion needs the target's real identity (name/path/ID in the target system) and needs to know whether its parameters are really named `first`/`second` and typed as numbers; if the target expects different names or types, the scheduled run will fail at fire time with no signal visible from this workflow."
+  },
+  {
+   "question": "Should the failure to resolve the target workflow remain a hard failure of the whole run, and does the thrown value need to stay the bare string \"Workflow not found\"?",
+   "theme": "error semantics",
+   "why_it_matters": "item1 has no `catch_name`, so today this aborts the run with a non-Error string. A converted implementation must decide whether to preserve abort-on-missing-target (and whether any caller depends on the literal message text) or to surface a typed error / structured failure instead."
+  },
+  {
+   "question": "Should the resulting Task be surfaced anywhere beyond the log line \u2014 returned, persisted, or later polled/cancelled \u2014 and does anything downstream need to correlate with `scheduledTask.id`?",
+   "theme": "scope",
+   "why_it_matters": "The workflow declares no outputs, so the Task id currently escapes only as free text in the run log. If the target platform has no equivalent of a fire-and-forget scheduler handle, the converter needs to know whether to expose the id as a real output or drop it."
+  },
+  {
+   "question": "Which clock/timezone should back \"1 minute from now\", and what should happen if the computed instant has already passed by the time `schedule()` is called?",
+   "theme": "scheduling",
+   "why_it_matters": "`System.getDate` uses the vRO server's clock and locale; a 60-second horizon is tight enough that a slow run or clock skew between the orchestrator and the target scheduler can produce a past-dated schedule, whose behaviour (immediate run vs. rejection) differs between platforms."
+  }
+ ],
+ "outputs": [],
+ "purpose": "This is a self-contained vRO integration/smoke test (category VMware.PSCoE, described as \\\"Scheduling another workflow and binding values correctly\\\") that proves two things work: that one workflow can schedule another for future execution via the vRO scheduler, and that workflow-scope attribute bindings carry values correctly from item to item. It takes no inputs and produces no outputs. Concretely, it hardcodes two numbers (first=1, second=2), computes a run time one minute in the future from the vRO server clock, looks up the workflow with GUID 9e4503db-cbaa-435a-9fad-144409c08df0 on the local vRO server, schedules that workflow to run once at that time with `first` and `second` passed as a Properties bag, and logs the resulting scheduler Task's id and state. It does not wait for, poll, or cancel the scheduled run \u2014 it returns immediately after the task is registered, and the target workflow fires roughly a minute later, independently.",
+ "side_effects": [
+  "Writes \"Starting workflow\" to the vRO run log (item4).",
+  "Creates a persistent one-shot scheduler entry on the vRO server that will execute workflow 9e4503db-cbaa-435a-9fad-144409c08df0 approximately 60 seconds after item2 runs, with inputs first=1 and second=2. This entry outlives the current run: the target workflow executes after this workflow has already completed, and nothing here ever cancels or cleans it up. Whatever side effects that target workflow has are therefore triggered indirectly.",
+  "Writes \"Scheduled task: <task id>, [<task state>]\" to the vRO run log (item3). At this point the task state is the just-created pending/scheduled state, not a completed one.",
+  "Sets workflow-scope attributes as it goes: `first`=1, `second`=2, `workflowScheduleDate`=now+1min (item2), `scheduledTask`=the returned Task (item1). None are exposed as workflow outputs; they are internal state only.",
+  "Leaves the declared attributes `waitingTimer` (Date) and `counter` (number) completely unused \u2014 they are never read or written by any item, have no initial value, and are dead declarations, most likely leftovers from a copied waiting-timer/loop template. Do not carry them into the conversion as behaviour.",
+  "On the failure path (target workflow GUID not found) the only side effect is the item4 log line; no task is scheduled and the run ends in a failed state."
+ ]
+}

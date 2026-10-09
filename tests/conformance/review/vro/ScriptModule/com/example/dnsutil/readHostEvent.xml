@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="readHostEvent" result-type="Any" api-version="6.0.0" id="a3000000-0000-4000-8000-000000000011" version="1.0.0" allowed-operations="vef"><description/><param n="inputProperties" t="Properties"/><script encoded="false"><![CDATA[var names = inputProperties.get("resourceNames") || [];
+var addresses = inputProperties.get("addresses") || [];
+var hosts = [];
+for (var i = 0; i < names.length; i++) {
+    var ips = addresses[i] || [];
+    hosts.push({ name: names[i], ip: ips[0] });
+}
+return { deploymentId: inputProperties.get("deploymentId"), hosts: hosts };]]></script></dunes-script-module>

@@ -1,0 +1,20 @@
+{
+  "id": "sub-example-31",
+  "type": "RUNNABLE",
+  "name": "Dns - create zone",
+  "description": "Synthetic subscription",
+  "disabled": false,
+  "eventTopicId": "deployment.request.pre",
+  "runnableType": "extensibility.vro",
+  "runnableId": "e3000000-0000-4000-8000-000000000001",
+  "blocking": true,
+  "timeout": 10,
+  "priority": 10,
+  "criteria": "event.data.eventType == \"CREATE_DEPLOYMENT\"",
+  "contextual": false,
+  "constraints": {
+    "projectNames": [
+      "Example Project"
+    ]
+  }
+}

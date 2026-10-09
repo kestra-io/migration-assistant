@@ -1,0 +1,100 @@
+{
+ "purpose": "Smoke-test / demonstration workflow (\"Action Happy Path\", category VMware.PSCoE) that exercises the happy path of calling a vRO scriptable action and logging its result. It is a strictly linear three-item graph: item1 invokes the action `test` in the scripting module `com.vmware.pscoe.onboarding.sgenov.actions`, passing the two workflow attributes `first` and `second`; item2 writes the action's result to the vRO server log as `Action result: <value>`; item0 ends the workflow normally. It has no workflow inputs, no workflow outputs, no branches, no error handlers, no plugin objects, no configuration elements, and touches no external system other than the vRO engine itself.",
+ "inputs": [
+  {
+   "name": "(none)",
+   "type": "n/a",
+   "meaning": "The workflow declares zero input parameters. It cannot be parameterised by a caller; everything it uses comes from workflow attributes.",
+   "is_secret": false
+  },
+  {
+   "name": "first",
+   "type": "number (workflow attribute, not an input)",
+   "meaning": "First argument passed to the `test` action. Declared with no value and is_null_sentinel=false, i.e. it is never initialised and is never assigned by any item \u2014 at runtime it is null/undefined when item1 runs.",
+   "is_secret": false
+  },
+  {
+   "name": "second",
+   "type": "number (workflow attribute, not an input)",
+   "meaning": "Second argument passed to the `test` action. Same as `first`: declared, never initialised, never assigned \u2014 null/undefined at call time.",
+   "is_secret": false
+  },
+  {
+   "name": "actionResult",
+   "type": "ActionResult (workflow attribute, not an input)",
+   "meaning": "Holds the value returned by the `test` action. Written by item1's out_binding, read by item2's in_binding. Initially null. Not exposed outside the workflow.",
+   "is_secret": false
+  }
+ ],
+ "outputs": [
+  {
+   "name": "(none)",
+   "type": "n/a",
+   "meaning": "The workflow declares zero output parameters. Its only externally observable effect is the log line written by item2; `actionResult` stays workflow-scoped and is discarded when the run ends."
+  }
+ ],
+ "external_systems": [
+  {
+   "system": "vRO scripting module / action library (com.vmware.pscoe.onboarding.sgenov.actions)",
+   "how": "item1 (display name `callTestAction`, type task, script_module `com.vmware.pscoe.onboarding.sgenov.actions/test`) runs `actionResult = System.getModule(\"com.vmware.pscoe.onboarding.sgenov.actions\").test(first, second);` \u2014 a synchronous, in-process call to a JavaScript action in the same vRO instance. The action's body was not supplied.",
+   "items": [
+    "item1"
+   ]
+  },
+  {
+   "system": "vRO server log (System.log)",
+   "how": "item2 (display name `printActionResult`, type task) runs `System.log(\"Action result: \".concat(actionResult.getResult()));` \u2014 writes one INFO-level line to the vRO server/workflow log. The message prefix is exactly `Action result: ` followed by the string concatenation of `actionResult.getResult()`.",
+   "items": [
+    "item2"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "item": "control flow",
+   "condition": "There are no conditional, switch, foreach, waiting, or link items, and no catch_name on any item. The graph is linear: root_item item1 \u2192 (out_name) item2 \u2192 (out_name) item0.",
+   "branches": [
+    {
+     "when": "always (the only path)",
+     "goes_to": "item1 \u2192 item2 \u2192 item0",
+     "does": "Call the `test` action with (first, second) into attribute `actionResult`; log `Action result: ` + actionResult.getResult(); terminate."
+    },
+    {
+     "when": "any item throws (e.g. the action raises, or `actionResult` is null/has no getResult())",
+     "goes_to": "no handler \u2014 the exception propagates to the workflow engine",
+     "does": "The workflow run fails with that exception. There is no catch_name anywhere and no end item with end_mode \"1\"; the sole end item item0 has end_mode \"0\" (normal completion)."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "Writes exactly one line to the vRO server log: `Action result: ` concatenated with the value of `actionResult.getResult()`. This is the workflow's only intentional, externally visible effect.",
+  "Executes the action `com.vmware.pscoe.onboarding.sgenov.actions/test` with two null arguments; whatever side effects that action has are inherited by this workflow (unknown \u2014 the action source was not provided).",
+  "Mutates workflow-scoped attribute `actionResult` (item1 out_binding, export_name `actionResult`). No persistence, no resource creation, no plugin/inventory objects, no configuration elements read or written."
+ ],
+ "assumptions": [
+  "`first` and `second` are genuinely unset at runtime. Both attributes have value null with is_null_sentinel=false and no item writes them, so the call is effectively `test(null, null)` (in vRO a declared-but-unvalued number attribute arrives as null/undefined). A converted implementation must reproduce this unless the reviewer says otherwise \u2014 it is not a defaulted 0.",
+  "`actionResult` is treated as an object with a `getResult()` method, so the `test` action is assumed to return such an object (vRO's `ActionResult`-shaped value with result/exception/state, or a class of that name from the PSCoE package). Its `getResult()` return type is unknown; `String.concat` will stringify whatever it is.",
+  "The two entries in `action_calls` for item1 describe the same single call (one parsed from the script body, one from the `script_module` attribute). item1 performs exactly one action invocation, not two.",
+  "Both items are ordinary scriptable tasks running synchronously in the workflow token; the whole run is single-threaded and finishes in one pass with no waits, timers, or async launches."
+ ],
+ "open_questions": [
+  {
+   "theme": "data shape",
+   "question": "What does `com.vmware.pscoe.onboarding.sgenov.actions/test(first, second)` return, and what does `getResult()` yield \u2014 is `ActionResult` vRO's built-in async-action result object, or a custom class shipped in the PSCoE package?",
+   "why_it_matters": "The converted code and the tests need the concrete return type to assert on the logged value; if it is the built-in async ActionResult, the wrapper semantics (state/exception fields) also carry over."
+  },
+  {
+   "theme": "scope",
+   "question": "Is it intentional that `first` and `second` are never initialised (so the action is called with nulls), or were they meant to be workflow inputs / to carry default values that were lost?",
+   "why_it_matters": "Whether the converted unit is a zero-argument routine that calls test(null, null) or a two-parameter function changes both the signature and every test case."
+  },
+  {
+   "theme": "error semantics",
+   "question": "If the `test` action throws, or returns null/undefined so that `actionResult.getResult()` raises, is failing the whole run the intended behaviour?",
+   "why_it_matters": "There is no catch path and no throwing end item, so the conversion should let exceptions propagate; if the original intent was a tolerated failure, the target needs an explicit handler that the XML does not describe."
+  }
+ ],
+ "confidence": "medium",
+ "confidence_reason": "The graph is fully determined (3 items, 2 edges, linear, no branches/cycles/unreachable items) and both scripts are given verbatim, so the orchestration, bindings, and log format are certain. What is not visible is the body of the `test` action and the definition of the `ActionResult` type \u2014 which is the entire payload of this workflow \u2014 so the value that actually gets logged and any side effects of the action cannot be stated."
+}

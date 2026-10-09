@@ -1,0 +1,25 @@
+---
+# Synthetic vRA export for vro2k's tests, laid out like vmware-samples/build-tools-for-vmware-aria-samples.
+# Every name, address and account in it is invented.
+blueprint:
+  - Sample Web Server
+subscription:
+  - Sample - Install on provision
+  - Sample - Missing workflow
+catalog-item:
+  - Sample Templates__Sample Web Server
+content-source:
+  - Sample Templates
+catalog-entitlement:
+  - Sample Templates
+property-group:
+  - Sample Settings
+custom-resource: []
+resource-action: []
+region-mapping:
+  cloud-account-tags:
+    export-tag: "site:sample-east"
+    import-tags: ["site:sample-east"]
+policy:
+  approval:
+    - Sample approval

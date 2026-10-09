@@ -1,0 +1,24 @@
+# Which model answers, in two tiers. Deliberately not per stage.
+# Read by vro2k_assess/model.py (or the file named by VRO_MODELS_CONFIG).
+
+reasoning:            # Understand (specs, cluster summaries), the task plan, Tests, Review
+  provider: anthropic # anthropic | openai-compatible
+  auth: claude-code   # claude-code (the local Claude Code login) | api-key (reads ANTHROPIC_API_KEY)
+  model: claude-fable-5-1
+drafting:             # Convert, domain names, walkthrough text
+  provider: anthropic
+  auth: claude-code
+  model: claude-sonnet-5
+  timeout_s: 2700     # a whole flow of 80+ tasks takes longer than the default 900 s per call
+
+# For openai-compatible, give base_url and api_key_env (the NAME of an environment
+# variable holding the key, never the key itself). This covers OpenAI, Ollama, vLLM
+# and internal hosts. api_key_env may be left out for a local server with no key.
+#
+# drafting:
+#   provider: openai-compatible
+#   base_url: http://localhost:11434/v1
+#   api_key_env: OLLAMA_API_KEY
+#   model: qwen2.5-coder:32b
+#
+# Keys never go in this file; the loader refuses a field that looks like one.

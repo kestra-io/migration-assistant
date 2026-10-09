@@ -1,0 +1,19 @@
+{
+  "id": "sub-sample-missing",
+  "type": "RUNNABLE",
+  "name": "Sample - Missing workflow",
+  "description": "Points at a workflow that is not in any package",
+  "ownerId": "jdoe-sample",
+  "disabled": false,
+  "eventTopicId": "deployment.request.post",
+  "runnableType": "extensibility.vro",
+  "runnableId": "8F80808080808080808080808080808080808080011756098733430000Deadbeef",
+  "blocking": false,
+  "timeout": 0,
+  "priority": 10,
+  "criteria": "",
+  "contextual": false,
+  "constraints": {
+    "projectId": null
+  }
+}

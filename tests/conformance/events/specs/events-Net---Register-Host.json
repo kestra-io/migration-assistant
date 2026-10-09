@@ -1,0 +1,11 @@
+{
+  "workflow_uid": "events-Net---Register-Host",
+  "purpose": "Registers each new vRA machine in IPAM so it gets a DNS record, and keeps its state.",
+  "confidence": "high",
+  "open_questions": [],
+  "external_systems": [
+    {
+      "system": "Infoblox"
+    }
+  ]
+}

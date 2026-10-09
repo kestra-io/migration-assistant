@@ -1,0 +1,75 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<workflow xmlns="http://vmware.com/vco/workflow"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://vmware.com/vco/workflow http://vmware.com/vco/workflow/Workflow-v4.xsd"
+	root-name="item1" object-name="workflow:name=generic"
+	id="0badc0de-1111-4222-8333-444455556666" version="0.0.1"
+	api-version="6.0.0" allowed-operations="vef" restartMode="1"
+	resumeFromFailedMode="0">
+	<display-name><![CDATA[Deploy Things]]></display-name>
+	<description><![CDATA[Owned by ops-team@acme.example.com. Talks to vc01.acme-internal.corp.]]></description>
+	<position y="50.0" x="100.0" />
+	<input>
+		<param name="vmName" type="string">
+			<description><![CDATA[Name of the VM, for example esx-host-42]]></description>
+		</param>
+		<param name="adminPassword" type="SecureString">
+			<description><![CDATA[admin password]]></description>
+		</param>
+	</input>
+	<output>
+		<param name="result" type="string" />
+	</output>
+	<attrib name="vcHost" type="string" read-only="false">
+		<value encoded="n"><![CDATA[vc01.acme-internal.corp]]></value>
+	</attrib>
+	<attrib name="apiSecret" type="SecureString" read-only="false">
+		<value encoded="n"><![CDATA[S3cr3tValue!9]]></value>
+	</attrib>
+	<attrib name="mgmtIp" type="string" read-only="false">
+		<value encoded="n"><![CDATA[192.168.100.7]]></value>
+	</attrib>
+	<workflow-item name="item0" type="end" end-mode="0">
+		<position y="45.0" x="664.5" />
+	</workflow-item>
+	<workflow-item name="item1" out-name="item2" type="task">
+		<display-name><![CDATA[Call the controller]]></display-name>
+		<script encoded="false"><![CDATA[// contact ops-team@acme.example.com if this breaks
+var password = "Hunter2!Winter";
+var token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ2cm8ifQ.c2lnbmF0dXJlc2lnbmF0dXJl";
+var account = "CORP\\svc-vro-deploy";
+var url = "https://avi-ctrl.lab.example.net/api/pool?name=" + vmName;
+var req = new RESTRequest("POST", url);
+req.setHeader("Authorization", "Bearer AbCdEf0123456789XyZabcdEF0123");
+req.setHeader("X-Backup", "10.20.30.40");
+System.log("Connecting to " + vcHost + " at " + mgmtIp + " as " + account);
+if (vmName == "esx-host-42") { System.log("lab host"); }
+result = req.execute();]]></script>
+		<in-binding>
+			<bind name="vmName" type="string" export-name="vmName" />
+			<bind name="vcHost" type="string" export-name="vcHost" />
+			<bind name="mgmtIp" type="string" export-name="mgmtIp" />
+		</in-binding>
+		<out-binding>
+			<bind name="result" type="string" export-name="result" />
+		</out-binding>
+		<position y="55.0" x="204.5" />
+	</workflow-item>
+	<workflow-item name="item2" out-name="item0" alt-out-name="item3" type="custom-condition">
+		<display-name><![CDATA[Worked?]]></display-name>
+		<script encoded="false"><![CDATA[return result != null && result.statusCode == 200;]]></script>
+		<in-binding>
+			<bind name="result" type="string" export-name="result" />
+		</in-binding>
+		<position y="55.0" x="304.5" />
+	</workflow-item>
+	<workflow-item name="item3" type="end" end-mode="1">
+		<position y="145.0" x="304.5" />
+	</workflow-item>
+	<presentation>
+		<p-param name="vmName">
+			<desc><![CDATA[VM name]]></desc>
+			<p-qual kind="static" name="defaultValue" type="string"><![CDATA[vc01.acme-internal.corp]]></p-qual>
+		</p-param>
+	</presentation>
+</workflow>

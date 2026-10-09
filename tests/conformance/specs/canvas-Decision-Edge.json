@@ -1,0 +1,90 @@
+{
+ "purpose": "This workflow (\"Decision Edge\", category VMware.PSCoE) is a graph-shape test fixture, not a business automation: it exists to exercise a decision element whose true branch and false branch both point at the same downstream item. At runtime it evaluates one JavaScript condition against the workflow attribute `waitingTimer` (type Date), discards the result because both outgoing edges converge on the same successor, then runs two scriptable tasks that have no script body and no bindings (both are no-ops), and terminates normally at an end element with end_mode \"0\". It touches no external system, reads no input, produces no output, and has no observable side effect. Its only real content for a converter is the control-flow topology: branch at item1, immediate join at item2, linear tail to the end. The display names (\"decisionElement\", \"waitForEvent\", \"shouldGoHere\") and the attribute name `waitingTimer` hint at an intended timer/wait pattern, but nothing in the supplied definition implements waiting \u2014 item2 is a plain `task`, not a vRO `waiting-timer` element, and carries no script.",
+ "inputs": [
+  {
+   "name": "waitingTimer",
+   "type": "Date (workflow attribute \u2014 NOT an input parameter)",
+   "meaning": "Workflow-scope attribute declared with value null (no initial value; `is_null_sentinel` is false, so it is an absent value rather than vRO's `__NULL__` sentinel). It is read by the decision element at item1 via an in_binding whose export_name is also `waitingTimer`. Nothing in the workflow ever writes it, so it is null for the entire run. The workflow itself declares zero inputs \u2014 it takes no parameters from the caller.",
+   "is_secret": false
+  }
+ ],
+ "outputs": [],
+ "external_systems": [],
+ "decisions": [
+  {
+   "item": "item1 \u2014 \"decisionElement\" (type custom-condition, root_item / entry point). Script body: `return waitingTimer !== null;` evaluated against the bound `waitingTimer` attribute.",
+   "condition": "waitingTimer !== null (strict inequality against JavaScript null)",
+   "branches": [
+    {
+     "when": "Condition returns true (waitingTimer holds a Date)",
+     "goes_to": "item2 (out_name)",
+     "does": "Proceeds to the \"waitForEvent\" task."
+    },
+    {
+     "when": "Condition returns false (waitingTimer is null \u2014 the actual state on every run, since the attribute has no initial value and is never assigned)",
+     "goes_to": "item2 (alt_out_name \u2014 the SAME target as the true arm)",
+     "does": "Proceeds to the \"waitForEvent\" task. Because out_name and alt_out_name are identical, the branch is degenerate: the condition's return value has no effect on execution. A converter may evaluate the expression for fidelity, but control flow is unconditional."
+    }
+   ]
+  },
+  {
+   "item": "item2 \u2014 \"waitForEvent\" (type task)",
+   "condition": "No condition \u2014 unconditional single successor",
+   "branches": [
+    {
+     "when": "Always",
+     "goes_to": "item3 (out_name)",
+     "does": "No-op. `script` is null, `script_module` is null, `in_bindings` and `out_bindings` are both empty, and there is no `linked_workflow_id`/`launched_workflow_id`. Despite the display name, this is a plain scriptable task, not a vRO waiting-timer element, so it does not suspend the workflow or wait on the `waitingTimer` date."
+    }
+   ]
+  },
+  {
+   "item": "item3 \u2014 \"shouldGoHere\" (type task)",
+   "condition": "No condition \u2014 unconditional single successor",
+   "branches": [
+    {
+     "when": "Always",
+     "goes_to": "item0 (out_name)",
+     "does": "No-op. Null script, no script_module, no bindings, no linked/launched workflow."
+    }
+   ]
+  },
+  {
+   "item": "item0 \u2014 end element",
+   "condition": "end_mode is \"0\"",
+   "branches": [
+    {
+     "when": "Reached (always, via item3)",
+     "goes_to": "termination",
+     "does": "Ends the workflow normally with state COMPLETED. It does NOT throw \u2014 end_mode \"0\" is normal completion, as opposed to \"1\" which would raise an error."
+    }
+   ]
+  }
+ ],
+ "side_effects": [
+  "None. No item writes any attribute or output, calls an action (`action_calls` is empty), invokes or launches a nested workflow, touches a plugin/SDK endpoint (`plugin_types` and `sdk_calls` are empty), or reads configuration (`config_refs` is empty).",
+  "No error handling exists: no item defines `catch_name`, so any unexpected runtime failure (realistically only a scripting error inside item1's condition) propagates as an unhandled workflow failure.",
+  "The only state read is the in-memory `waitingTimer` attribute; the only state written is none. A faithful conversion is an effect-free procedure that always runs to normal completion."
+ ],
+ "assumptions": [
+  "`waitingTimer` is treated as JavaScript null at evaluation time (attribute declared with value null and never assigned), so `waitingTimer !== null` evaluates to false on every run. If the target runtime represents an unset Date as `undefined` rather than `null`, the strict comparison would instead yield true \u2014 this changes nothing observable here because both branches converge on item2, but it matters if a converter preserves the predicate as a reusable helper.",
+  "Items item2 and item3 are genuine no-ops as supplied (null script, no module, no bindings). I am assuming the definition is complete and the script bodies were not stripped during export.",
+  "`is_null_sentinel: false` on the attribute means the value is genuinely absent rather than set to vRO's `__NULL__` sentinel; both collapse to null for the purposes of item1's predicate.",
+  "The workflow is a topology fixture \u2014 the description field itself describes edge routing (\"decisionElement is the root, it will point with target to end and shouldGoHere with else\") rather than business behaviour, which is consistent with a test asset in the VMware.PSCoE test category.",
+  "The workflow description's stated routing (decision \u2192 end on the true arm, decision \u2192 shouldGoHere on the false arm) does NOT match the actual item graph, where both arms go to item2 and only item3 reaches item0. I treated the item graph as authoritative over the description."
+ ],
+ "open_questions": [
+  {
+   "theme": "scheduling",
+   "question": "Was item2 (\"waitForEvent\") intended to be a vRO waiting-timer / wait-for-event element that suspends the workflow until the `waitingTimer` Date, rather than the plain no-op `task` it is declared as?",
+   "why_it_matters": "If a wait was intended, the converted code needs a suspend/resume or sleep-until-timestamp construct and the `waitingTimer` attribute becomes load-bearing; as literally specified, the converted code is a straight-line no-op and `waitingTimer` is dead state. The two outputs are not interchangeable, and a test author would assert completely different behaviour (immediate completion vs. delayed completion)."
+  },
+  {
+   "theme": "scope",
+   "question": "Is the degenerate branch at item1 (out_name == alt_out_name == item2) deliberate fixture behaviour to be preserved verbatim, or an export/authoring artifact of the routing described in the workflow description (true \u2192 end, false \u2192 shouldGoHere)?",
+   "why_it_matters": "If deliberate, the conversion should keep the evaluated-but-ignored predicate so the branch/join shape is still exercised. If it is an artifact, the intended graph has a real two-way branch with different targets and materially different reachability \u2014 item0 would be reachable directly from item1 and the condition's result would actually matter."
+  }
+ ],
+ "confidence": "medium",
+ "confidence_reason": "The control-flow graph is fully determined and cycle-free: all 4 items are reachable from root_item item1, every edge target is explicit, the single condition script is supplied in full, and the end element's end_mode \"0\" unambiguously means normal completion rather than a throw \u2014 so the runtime behaviour as specified (evaluate predicate, ignore it, do nothing twice, complete) is certain. Confidence is not high because intent must be inferred from names in two places that change the conversion: item2 is named \"waitForEvent\" and the sole attribute is named \"waitingTimer\", strongly implying wait semantics that the declared item type (`task`, null script) does not implement; and the workflow's own description contradicts the actual edge list, so I cannot tell whether the converged branch is the fixture's point or a defect being captured. No behaviour is hidden behind an unseen action or nested workflow \u2014 `action_calls`, `sdk_calls`, `plugin_types`, and `config_refs` are all empty \u2014 which is why this is not low."
+}

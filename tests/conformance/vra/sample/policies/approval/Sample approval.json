@@ -1,0 +1,11 @@
+{
+  "name": "Sample approval",
+  "typeId": "com.vmware.policy.approval",
+  "enforcementType": "HARD",
+  "definition": {
+    "approvers": [
+      "USER:alice.sample"
+    ],
+    "approvalMode": "ANY_OF"
+  }
+}
