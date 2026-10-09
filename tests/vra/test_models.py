@@ -60,6 +60,21 @@ def test_openai_provider_asks_again_without_response_format_when_the_server_refu
     assert "response_format" not in sent[1] and '"required": ["ok"]' in sent[1]["messages"][0]["content"]
 
 
+def test_openai_provider_refuses_a_reply_to_a_prompt_the_server_cut(monkeypatch):
+    """Ollama, at its default context, reads a long prompt's last 4,096 tokens and answers that: the instructions
+    and the untrusted-input notice at the start are gone, and the reply can still match the schema."""
+    s = K.Settings("openai-compatible", model="m", base_url="http://x/v1", api_key_env="OPENAI_API_KEY")
+    p = M.OpenAICompatibleProvider(M.call_config(s), s)
+    reply = {"choices": [{"message": {"content": '{"ok": true}'}}]}
+    monkeypatch.setattr(p, "_post", lambda body, headers: {**reply, "usage": {"prompt_tokens": 2050}})
+    with pytest.raises(M.ModelError, match="cut the prompt.*OLLAMA_CONTEXT_LENGTH"):
+        p.invoke("x" * 100_000, SCHEMA)
+    monkeypatch.setattr(p, "_post", lambda body, headers: {**reply, "usage": {"prompt_tokens": 26_000}})
+    assert p.invoke("x" * 100_000, SCHEMA)["result"] == '{"ok": true}'          # read whole
+    monkeypatch.setattr(p, "_post", lambda body, headers: reply)
+    assert p.invoke("x" * 100_000, SCHEMA)["result"] == '{"ok": true}'          # a server that says nothing
+
+
 def test_cache_keys_match_the_ones_made_before_the_three_providers():
     """A claude-code reply cached under the earlier settings (provider anthropic, auth claude-code) is still found."""
     s = K.Settings("claude-code", model="claude-fable-5-1")

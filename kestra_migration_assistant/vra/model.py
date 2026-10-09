@@ -332,6 +332,18 @@ class AnthropicAPIProvider(Provider):
                 "total_cost_usd": _price(self.cfg["model"], r.usage.input_tokens, r.usage.output_tokens)}
 
 
+def cut_short(prompt: str, usage: dict | None, base_url: str) -> None:
+    """Raise when the server read far fewer tokens than the prompt has: it cut the prompt to its context length,
+    which drops the start, where the instructions and the untrusted-input notice are, and the reply can still
+    match the schema. Ollama does this silently at its default context of 4,096 tokens. A token is three to four
+    characters of these prompts, so fewer than one token per eight characters is a cut."""
+    n = (usage or {}).get("prompt_tokens")
+    if isinstance(n, int) and n > 0 and n * 8 < len(prompt):
+        raise ModelError(f"{base_url} read {n:,} tokens of a {len(prompt):,}-character prompt: it cut the prompt to "
+                         "its context length, so the reply is not used. Give the model a longer context (Ollama: "
+                         "start it with OLLAMA_CONTEXT_LENGTH=32768 or more) and run again")
+
+
 class OpenAICompatibleProvider(Provider):
     """POST {base_url}/chat/completions: a self-hosted model (Ollama, vLLM), or Azure OpenAI and Bedrock through a
     proxy such as LiteLLM. A server that refuses `response_format` is asked again without it, with the schema in
@@ -358,6 +370,7 @@ class OpenAICompatibleProvider(Provider):
             code = data["_status"]
             quota = "rate limit " if code == 429 else ("overloaded " if code >= 500 else "")
             return {"result": f"{quota}HTTP {code}: {data['_detail']}", "is_error": True}
+        cut_short(body["messages"][0]["content"], data.get("usage"), self.cfg["base_url"])
         text = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
         return {"result": text, "is_error": False, "duration_api_ms": int((time.time() - t0) * 1000),
                 "total_cost_usd": 0.0, "usage": data.get("usage")}

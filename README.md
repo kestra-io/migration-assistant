@@ -72,6 +72,10 @@ One model answers every call. There are three ways to connect to it:
 | `anthropic` | An Anthropic API key |
 | `openai-compatible` | A base URL and a key: a model you host yourself, or Azure OpenAI and Amazon Bedrock through a proxy such as [LiteLLM](https://docs.litellm.ai/) |
 
+A model you host yourself needs a context of at least 32,768 tokens: a workflow's prompt carries its whole call
+tree. Ollama's default is 4,096, and it cuts a longer prompt without saying so, so start it with
+`OLLAMA_CONTEXT_LENGTH=32768 ollama serve` (or more); a reply to a prompt the server cut is refused, never used.
+
 With nothing set up, it uses `claude-code` if `claude` is installed and logged in, else `anthropic` if
 `ANTHROPIC_API_KEY` is set, else it runs without a model: the brief still shows everything the code can find,
 and says what a model would add. `kestra-migrate init` writes a config file with every setting explained
