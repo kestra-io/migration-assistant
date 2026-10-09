@@ -96,6 +96,11 @@ def run() -> dict:
     retire = [x for x in (TR.retire_candidate(w, eff[u]) for u, w in wf.items()) if x]
     retire_actions = [a["key"] for a in assess["actions"] if not a["called"]]
     defects = suspected_defects(assess, specs)
+    asked_now = G.entries(plan)
+    tls_keys = sorted(k for k in asked_now if k.startswith("tls."))
+    for d in defects:
+        if d["decision"] not in asked_now and d["decision"].rsplit(".", 1)[-1] == "tls" and tls_keys:
+            d["covered_by"] = tls_keys                  # asked once, in the certificate decisions (waves.py)
     from . import translate
     translation = translate.table(assess, {"triage": tri, "action_triage": act_tri, "plan": plan,
                                            "trigger_plan": trigger_plan})
