@@ -26,6 +26,7 @@ from . import common as C
 from . import pages as PG
 from . import theme as TH
 
+
 def _out() -> str:
     C.require_estate()
     return C.PAGES
@@ -235,16 +236,16 @@ Domain and cluster names are model-written from the cached cluster summaries; ev
 # ------------------------------------------------------------------ call graph
 
 def call_graph(assess, brief) -> str:
-    wf, tri = assess["workflows"], brief["triage"]
+    wf = assess["workflows"]
     cl = {c["cluster_id"]: c for c in assess["clusters"]}
     edges = Counter()
-    for u, w in wf.items():
+    for _u, w in wf.items():
         for n in w["nested"]:
             v = n.get("target_uid")
             if v in wf and wf[v]["cluster"] != w["cluster"]:
                 edges[(w["cluster"], wf[v]["cluster"])] += 1
     internal = Counter()
-    for u, w in wf.items():
+    for _u, w in wf.items():
         for n in w["nested"]:
             v = n.get("target_uid")
             if v in wf and wf[v]["cluster"] == w["cluster"]:
@@ -374,7 +375,6 @@ def entry_points_src(assess) -> str:
 
 def waves(assess, brief) -> str:
     plan = brief["plan"]
-    targets = assess["targets"]
     cl = {c["cluster_id"]: c for c in assess["clusters"]}
     tri = brief["triage"]
     from .front import wave_title
@@ -403,7 +403,7 @@ def waves(assess, brief) -> str:
         L.append("  end")
     order = [w["wave"] for w in plan["waves"]]
     deps = {w["wave"]: w["depends_on"] for w in plan["waves"]}
-    for a, b in zip(order, order[1:]):
+    for a, b in zip(order, order[1:], strict=False):
         if a not in deps[b]:
             L.append(f"  W{a} -.-> W{b}")
     for w in plan["waves"]:
@@ -478,7 +478,7 @@ entry criteria are met ({met} of {total} today). Each open one names the key in
 def _wave_panel(w: dict, assess: dict, tri: dict) -> str:
     """One wave: what is in it, its first of a kind, what it writes to, and its entry criteria, met or open."""
     targets = assess["targets"]
-    short = lambda t: targets[t].get("short_name") or targets[t]["name"]  # noqa: E731
+    short = lambda t: targets[t].get("short_name") or targets[t]["name"]
     if w.get("kind") == "vra-replacement":
         kinds = Counter(x["kind"] for x in w["scope"])
         names = {k: [x["name"] for x in w["scope"] if x["kind"] == k] for k in kinds}
@@ -708,7 +708,6 @@ def flowchart_src(m: dict, assess: dict, brief: dict) -> str:
     handler = m.get("default_error_handler") or {}
     handler_path = set(m.get("error_handler_path_items") or [])
     reach = set(m.get("root_path_items") or []) | handler_path
-    by_id = {x["id"]: x["uid"] for x in []}
     nested = {n["item"]: n for n in wf.get(m["uid"], {}).get("nested", [])}
     L = ["flowchart TD",
          TH.class_def("task", "task"), TH.class_def("decision", "decision"),
@@ -823,7 +822,6 @@ def workflow_page(u: str, assess: dict, brief: dict) -> str:
                           + (" (blocking)" if e.get("blocking") else "")
                           + (f", when {e['condition']}" if e.get("condition") else ""))
                     for e in w_eps(w)) or "none on record"
-    oc = TH.OUTCOME[t["outcome"]]
     doc_note = ""
     if w["doc_order_would_mislead"]:
         doc_note = (f"<div class='note'>The first task in the file is <code>{C.esc(w['first_task_in_doc_order'])}</code>, "
@@ -939,7 +937,8 @@ INDEX_REPORTS = [("data/0-preflight/readiness.md", "readiness"), ("data/1-assess
 
 def run_page(assess, brief, pre) -> str:
     """The run, stage by stage: what each stage did, the estate's counts, and one workflow all the way through."""
-    from . import facts, preflight, status as S
+    from . import facts, preflight
+    from . import status as S
     st = S.collect()
     fx = facts.estate(assess, preflight.load_answers())
     c = assess["counts"]
@@ -972,7 +971,6 @@ def run_page(assess, brief, pre) -> str:
     m = C.read_json(os.path.join(C.WORK, "model", f"{u}.json"))
     xml, xml_file = _xml_excerpt(w)
     fc = flowchart_src(m, assess, brief).replace('href "', 'href "workflows/')
-    oc = TH.OUTCOME[t["outcome"]]
     report_links = " · ".join(f'<a href="../{f}">{C.esc(label)}</a>' for f, label in INDEX_REPORTS
                               if os.path.exists(os.path.join(C.STAGES, f))) + ' · <a href="reports/index.html">all reports</a>'
     body = f"""

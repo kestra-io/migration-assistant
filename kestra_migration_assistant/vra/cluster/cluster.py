@@ -162,7 +162,6 @@ def run(out_dir: str, uids: list[str], label: str = "dev") -> dict:
     models = {u: json.load(open(os.path.join(model_dir, f"{u}.json"))) for u in uids}
     colours = {u: colour(models[u], others) for u in uids}
 
-    pair_by_key = {(p["a"], p["b"]): p for p in pairs}
 
     clusters = []
     for n, (_root, members) in enumerate(sorted(groups.items(),

@@ -540,7 +540,7 @@ def _kp(t: str) -> str:
 def _order_targets(assess: dict, brief: dict, ts: list[str]) -> list[str]:
     """Targets, the one with the most client actions first (the order of the table)."""
     n = {}
-    for k, t in brief["action_triage"].items():
+    for k, _t in brief["action_triage"].items():
         for s in (next((a for a in assess["actions"] if a["key"] == k), {}) or {}).get("library_for") or []:
             n[s] = n.get(s, 0) + 1
     return sorted(ts, key=lambda t: (-n.get(t, 0), tname(assess["targets"][t])))
@@ -594,7 +594,7 @@ def estate_paragraph(assess: dict, brief: dict) -> str:
         if cats:
             bits.append(f"A user requests it from {word(len(cats))} Service Broker catalog {_s(len(cats), 'item')}")
         if temps:
-            bits.append((f"a cloud template" if len(temps) == 1 else f"{word(len(temps))} cloud templates")
+            bits.append(("a cloud template" if len(temps) == 1 else f"{word(len(temps))} cloud templates")
                         + (f" {'creates' if len(temps) == 1 else 'create'} the machines on {_and(created)}" if created
                            else f" {_s(len(temps), 'describes', 'describe')} the deployment"))
         if subs:
@@ -664,7 +664,7 @@ def _wave_bullet(w: dict, assess: dict, brief: dict, sn: dict) -> str:
     after = [f"Wave {d}" for d in w.get("depends_on") or []]
     if w.get("kind") == "vra-replacement":
         sc = w.get("scope") or []
-        has = lambda k: any(s["kind"] == k for s in sc)  # noqa: E731
+        has = lambda k: any(s["kind"] == k for s in sc)
         nt = len(w.get("cloud_templates") or [])
         bits = (["the catalog item becomes a Kestra App"] if has("App") else []) + \
                ([("the cloud template" if nt == 1 else "the cloud templates") + " a provisioning flow"] if has("flow") else []) + \

@@ -220,7 +220,7 @@ def load_manual(path: str) -> tuple[dict, list[str]]:
         return out, warnings
     try:
         data = safety.load_yaml(safety.read_file(path, safety.MAX_DOC_BYTES), os.path.basename(path))
-    except Exception as e:  # noqa: BLE001  (a person's typo is reported, not fatal)
+    except Exception as e:
         return out, [f"{os.path.basename(path)} does not parse, so it was not used: {str(e)[:200]}"]
     if data is None:
         return out, warnings
@@ -424,7 +424,7 @@ def collect(vra_inputs: dict[str, str], manual_path: str) -> dict:
     for label, path in vra_inputs.items():
         try:
             r = vra.read_vra(path)
-        except Exception as e:  # noqa: BLE001  (a hostile or broken export is reported, not fatal)
+        except Exception as e:
             exports.append({"label": label, "path": path, "error": f"{type(e).__name__}: {e}"})
             continue
         parts.append(from_vra(r, label))

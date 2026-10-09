@@ -21,10 +21,13 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from . import common as C
-from . import coverage as CV, preflight, targets as T, triggers as TG
 from .. import entry_points, safety
 from ..parse.jscalls import module_calls
+from . import common as C
+from . import coverage as CV
+from . import preflight
+from . import targets as T
+from . import triggers as TG
 
 BOILERPLATE_ACTIONS = {
     # Avi plugin session and batch plumbing: every "model" workflow opens a
@@ -678,7 +681,6 @@ def _stage_of(name: str) -> str:
 
 def _domains(cres, wf, tinv, summaries, ov) -> dict:
     """Group clusters by (primary target, lifecycle stage). Code decides; the model only names."""
-    uid_by_wid = {w["wid"]: u for u, w in wf.items()}
 
     def op_targets(u, seen=None):
         """Target operations of a workflow and, failing that, of the exported workflows it calls."""
@@ -804,7 +806,7 @@ def _topic(names: list[str], categories: list[str], sources: list[str] = ()) -> 
                  if w not in NAME_STOP and not VERBS.match(w)]
         toks.append(words)
     need = 2 if len(names) > 1 else 1
-    pairs = Counter(p for ws in toks for p in {f"{a} {b}" for a, b in zip(ws, ws[1:])})
+    pairs = Counter(p for ws in toks for p in {f"{a} {b}" for a, b in zip(ws, ws[1:], strict=False)})
     def pick(counter, ok):
         cands = [(c, k.replace(" ", "") in where, k) for k, c in counter.items() if c >= need and ok(k)]
         return max(cands, key=lambda x: (x[0], x[1]))[2] if cands else None
@@ -867,7 +869,7 @@ def _name_domains(keys, by_key, cres, summaries, tinv) -> dict:
     try:
         M = C.model()
         v = M.ask("stages-domain-names", "estate", prompt, schema)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"[assess] domain naming fell back to code labels: {e}")
         return {}
     names = {d["domain_key"]: {"name": C.no_em_dashes(d["name"]), "description": C.no_em_dashes(d["description"])}

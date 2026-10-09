@@ -24,6 +24,7 @@ not met, and the brief says so. A decision with a recommendation is a `confirm` 
 from __future__ import annotations
 
 from . import common as C
+
 OPEN, DONE, BLOCKED = "open", "done", "blocked"
 
 

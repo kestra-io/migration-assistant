@@ -29,7 +29,6 @@ import json
 import os
 import re
 
-
 WEIGHTS = {
     "shape": 0.30,     # the control flow that must be rebuilt
     "graph": 0.10,     # branching and depth

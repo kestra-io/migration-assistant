@@ -86,7 +86,6 @@ def collect() -> dict:
     brief_md = C.BRIEF_MD
     b_over = C.CORRECTIONS
     visuals = [_p(C.PAGES, x) for x in ("architecture.html", "explorer.html", "call-graph.html", "waves.html")]
-    decisions = reviews = C.ANSWERS
 
     stale = []
 

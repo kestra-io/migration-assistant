@@ -22,9 +22,9 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra.parse.jscalls import mask, module_calls  # noqa: E402
-from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
-from kestra_migration_assistant.vra.stages import triggers as TG  # noqa: E402
+from kestra_migration_assistant.vra.parse.jscalls import mask, module_calls
+from kestra_migration_assistant.vra.stages import common as C
+from kestra_migration_assistant.vra.stages import triggers as TG
 
 EVENTS = os.path.join(ROOT, "tests", "conformance", "events")
 REG, UNREG, ROUTER = "events-Net---Register-Host", "events-Net---Unregister-Host", "events-Net---Event-Router"
@@ -92,7 +92,9 @@ def estate_run(tmp_path_factory):
     os.environ["VRO_NO_MODEL"] = "1"
     try:
         _configure(tmp)
-        from kestra_migration_assistant.vra.stages import assess as A, brief as B, preflight as P
+        from kestra_migration_assistant.vra.stages import assess as A
+        from kestra_migration_assistant.vra.stages import brief as B
+        from kestra_migration_assistant.vra.stages import preflight as P
         P.run()
         a = A.run()
         b = B.run()
@@ -282,7 +284,8 @@ def test_brief_shows_one_plan_when_q9_is_answered(estate):
         from conftest import answer
         answer("Q9", "replace")
         B.run()
-        from kestra_migration_assistant.vra.stages import assess as A, visuals as V
+        from kestra_migration_assistant.vra.stages import assess as A
+        from kestra_migration_assistant.vra.stages import visuals as V
         page = V.vra_view(A.load(), C.read_json(os.path.join(C.BRIEF, "brief.json")))
         assert "If vRA is replaced" in page and "If vRA stays" not in page
         assert "vRA is replaced (preflight Q9)" in page
@@ -328,7 +331,8 @@ def _snapshot(folder, installed_version="1.0.0", catalog_version="1.1.0"):
 
 
 def test_plugin_coverage_from_a_snapshot(estate, tmp_path, monkeypatch):
-    from kestra_migration_assistant.vra.stages import coverage as CV, targets as T
+    from kestra_migration_assistant.vra.stages import coverage as CV
+    from kestra_migration_assistant.vra.stages import targets as T
     _snapshot(str(tmp_path))
     monkeypatch.setattr(CV, "SNAPSHOT_DIR", str(tmp_path))
     a = estate["assess"]
@@ -349,7 +353,8 @@ def test_plugin_coverage_from_a_snapshot(estate, tmp_path, monkeypatch):
 
 
 def test_plugin_coverage_without_a_snapshot(estate, tmp_path, monkeypatch):
-    from kestra_migration_assistant.vra.stages import coverage as CV, targets as T
+    from kestra_migration_assistant.vra.stages import coverage as CV
+    from kestra_migration_assistant.vra.stages import targets as T
     monkeypatch.setattr(CV, "SNAPSHOT_DIR", str(tmp_path))
     a = estate["assess"]
     cov = CV.coverage(a["targets"], a["entry_points"]["model"], T.load_plugin_map())

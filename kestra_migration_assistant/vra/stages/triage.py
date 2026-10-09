@@ -182,7 +182,8 @@ def triage_workflow(w: dict, spec: dict | None, first: dict | None, is_first: bo
            "also": [f"{s['outcome']}: {s['reason']}" for s in sig[1:] if s["outcome"] != chosen["outcome"]],
            "evidence": chosen["evidence"], "overridden": False}
     rec["notes"] = _conversion_notes(w)
-    from .triggers import notes as trigger_notes, tags as trigger_tags
+    from .triggers import notes as trigger_notes
+    from .triggers import tags as trigger_tags
     rec["trigger_notes"] = trigger_notes(w)
     rec["trigger_tags"] = trigger_tags(w)
     if w.get("lifecycle_group"):
@@ -489,7 +490,7 @@ def follow_callers(act_tri: dict, actions: list[dict], tri: dict, wf: dict) -> N
             continue
         outcome, reason, callers = judge(k, (k,))
         memo[k] = outcome
-        of = lambda o: [n for x, n, *_ in callers if x == o]  # noqa: E731
+        of = lambda o: [n for x, n, *_ in callers if x == o]
         wfs = sorted((wf.get(u) or {}).get("name") or u for u in workflows_reaching(k))
         through = sorted({n for x, n, kind, _ in callers if kind == "action" and x == outcome})
         if outcome == "Convert":

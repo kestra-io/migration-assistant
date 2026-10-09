@@ -27,8 +27,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
-from kestra_migration_assistant.vra.stages import triage as TR  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C
+from kestra_migration_assistant.vra.stages import triage as TR
 
 CONFORMANCE = os.path.join(ROOT, "tests", "conformance")
 ESTATE_OF = {"alb": "avi-sample", "vspk": "nuage-sample"}

@@ -22,7 +22,7 @@ import yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C
 
 REVIEW = os.path.join(ROOT, "tests", "conformance", "review")
 CREATE = "review-Dns---Create-Zone"
@@ -54,7 +54,10 @@ def run(tmp_path_factory):
         C.configure("review", source_dir=REVIEW, stages_dir=str(tmp / "stages"), spec_dir=str(specs),
                     inputs={"review": os.path.join(REVIEW, "vro")},
                     vra_inputs={"review-vra": os.path.join(REVIEW, "vra")})
-        from kestra_migration_assistant.vra.stages import assess as A, brief as B, preflight as P, visuals as V
+        from kestra_migration_assistant.vra.stages import assess as A
+        from kestra_migration_assistant.vra.stages import brief as B
+        from kestra_migration_assistant.vra.stages import preflight as P
+        from kestra_migration_assistant.vra.stages import visuals as V
         P.run()
         a = A.run()
         b = B.run()
@@ -100,7 +103,7 @@ def test_a_concurrency_question_on_shared_state_closes_with_the_state_decision(r
     assert tri["outcome"] != "Needs owner input", tri["reason"]
     keys = {e["closes"]["key"] for w in run["brief"]["plan"]["waves"] for e in w["entry_criteria"]
             if (e.get("closes") or {}).get("kind") == "decision"}
-    assert not any(k.startswith(f"question.") for k in keys)
+    assert not any(k.startswith("question.") for k in keys)
     st = next(k for k in keys if k.startswith("state-store."))
     d = run["brief"]["decisions"]["asked"][st]
     assert any("concurrently" in q for q in d["also_answers"])

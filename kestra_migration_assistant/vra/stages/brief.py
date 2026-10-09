@@ -16,10 +16,15 @@ import os
 import re
 from collections import Counter, defaultdict
 
+from .. import safety
 from . import assess as A
 from . import common as C
-from . import gates as G, preflight, reviews as RV, triage as TR, triggers as TG, waves as W
-from .. import safety
+from . import gates as G
+from . import preflight
+from . import reviews as RV
+from . import triage as TR
+from . import triggers as TG
+from . import waves as W
 
 APPROVAL_RE = re.compile(r"<!-- approval:start -->(.*?)<!-- approval:end -->", re.S)
 APPROVAL_BLANK = """```
@@ -46,7 +51,8 @@ def parse_approval(text: str) -> dict:
 # ------------------------------------------------------------------ run
 
 def run() -> dict:
-    from . import corrections, your_input as Y
+    from . import corrections
+    from . import your_input as Y
     C.ensure(C.BRIEF, C.PAGES)
     assess = A.load()
     answers = preflight.load_answers()
@@ -140,9 +146,7 @@ def run() -> dict:
     # ready now: on a known path and nothing open concerns it (needs the criteria closed, so after G.close)
     translate.ready(assess, result, translation)
     result["translation"] = translation
-    from . import status as S_
     result["input"] = input_summary(loaded)
-    st_ = S_.status_of(result)
     from . import front
     rec["produced_by"] = front.recommendation_text(assess, result)
     C.write_json(os.path.join(C.BRIEF, "brief.json"), result)
@@ -167,7 +171,7 @@ def _triage(assess, specs, fok, overrides, coverage, reaching, vra_replaced, sta
             tri[u]["notes"].append(f"its spec was written from different code or input than the estate's now "
                                    f"({why}); run `vro.py understand` (billed) before relying on this outcome")
     # a near-duplicate follows its first of a kind
-    for u, t in tri.items():
+    for t in tri.values():
         if t["outcome"] == "Near-duplicate":
             f = t["evidence"]["first_of_a_kind"]
             t["follows"] = {"uid": f, "outcome": tri[f]["outcome"]}
@@ -564,7 +568,7 @@ def walkthroughs(assess, tri, specs) -> dict:
         try:
             v = C.model().ask("stages-walkthroughs", "estate", prompt, schema)
             flows = v["flows"]
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"[brief] walkthrough text fell back to code labels: {e}")
     if flows is None:
         cached = os.path.join(C.BRIEF, "walkthroughs.json")
@@ -579,7 +583,7 @@ def walkthroughs(assess, tri, specs) -> dict:
         written_by = "model"
     # Structure is the code's: re-attach the fixed path, drop anything the model invented.
     out = []
-    for p, f in zip(paths, flows):
+    for p, f in zip(paths, flows, strict=False):
         labels = {s["workflow"]: C.no_em_dashes(s["label"]) for s in f.get("steps", [])}
         out.append({"persona": p["persona"], "name": C.no_em_dashes(f["name"]),
                     "description": C.no_em_dashes(f["description"]), "path_rule": p["rule"],

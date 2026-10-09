@@ -15,7 +15,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra.stages import common as C, your_input as Y  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C
+from kestra_migration_assistant.vra.stages import your_input as Y
 
 HELPERS = os.path.join(ROOT, "tests", "conformance", "helpers")
 
@@ -32,7 +33,8 @@ def _run(tmp, vra: bool) -> dict:
     os.environ["VRO_NO_MODEL"] = "1"
     try:
         _configure(tmp, vra)
-        from kestra_migration_assistant.vra.stages import assess as A, preflight as P
+        from kestra_migration_assistant.vra.stages import assess as A
+        from kestra_migration_assistant.vra.stages import preflight as P
         before = P.run()
         A.run()
         refresh = P.refresh_questions()
@@ -138,6 +140,7 @@ def test_the_static_questions_contradict_these_findings():
 
 def test_your_input_holds_only_what_the_customer_needs(with_vra, without_vra):
     import yaml
+
     from kestra_migration_assistant.vra.stages import preflight as P
     # with a vRA export: answers.yaml alone (no entry-points.yaml, never a corrections.yaml)
     assert os.listdir(os.path.join(with_vra["tmp"], "your-input")) == ["answers.yaml"]

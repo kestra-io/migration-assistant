@@ -36,7 +36,7 @@ def parse_corpus(out_dir: str, sources: dict[str, str]) -> dict:
     for label, path in sources.items():
         try:
             elements, summary = formats.read_any(path)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             failures.append({"source": label, "path": path, "error": str(e)})
             continue
         package_summaries[label] = summary

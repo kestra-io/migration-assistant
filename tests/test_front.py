@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests", "conformance", "large"))
 
-from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C
 
 MAX_WORDS = 800           # the front page's fixed length, in words a reader sees (a four-workflow estate: about 670)
 MAX_BRIEF_WORDS = 3000    # BRIEF.md for 60 workflows (a four-workflow estate: about 1,400; the cap there is 2,000)
@@ -26,7 +26,12 @@ MAX_BRIEF_WORDS = 3000    # BRIEF.md for 60 workflows (a four-workflow estate: a
 
 def _estate(tmp, n):
     import build as LB
-    from kestra_migration_assistant.vra.stages import assess as A, brief as B, front as F, preflight as P, visuals as V
+
+    from kestra_migration_assistant.vra.stages import assess as A
+    from kestra_migration_assistant.vra.stages import brief as B
+    from kestra_migration_assistant.vra.stages import front as F
+    from kestra_migration_assistant.vra.stages import preflight as P
+    from kestra_migration_assistant.vra.stages import visuals as V
     out = LB.build(str(tmp / "src"), n)
     spec_dir = str(tmp / "specs")
     os.makedirs(spec_dir, exist_ok=True)

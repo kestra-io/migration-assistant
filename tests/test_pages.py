@@ -16,7 +16,9 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra.stages import common as C, mdhtml, pages as PG  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C
+from kestra_migration_assistant.vra.stages import mdhtml
+from kestra_migration_assistant.vra.stages import pages as PG
 
 LINK = re.compile(r'''(?:href|src)=["']([^"']+)["']|click\s+\S+\s+href\s+"([^"]+)"|url\(["']?([^"')]+)''')
 
@@ -187,6 +189,7 @@ def test_a_2c_estate_is_moved_and_its_answers_carried_into_answers_yaml(tmp_path
     """An estate written with the 2c/2d layout: the stage folders move into data/, the pages are regenerated in
     report/, and every answer, decision, review and the signature lands in your-input/answers.yaml."""
     import yaml
+
     from kestra_migration_assistant.vra import cli
     from kestra_migration_assistant.vra.stages import preflight as P
     src = tmp_path / "sources" / "old"

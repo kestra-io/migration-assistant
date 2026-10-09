@@ -13,7 +13,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra.stages import theme as TH  # noqa: E402
+from kestra_migration_assistant.vra.stages import theme as TH
 
 AA, AA_LARGE = 4.5, 3.0
 HEX = re.compile(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b|rgba?\(\s*\d")

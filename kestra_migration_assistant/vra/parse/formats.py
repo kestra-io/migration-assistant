@@ -27,7 +27,6 @@ from dataclasses import dataclass, field
 
 from .. import outdir, safety
 
-
 # --------------------------------------------------------------------------
 # decoding
 # --------------------------------------------------------------------------
@@ -140,7 +139,7 @@ def read_package(path: str) -> tuple[list[Element], dict]:
                         or re.findall(r'name="([^"]+)"[^>]*type="plugin"', meta)
                         or re.findall(r'<entry key="([^"]*plugin[^"]*)">', meta)
                     ))
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     summary.setdefault("warnings", []).append(f"dunes-meta-inf: {e}")
 
         # Only elements/, never the signatures/ mirror.

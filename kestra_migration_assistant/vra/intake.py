@@ -46,7 +46,7 @@ def scan_text(text: str) -> list[tuple[str, int, str]]:
         key = (text.count("\n", 0, pos) + 1, v)
         found.setdefault(key, kind)
 
-    for kind, rx in zip(TOKEN_KINDS, S.TOKEN_RES):
+    for kind, rx in zip(TOKEN_KINDS, S.TOKEN_RES, strict=False):
         for m in rx.finditer(text):
             add(kind, m.start(), m.group(m.lastindex or 0))
     for m in S.SECRET_KV_RE.finditer(text):

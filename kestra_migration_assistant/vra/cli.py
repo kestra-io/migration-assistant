@@ -194,6 +194,7 @@ def run_stage(s: str) -> str:
 def _old_keys() -> dict[str, str]:
     """Keys an estate used before 2026-10-01 (built on the workflow's full ID) -> today's (its short name)."""
     import json
+
     from kestra_migration_assistant.vra.stages import gates as G
     p = os.path.join(C.ASSESS, "assess.json")
     if not os.path.exists(p):

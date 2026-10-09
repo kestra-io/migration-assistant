@@ -1,7 +1,6 @@
 """Markdown views of assess.json. Everything here is rendered from that file."""
 from __future__ import annotations
 
-
 import os
 import re
 from collections import Counter
@@ -168,7 +167,7 @@ def parse_inventory(r: dict) -> str:
           "`first task` columns: the first task in the file, and the first task the run actually reaches "
           "from `root-name`. Where they differ, a converter that walks the file in order starts in the wrong place.", ""]
     rows = []
-    for u, w in sorted(r["workflows"].items()):
+    for _u, w in sorted(r["workflows"].items()):
         rows.append([w["name"], w["source"], w["items"], w["script_lines"],
                      ", ".join(f"{k} {v}" for k, v in sorted(w["item_type_counts"].items())),
                      w["root_item"], w["first_task_in_doc_order"] or "",

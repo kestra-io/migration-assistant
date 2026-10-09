@@ -18,7 +18,8 @@ import yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra.stages import common as C, your_input as Y  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C
+from kestra_migration_assistant.vra.stages import your_input as Y
 
 HELPERS = os.path.join(ROOT, "tests", "conformance", "helpers")
 

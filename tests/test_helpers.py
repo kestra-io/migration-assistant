@@ -22,7 +22,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C
 
 HELPERS = os.path.join(ROOT, "tests", "conformance", "helpers")
 PROV, APPROVE = "helpers-Web---Provision-Host", "helpers-Web---Approve-Host"
@@ -46,7 +46,9 @@ def run(tmp_path_factory):
     os.environ["VRO_NO_MODEL"] = "1"
     try:
         _configure(tmp)
-        from kestra_migration_assistant.vra.stages import assess as A, brief as B, preflight as P
+        from kestra_migration_assistant.vra.stages import assess as A
+        from kestra_migration_assistant.vra.stages import brief as B
+        from kestra_migration_assistant.vra.stages import preflight as P
         P.run()
         _answer_q9("replace: Kestra takes over the catalog")
         a = A.run()
@@ -190,7 +192,8 @@ def test_the_budget_leaves_actions_out_and_says_which(estate):
 
 
 def test_the_spec_records_what_its_prompt_left_out(estate, tmp_path, monkeypatch):
-    from kestra_migration_assistant.vra import model as M, understand as U
+    from kestra_migration_assistant.vra import model as M
+    from kestra_migration_assistant.vra import understand as U
     monkeypatch.setattr(U, "ACTION_BUDGET", 400)
     seen = {}
 
@@ -221,7 +224,9 @@ def test_the_spec_records_what_its_prompt_left_out(estate, tmp_path, monkeypatch
 
 def test_every_spec_is_a_review_item_and_an_answer_closes_its_gate(estate):
     import yaml
-    from kestra_migration_assistant.vra.stages import brief as B, your_input as Y
+
+    from kestra_migration_assistant.vra.stages import brief as B
+    from kestra_migration_assistant.vra.stages import your_input as Y
     doc = yaml.safe_load(open(C.ANSWERS))
     short = estate["assess"]["workflows"][PROV]["short"]
     key = f"spec.{short}"
@@ -248,7 +253,8 @@ def test_every_spec_is_a_review_item_and_an_answer_closes_its_gate(estate):
 
 
 def test_a_review_goes_stale_when_the_spec_changes():
-    from kestra_migration_assistant.vra.stages import reviews as RV, your_input as Y
+    from kestra_migration_assistant.vra.stages import reviews as RV
+    from kestra_migration_assistant.vra.stages import your_input as Y
     spec = {"purpose": "a" * 40, "confidence": "medium"}
     wf = {"u": {"name": "U", "short": "u"}}
     loaded = {"entries": {"spec.u": {"answer": "yes"}}, "path": "x", "exists": True, "warnings": [],
@@ -320,7 +326,8 @@ def test_the_replacement_wave_has_entry_criteria_and_takes_the_blocking_policy(e
 
 
 def test_a_signed_approval_closes_the_approval_gate_of_the_waves_it_covers(estate):
-    from kestra_migration_assistant.vra.stages import brief as B, your_input as Y
+    from kestra_migration_assistant.vra.stages import brief as B
+    from kestra_migration_assistant.vra.stages import your_input as Y
     path = C.ANSWERS
     txt = open(path).read()
     try:
@@ -361,12 +368,14 @@ def test_a_spec_whose_input_changed_is_stale(tmp_path, monkeypatch):
     """A generated spec is regenerated when the prompt it would get today differs from the one it came from."""
     import json
     import shutil
+
     from kestra_migration_assistant.vra import understand as U
     monkeypatch.setenv("VRO_NO_MODEL", "1")
     spec_dir = tmp_path / "2-understand"
     shutil.copytree(os.path.join(HELPERS, "specs"), spec_dir)
     _configure(tmp_path / "stages", spec_dir=str(spec_dir))
-    from kestra_migration_assistant.vra.stages import assess as A, preflight as P
+    from kestra_migration_assistant.vra.stages import assess as A
+    from kestra_migration_assistant.vra.stages import preflight as P
     P.run()
     A.run()
     idx = json.load(open(os.path.join(C.WORK, "index.json")))

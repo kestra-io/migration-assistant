@@ -147,7 +147,7 @@ class _Doc:
             return safety.load_yaml(raw, name) if kind == "yaml" else safety.load_json(raw, name)
         except safety.UnsafeInput as e:
             self.warnings.append(f"{name}: refused: {e}")
-        except Exception as e:  # noqa: BLE001  (malformed customer file: a warning, not a crash)
+        except Exception as e:
             self.warnings.append(f"{name}: does not parse as {kind.upper()}: {type(e).__name__}: {str(e)[:160]}")
         return None
 
@@ -283,7 +283,7 @@ def _catalog_item(doc: _Doc, fname: str) -> dict:
     if isinstance(form_hdr, dict) and isinstance(form_hdr.get("form"), str) and form_hdr["form"].strip():
         try:
             form = safety.load_json(form_hdr["form"], f"catalog-items/forms/{stem}.json: form")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             doc.warnings.append(f"catalog-items/forms/{stem}.json: embedded form does not parse: {str(e)[:160]}")
     if form is None:
         form = doc.mapping(f"catalog-items/forms/{stem}__FormData.json")

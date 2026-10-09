@@ -100,7 +100,7 @@ def test_windows_style_paths(monkeypatch):
 def read_only_export(tmp_path):
     export = _export(tmp_path / "ro export")
     modes = []
-    for dp, dirs, files in os.walk(export, topdown=False):
+    for dp, _dirs, files in os.walk(export, topdown=False):
         for f in files:
             p = os.path.join(dp, f)
             os.chmod(p, stat.S_IRUSR | stat.S_IRGRP)

@@ -22,7 +22,6 @@ reviewer can see where the two disagree.
 from __future__ import annotations
 
 import re
-from collections import defaultdict
 
 from . import common as C
 
@@ -372,7 +371,7 @@ def path_template(expr: str, script: str, builders: dict[str, dict], depth: int 
             m = re.match(r"\s*(?:var|let|const)\s+[\w$]+\s*=\s*([^;]+);?\s*$|\s*return\s+([^;]+);?\s*$", first)
             if m:
                 body = m.group(1) or m.group(2)
-                for p, a in zip(list(b["params"]), args):
+                for p, a in zip(list(b["params"]), args, strict=False):
                     a_val = path_template(a, script, builders, depth + 1) if a else "{" + p + "}"
                     body = re.sub(r"(?<![\w$.\"'])" + re.escape(p) + r"(?![\w$\"'])",
                                   lambda _m, v=a_val: '"' + v + '"', body)
@@ -413,7 +412,7 @@ def bind_args(params, args: list[str], outer: dict[str, str] | None, script: str
     """
     outer = outer or {}
     out = {}
-    for p, a in zip(list(params or []), args):
+    for p, a in zip(list(params or []), args, strict=False):
         a = (a or "").strip()
         v = _literal(a)
         if v is None and re.fullmatch(r"[A-Za-z_$][\w$]*", a):

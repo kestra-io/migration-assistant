@@ -10,7 +10,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def test_run_prints_a_line_per_stage_and_a_last_line(tmp_path, monkeypatch, capsys):
     from kestra_migration_assistant.vra import cli
-    from kestra_migration_assistant.vra.stages import common as C
     helpers = os.path.join(ROOT, "tests", "conformance", "helpers")
     src = tmp_path / "est"
     shutil.copytree(os.path.join(helpers, "vro"), src / "vro")
@@ -34,6 +33,7 @@ def test_run_prints_a_line_per_stage_and_a_last_line(tmp_path, monkeypatch, caps
 
 def test_a_long_stage_says_it_started_and_what_it_is_doing(monkeypatch, capsys):
     import time
+
     from kestra_migration_assistant.vra import cli
     from kestra_migration_assistant.vra.stages import common as C
 

@@ -497,7 +497,7 @@ def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: b
                 continue
             seen.add(key)
             cand = actions_by_module.get(a["module"]) or \
-                actions_by_module.get((a.get("action") or "")) or []
+                actions_by_module.get(a.get("action") or "") or []
             for c in cand[:1]:
                 acts.append({"module": a["module"], "action": a.get("action"),
                              "called_at_item": a["item"],
@@ -601,7 +601,7 @@ def run_clusters(out_dir: str, label: str) -> dict:
         prompt = cluster_prompt(c, members)
         try:
             summaries[cid] = M.ask("cluster-summary", cid, prompt, CLUSTER_SCHEMA)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             summaries[cid] = {"name": cid, "what_the_group_does": f"(failed: {e})",
                               "how_members_differ": [], "first_of_a_kind_reason": ""}
         with open(out_path, "w") as f:
@@ -683,7 +683,7 @@ def run_estate() -> dict:
         t0 = time.monotonic()
         try:
             v = M.ask("cluster-summary", f"{C.ESTATE}/{cid}", cluster_prompt(c, members), CLUSTER_SCHEMA)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             errors[f"cluster {cid}"] = f"{type(e).__name__}: {e}"
             continue
         out[cid] = {**v, "members": list(key)}

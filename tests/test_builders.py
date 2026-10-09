@@ -12,7 +12,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C
 
 BUILDERS = os.path.join(ROOT, "tests", "conformance", "builders")
 
@@ -25,7 +25,9 @@ def run(tmp_path_factory):
     try:
         C.configure("builders", source_dir=BUILDERS, stages_dir=str(tmp), spec_dir=os.path.join(BUILDERS, "specs"),
                     inputs={"builders": os.path.join(BUILDERS, "vro")}, vra_inputs={})
-        from kestra_migration_assistant.vra.stages import assess as A, brief as B, preflight as P
+        from kestra_migration_assistant.vra.stages import assess as A
+        from kestra_migration_assistant.vra.stages import brief as B
+        from kestra_migration_assistant.vra.stages import preflight as P
         P.run()
         a = A.run()
         b = B.run()

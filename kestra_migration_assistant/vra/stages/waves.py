@@ -167,7 +167,7 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
 
     # --- step 2: group units by (tier, primary target)
     groups: dict[str, list[str]] = {}
-    for g, cl in units.items():
+    for cl in units.values():
         us = members_of(cl)
         key = f"{tier(us)}|{primary(us) or '-'}"
         groups.setdefault(key, []).extend(cl)

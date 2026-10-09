@@ -188,7 +188,7 @@ def lifecycle_groups(wf: dict[str, dict], state: dict[str, dict]) -> list[dict]:
         for p in set((state.get(u) or {}).get("reads", [])) | set((state.get(u) or {}).get("writes", [])):
             if p in written:
                 by_path[p].append(u)
-    for p, us in by_path.items():
+    for us in by_path.values():
         for v in us[1:]:
             parent[find(v)] = find(us[0])
     groups = defaultdict(list)
@@ -348,7 +348,7 @@ def plan(model: dict, answer: str | None) -> dict:
             "today": "vRA day-2 action" + (f" on {a['resource_type']}" if a.get("resource_type") else ""),
             "event_topic": None, "blocking": True, "timeout_minutes": None, "condition": "",
             "position": 50, "phase": "day2", "cloud_template": None,
-            "keep": f"Stays in vRA; its runnable becomes a bridge to the `Webhook` trigger of the converted flow.",
+            "keep": "Stays in vRA; its runnable becomes a bridge to the `Webhook` trigger of the converted flow.",
             "replace": f"A Kestra App (`{APP}`) on the converted flow, with the action's form as inputs."})
     for o in model.get("other_triggers") or []:
         k = (o.get("kind") or "").lower()

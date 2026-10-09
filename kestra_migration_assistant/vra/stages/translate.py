@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from . import triage as TR
 from . import triggers as TG
 
 MECHANICAL = ("plugin", "HTTP", "plugin and HTTP", "core task", "direct conversion", "wrapper", "duplicate", "retire")
@@ -194,7 +193,7 @@ def table(assess: dict, brief: dict) -> dict:
         for x in t.get("creates") or []:
             sc = next((s for w in rep for s in w["scope"] if s["kind"] == "resource"
                        and s["name"].startswith(f"{x['name']} (")), None)
-            if q9 or not front in TG.REPLACING:
+            if q9 or front not in TG.REPLACING:
                 r = row(("vra", "resource", "q9" if q9 else "kept"), "Cloud template resources",
                         "built by Kestra tasks, or by vRA (Q9 decides)" if q9 else "built by vRA, as today",
                         "needs an answer" if q9 else "core task", lines=False, evidence=ev_vra)
@@ -277,7 +276,6 @@ def ready(assess: dict, brief: dict, table_: dict) -> dict:
     by_short = {w["short"]: u for u, w in wf.items()}
     actions = {a["key"]: a for a in assess["actions"]}
     items = [i for r in table_["rows"] for i in r["items"]]
-    path_of = {i["eid"]: r["path"] for r in table_["rows"] for i in r["items"]}
 
     def a_sys(k):
         a = actions.get(k) or {}

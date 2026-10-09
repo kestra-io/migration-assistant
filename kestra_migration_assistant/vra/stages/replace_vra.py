@@ -109,7 +109,6 @@ def plan(assess: dict, triage: dict, answers: dict, trigger_plan: dict, wave_of:
 
 
 def _wave(n, deps, its, wf, triage, open_q, app_where, blocked, assess) -> dict:
-    targets = assess.get("targets") or {}
     from . import waves as W
     crit = [{"criterion": "The signature covers this wave", "source": "signature", "closes": G.by_approval()}]
     for d in deps:
@@ -121,7 +120,7 @@ def _wave(n, deps, its, wf, triage, open_q, app_where, blocked, assess) -> dict:
             crit.append({"criterion": f"{(wf.get(u) or {}).get('name') or u}, which a step of flow `{it['flow']}` "
                                       f"runs, has a Kestra flow ({why})", "source": "triage", "closes": G.by_outcome(u, (wf.get(u) or {}).get("short"))})
     systems = sorted({(r["system"], r["system_key"]) for it in its for r in it["resources"] if r["system"]})
-    for sname, key in systems:
+    for sname, _key in systems:
         crit.append({"criterion": f"A non-production {sname} is named for this wave's flow to create resources in",
                      "source": "preflight Q3", "closes": G.by_answer("Q3")})
     ee = sorted({_short(t) for it in its for r in it["resources"] if r["enterprise_only"] for t in r["tasks"]})

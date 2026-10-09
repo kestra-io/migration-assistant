@@ -19,8 +19,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra import safety  # noqa: E402
-from kestra_migration_assistant.vra.parse import formats, workflow  # noqa: E402
+from kestra_migration_assistant.vra import safety
+from kestra_migration_assistant.vra.parse import formats, workflow
 
 WF = ('<workflow xmlns="http://vmware.com/vco/workflow" root-name="item0" id="x">'
       '<display-name>t</display-name><workflow-item name="item0" type="end" end-mode="0"/></workflow>')
@@ -168,7 +168,8 @@ def test_hostile_nested_resource_zip_becomes_a_warning():
 
 
 def test_preflight_reports_an_unreadable_input_instead_of_crashing(tmp_path, monkeypatch):
-    from kestra_migration_assistant.vra.stages import common as C, preflight
+    from kestra_migration_assistant.vra.stages import common as C
+    from kestra_migration_assistant.vra.stages import preflight
     est = tmp_path / "sources" / "hostile"
     est.mkdir(parents=True)
     _zip([("elements/a/info", "x"), ("/abs", "x")], path=str(est / "bad.package"))

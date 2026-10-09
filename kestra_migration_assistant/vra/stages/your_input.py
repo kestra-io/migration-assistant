@@ -593,7 +593,7 @@ def migrate() -> list[str]:
     C.ensure(C.INPUT)
     C.write_text(C.ANSWERS, render(items(), loaded))
     write()
-    for n, p in present.items():
+    for p in present.values():
         os.replace(p, p + ".migrated")
     return done
 

@@ -11,7 +11,6 @@ in it is invented.
 """
 from __future__ import annotations
 
-import io
 import json
 import os
 import shutil
@@ -24,10 +23,10 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra import entry_points as EP  # noqa: E402
-from kestra_migration_assistant.vra import intake, safety  # noqa: E402
-from kestra_migration_assistant.vra import sanitize as S  # noqa: E402
-from kestra_migration_assistant.vra.parse import vra  # noqa: E402
+from kestra_migration_assistant.vra import entry_points as EP
+from kestra_migration_assistant.vra import intake, safety
+from kestra_migration_assistant.vra import sanitize as S
+from kestra_migration_assistant.vra.parse import vra
 
 VRA_DIR = os.path.join(ROOT, "tests", "conformance", "vra")
 TREE = os.path.join(VRA_DIR, "sample")
@@ -188,7 +187,8 @@ def test_yaml_aliases_are_refused():
 
 
 def test_yaml_custom_tags_and_deep_nesting_are_refused():
-    with pytest.raises(Exception):
+    import yaml
+    with pytest.raises(yaml.YAMLError):
         safety.load_yaml("a: !!python/object/apply:os.system ['true']\n")
     with pytest.raises(safety.UnsafeInput, match="deeper"):
         safety.load_yaml("[" * 100 + "]" * 100)

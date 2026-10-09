@@ -16,11 +16,10 @@ from __future__ import annotations
 
 import os
 import re
-import zipfile
 from collections import Counter
 
-from . import common as C
 from .. import entry_points, outdir
+from . import common as C
 
 # Adapted from Anthropic's Check 0. Theirs asks about scope, local build and
 # test, bespoke build infrastructure, prior attempts and what is off limits.
@@ -225,8 +224,8 @@ def _meta(text: str) -> dict:
 # ------------------------------------------------------------------ export
 
 def _meta_from_package(path: str) -> dict:
-    from kestra_migration_assistant.vra.parse import formats
     from kestra_migration_assistant.vra import safety
+    from kestra_migration_assistant.vra.parse import formats
     with safety.open_zip(path) as z:
         for n in z.namelist():
             if n == "dunes-meta-inf":
@@ -266,7 +265,7 @@ def check_export() -> dict:
     for label, path in C.INPUTS.items():
         try:
             elements, summary = formats.read_any(path)
-        except Exception as e:  # noqa: BLE001  (an unreadable input is reported, not fatal)
+        except Exception as e:
             failures.append({"source": label, "path": C.rel(path), "error": f"{type(e).__name__}: {e}"})
             continue
         kinds = Counter(e.kind for e in elements)
@@ -362,7 +361,7 @@ def _q2_from_entry_points() -> str:
     """Q2 is partly answered by any entry point on record, and fully once entry-points.yaml says complete."""
     try:
         return entry_points.q2_status(entry_points.for_estate())
-    except Exception:  # noqa: BLE001  (an unreadable vRA export is reported by check_export)
+    except Exception:
         return "open"
 
 
@@ -370,7 +369,7 @@ def _q9_from_entry_points() -> str:
     """Q9 only applies when vRA starts something: with no vRA content on record it is not asked."""
     try:
         m = entry_points.for_estate()["model"]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return "open"
     vra = any(m.get(k) for k in ("subscriptions", "catalog_items", "cloud_templates", "day2_actions"))
     return "open" if vra else "not applicable"

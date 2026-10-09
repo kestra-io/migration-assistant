@@ -41,7 +41,6 @@ No mapping from placeholder to value is written anywhere.
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import zipfile
@@ -256,7 +255,7 @@ VRA_ID_KEYS = ("id", "runnableId", "workflowId", "formId", "sourceId", "blueprin
 VRA_SUFFIXES = (".json", ".yaml", ".yml")
 
 
-def _vra_keyed(r: "Redactor", text: str, yaml_like: bool) -> str:
+def _vra_keyed(r: Redactor, text: str, yaml_like: bool) -> str:
     """Redact values of account, tenant and network keys in a vRA JSON or YAML file, as text."""
     groups = [(VRA_USER_KEYS, "USER"), (VRA_IDENTITY_KEYS, "IDENTITY"), (VRA_NETWORK_KEYS, "NETWORK")]
 
@@ -310,7 +309,7 @@ def _vra_keyed(r: "Redactor", text: str, yaml_like: bool) -> str:
     return text
 
 
-def _vra_text(r: "Redactor", text: str, name: str) -> str:
+def _vra_text(r: Redactor, text: str, name: str) -> str:
     """A vRA JSON or YAML file: keyed pass, then the text rules, with ID values held back from both."""
     held: list[str] = []
 
@@ -440,7 +439,7 @@ def sanitize_inputs(inputs: dict[str, str], out_dir: str, vra_inputs: dict[str, 
     touched, skipped = [], []
     seen = 0
     vra_paths = set((vra_inputs or {}).values())
-    for label, path in {**inputs, **(vra_inputs or {})}.items():
+    for _label, path in {**inputs, **(vra_inputs or {})}.items():
         name = os.path.basename(os.path.normpath(path))
         is_vra = path in vra_paths
         if os.path.isdir(path):

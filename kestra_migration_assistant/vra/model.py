@@ -567,7 +567,7 @@ def run_parallel(jobs, worker, max_workers: int = MAX_PARALLEL):
         for fut, job in futs.items():
             try:
                 results[_job_key(job)] = fut.result()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 errors[_job_key(job)] = f"{type(e).__name__}: {e}"
     if quota_hit.is_set():
         errors["_quota"] = ("backend ran out of quota; the batch was stopped. "

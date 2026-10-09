@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 
 import pytest
@@ -21,7 +20,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C
 
 REVIEW = os.path.join(ROOT, "tests", "conformance", "review")
 CREATE, REGISTER, DELETE = "review-Dns---Create-Zone", "review-Dns---Register-Host", "review-Dns---Delete-Zone"
@@ -38,7 +37,9 @@ def _answer(qid, text):
 
 
 def _run(tmp, q9):
-    from kestra_migration_assistant.vra.stages import assess as A, brief as B, preflight as P
+    from kestra_migration_assistant.vra.stages import assess as A
+    from kestra_migration_assistant.vra.stages import brief as B
+    from kestra_migration_assistant.vra.stages import preflight as P
     _configure(tmp)
     P.run()
     if q9:
@@ -218,7 +219,8 @@ def test_3_suspected_defects_are_their_own_list_and_a_decision_each(estate):
 # ------------------------------------------------------------ 4. stale specs reported by status and brief
 
 def test_4_status_and_brief_report_a_stale_spec(estate, tmp_path):
-    from kestra_migration_assistant.vra.stages import brief as B, status as S
+    from kestra_migration_assistant.vra.stages import brief as B
+    from kestra_migration_assistant.vra.stages import status as S
     spec_dir = tmp_path / "specs"
     spec_dir.mkdir()
     for u in (CREATE, REGISTER, DELETE):
@@ -387,8 +389,9 @@ def test_14_a_persona_with_no_steps_is_not_written_up(estate):
 # ------------------------------------------------------------ also noticed: model IDs
 
 def test_every_model_id_in_models_yaml_is_a_known_model():
-    from kestra_migration_assistant.vra import model as M
     import yaml
+
+    from kestra_migration_assistant.vra import model as M
     cfg = yaml.safe_load(open(os.path.join(ROOT, "kestra_migration_assistant", "vra", "data", "models.yaml")))
     for tier in ("reasoning", "drafting"):
         if cfg[tier]["provider"] == "anthropic":

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections import Counter, defaultdict
+from collections import Counter
 
 from .cluster import KNOWN_PLUGIN_PREFIXES
 
@@ -20,7 +20,7 @@ def write_estate_report(out_dir: str, label: str, path: str) -> str:
 
     plugin_use = Counter()
     unmapped_use = Counter()
-    for u, m in models.items():
+    for m in models.values():
         for t in m.get("plugin_types", []):
             plugin_use[t] += 1
             if t.split(":")[0] not in KNOWN_PLUGIN_PREFIXES:
@@ -101,7 +101,7 @@ def write_estate_report(out_dir: str, label: str, path: str) -> str:
 
     only = Counter()
     any_of = Counter()
-    for u, hits in fired.items():
+    for hits in fired.values():
         for h in hits:
             any_of[h] += 1
         if len(hits) == 1:

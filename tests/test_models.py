@@ -14,8 +14,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra import model as M  # noqa: E402
-from kestra_migration_assistant.vra import safety  # noqa: E402
+from kestra_migration_assistant.vra import model as M
+from kestra_migration_assistant.vra import safety
 
 SCHEMA = {"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}}}
 
@@ -192,6 +192,7 @@ def test_legacy_cache_is_reused_for_claude_code(tmp_path, monkeypatch):
 
 def test_a_tier_may_set_its_own_timeout_and_it_does_not_change_the_cache_key(tmp_path):
     import pytest as _pt
+
     from kestra_migration_assistant.vra import model as M
     p = tmp_path / "models.yaml"
     p.write_text("drafting:\n  provider: anthropic\n  model: m\n  timeout_s: 1234\n")

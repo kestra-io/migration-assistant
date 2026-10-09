@@ -15,8 +15,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.vra import intake  # noqa: E402
-from kestra_migration_assistant.vra import sanitize as S  # noqa: E402
+from kestra_migration_assistant.vra import intake
+from kestra_migration_assistant.vra import sanitize as S
 
 PLANTED = os.path.join(ROOT, "tests", "conformance", "sanitize", "planted-secrets")
 
