@@ -1,11 +1,12 @@
 # Which model answers, in two tiers. Deliberately not per stage.
-# Read by vro2k_assess/model.py (or the file named by VRO_MODELS_CONFIG).
+# The default, bundled with the package. Read by kestra_migration_assistant/vra/model.py, unless
+# VRO_MODELS_CONFIG names another file.
 
-reasoning:            # Understand (specs, cluster summaries), the task plan, Tests, Review
+reasoning:            # Understand (specs, cluster summaries)
   provider: anthropic # anthropic | openai-compatible
   auth: claude-code   # claude-code (the local Claude Code login) | api-key (reads ANTHROPIC_API_KEY)
   model: claude-fable-5-1
-drafting:             # Convert, domain names, walkthrough text
+drafting:             # domain names, walkthrough text
   provider: anthropic
   auth: claude-code
   model: claude-sonnet-5

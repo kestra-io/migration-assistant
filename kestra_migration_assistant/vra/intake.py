@@ -20,7 +20,7 @@ from __future__ import annotations
 import os
 import re
 
-from . import safety
+from . import outdir, safety
 from . import sanitize as S
 from .parse.formats import decode_bytes
 
@@ -105,7 +105,7 @@ def check(path: str) -> dict:
     name = os.path.basename(path)
     if os.path.isdir(path):
         for dp, dirs, files in os.walk(path):
-            dirs[:] = sorted(d for d in dirs if not os.path.islink(os.path.join(dp, d)))
+            dirs[:] = sorted(d for d in dirs if not os.path.islink(os.path.join(dp, d)) and not outdir.skipped(dp, d))
             for fn in sorted(files):
                 p = os.path.join(dp, fn)
                 rel = os.path.join(name, os.path.relpath(p, path))

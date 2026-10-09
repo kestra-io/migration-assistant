@@ -84,7 +84,7 @@ targets:
       - io.kestra.plugin.ee.f5.pool.Create
       - io.kestra.plugin.ee.f5.poolmember.Add
       - io.kestra.plugin.ee.f5.virtualserver.Create
-    kestra_evidence: "Kestra plugin snapshot (kestra-reference/plugins/): plugin-ee-f5, installed and in the catalogue"
+    kestra_evidence: "Kestra plugin snapshot (data/plugins/): plugin-ee-f5, installed and in the catalogue"
     api: "iControl REST, https://<big-ip>/mgmt/tm/ltm/<collection> (virtual, pool, pool/<p>/members, node, monitor/<type>)"
     rest_signatures:
       paths: ["^/mgmt/tm/", "^/mgmt/shared/"]

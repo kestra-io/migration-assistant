@@ -324,7 +324,7 @@ def _split_args(text: str, masked: str, open_at: int) -> tuple[list[str], int]:
 
 
 def _split_plus(expr: str) -> list[str]:
-    from vro2k_assess.parse.jscalls import mask
+    from kestra_migration_assistant.vra.parse.jscalls import mask
     m = mask(expr)
     out, depth, start = [], 0, 0
     for i, c in enumerate(m):
@@ -365,7 +365,7 @@ def path_template(expr: str, script: str, builders: dict[str, dict], depth: int 
         call = re.fullmatch(r"[\w$.]+?\s*\.\s*([A-Za-z_$][\w$]*)\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)", op, re.S)
         if call and call.group(1) in builders and depth < 2:
             b = builders[call.group(1)]
-            from vro2k_assess.parse.jscalls import mask
+            from kestra_migration_assistant.vra.parse.jscalls import mask
             inner = "(" + call.group(2) + ")"
             args, _ = _split_args(inner, mask(inner), 0)
             first = next((ln for ln in (b["script"] or "").splitlines() if ln.strip()), "")
@@ -396,7 +396,7 @@ def call_args(script: str, name: str) -> list[list[str]]:
     """The arguments of every call `<x>.name(...)` in this script (code only, not comments or strings)."""
     if not script or name not in script:
         return []
-    from vro2k_assess.parse.jscalls import mask
+    from kestra_migration_assistant.vra.parse.jscalls import mask
     masked = mask(script)
     return [_split_args(script, masked, m.end() - 1)[0]
             for m in re.finditer(r"\.\s*" + re.escape(name) + r"\s*\(", masked)]
@@ -438,7 +438,7 @@ def rest_call_ops(script: str, helpers: dict[str, dict], builders: dict[str, dic
     """`<METHOD> <path>` for every call this script makes to a REST helper action."""
     if not script or not helpers:
         return []
-    from vro2k_assess.parse.jscalls import mask, module_calls
+    from kestra_migration_assistant.vra.parse.jscalls import mask, module_calls
     called = {act for _, act in module_calls(script)}
     masked = mask(script)
     ops = []
@@ -476,6 +476,6 @@ def name_rest_target(evidence: list[str]) -> tuple[str, list[str]]:
 
 
 def string_literals(script: str) -> list[str]:
-    from vro2k_assess.parse.jscalls import mask
+    from kestra_migration_assistant.vra.parse.jscalls import mask
     masked = mask(script or "")
     return [m.group(2) for m in STRING_LIT.finditer(script or "") if masked[m.start()] in "\"'"]

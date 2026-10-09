@@ -19,8 +19,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess import safety  # noqa: E402
-from vro2k_assess.parse import formats, workflow  # noqa: E402
+from kestra_migration_assistant.vra import safety  # noqa: E402
+from kestra_migration_assistant.vra.parse import formats, workflow  # noqa: E402
 
 WF = ('<workflow xmlns="http://vmware.com/vco/workflow" root-name="item0" id="x">'
       '<display-name>t</display-name><workflow-item name="item0" type="end" end-mode="0"/></workflow>')
@@ -168,7 +168,7 @@ def test_hostile_nested_resource_zip_becomes_a_warning():
 
 
 def test_preflight_reports_an_unreadable_input_instead_of_crashing(tmp_path, monkeypatch):
-    from vro2k_assess.stages import common as C, preflight
+    from kestra_migration_assistant.vra.stages import common as C, preflight
     est = tmp_path / "sources" / "hostile"
     est.mkdir(parents=True)
     _zip([("elements/a/info", "x"), ("/abs", "x")], path=str(est / "bad.package"))
@@ -193,8 +193,8 @@ def _hostile_model():
 
 
 def _prompts():
-    from vro2k_assess import understand
-    from vro2k_assess.stages import assess, brief
+    from kestra_migration_assistant.vra import understand
+    from kestra_migration_assistant.vra.stages import assess, brief
     m = _hostile_model()
     spec = {"purpose": HOSTILE, "open_questions": [{"question": HOSTILE}]}
     yield "understand", understand.spec_prompt(m, [{"workflow": "y", "spec": spec}],
@@ -224,7 +224,7 @@ def test_wrap_is_deterministic_so_the_cache_still_works():
 def test_every_model_call_site_builds_its_prompt_with_the_guard():
     """Static check: a module that calls .ask( also uses safety.guard (the adapter refuses otherwise)."""
     missing = []
-    for pkg in ("vro2k_assess",):
+    for pkg in ("kestra_migration_assistant",):
         for dp, _d, fs in os.walk(os.path.join(ROOT, pkg)):
             for f in fs:
                 if not f.endswith(".py") or f == "model.py":
@@ -243,3 +243,18 @@ def test_repository_has_no_secrets():
     r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "secret_scan.py")],
                        capture_output=True, text=True, cwd=ROOT)
     assert r.returncode == 0, r.stdout[-2000:]
+
+
+def test_the_repository_scan_skips_prose_and_punctuation_but_not_a_credential():
+    """The three shapes that were false positives are not findings; anything with a digit still is."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("secret_scan", os.path.join(ROOT, "tools", "secret_scan.py"))
+    scan = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(scan)
+    quiet = ['"auth": "how the flows sign in"', 'System.log("Workflow token: ".concat(wfToken.id, " and")',
+             'throw u.hash={text:"->>-",token:"->>-"}']
+    for text in quiet:
+        assert scan.scan_text("x", text) == [], text
+    loud = ['password = "S3cretPass"', 'token: "abc 123 def"', 'api_key = "k-9f8e7d6c5b4a"', 'secret: "hunter2"']
+    for text in loud:
+        assert scan.scan_text("x", text), text

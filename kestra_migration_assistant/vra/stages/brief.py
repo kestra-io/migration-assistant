@@ -590,7 +590,7 @@ def walkthroughs(assess, tri, specs) -> dict:
 
 def stale_specs() -> dict[str, str]:
     """uid -> why, for generated specs whose prompt would differ today (understand.stale_specs). No model call."""
-    from vro2k_assess import understand
+    from kestra_migration_assistant.vra import understand
     try:
         return understand.stale_specs()
     except (OSError, KeyError, ValueError) as e:

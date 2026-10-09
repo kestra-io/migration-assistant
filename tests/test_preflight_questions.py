@@ -15,7 +15,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.stages import common as C, your_input as Y  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C, your_input as Y  # noqa: E402
 
 HELPERS = os.path.join(ROOT, "tests", "conformance", "helpers")
 
@@ -32,7 +32,7 @@ def _run(tmp, vra: bool) -> dict:
     os.environ["VRO_NO_MODEL"] = "1"
     try:
         _configure(tmp, vra)
-        from vro2k_assess.stages import assess as A, preflight as P
+        from kestra_migration_assistant.vra.stages import assess as A, preflight as P
         before = P.run()
         A.run()
         refresh = P.refresh_questions()
@@ -59,7 +59,7 @@ def without_vra(tmp_path_factory):
 # ------------------------------------------------------------------ no question asks for what is present
 
 def test_no_question_contradicts_what_the_tool_found(with_vra):
-    from vro2k_assess.stages import preflight as P
+    from kestra_migration_assistant.vra.stages import preflight as P
     assert with_vra["facts"]["vra"] and with_vra["facts"]["systems"] and with_vra["facts"]["plugins"]
     assert P.contradictions(with_vra["answers"]["items"], with_vra["facts"]) == []
     assert with_vra["refresh"]["contradictions"] == []
@@ -108,7 +108,7 @@ def test_q9_offers_replace_with_a_bridge(with_vra):
 
 
 def test_without_a_vra_export_q2_still_asks_for_it(without_vra):
-    from vro2k_assess.stages import preflight as P
+    from kestra_migration_assistant.vra.stages import preflight as P
     q2 = without_vra["q"]["Q2"]
     assert ".vra-ng" in q2["question"] and not q2.get("found")
     assert without_vra["q"]["Q9"]["status"] == "not applicable"
@@ -124,7 +124,7 @@ def test_before_assess_q3_falls_back_to_the_generic_list(with_vra):
 
 def test_the_static_questions_contradict_these_findings():
     """The check itself: the questions as they were before (one wording for every estate) are caught."""
-    from vro2k_assess.stages import preflight as P
+    from kestra_migration_assistant.vra.stages import preflight as P
     f = {"vra": {"exports": ["x-vra"], "catalog_items": 1, "cloud_templates": 1, "subscriptions": 2, "day2_actions": 0},
          "systems": [("Infoblox", "the workflows' code")], "plugins": {"HTTP-REST plugin (built in)": ["callApi"]},
          "history_files": ["runs.csv"]}
@@ -138,7 +138,7 @@ def test_the_static_questions_contradict_these_findings():
 
 def test_your_input_holds_only_what_the_customer_needs(with_vra, without_vra):
     import yaml
-    from vro2k_assess.stages import preflight as P
+    from kestra_migration_assistant.vra.stages import preflight as P
     # with a vRA export: answers.yaml alone (no entry-points.yaml, never a corrections.yaml)
     assert os.listdir(os.path.join(with_vra["tmp"], "your-input")) == ["answers.yaml"]
     # without one: entry-points.yaml too, and exactly one open question points to it (Q2)

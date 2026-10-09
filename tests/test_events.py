@@ -22,9 +22,9 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.parse.jscalls import mask, module_calls  # noqa: E402
-from vro2k_assess.stages import common as C  # noqa: E402
-from vro2k_assess.stages import triggers as TG  # noqa: E402
+from kestra_migration_assistant.vra.parse.jscalls import mask, module_calls  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import triggers as TG  # noqa: E402
 
 EVENTS = os.path.join(ROOT, "tests", "conformance", "events")
 REG, UNREG, ROUTER = "events-Net---Register-Host", "events-Net---Unregister-Host", "events-Net---Event-Router"
@@ -92,7 +92,7 @@ def estate_run(tmp_path_factory):
     os.environ["VRO_NO_MODEL"] = "1"
     try:
         _configure(tmp)
-        from vro2k_assess.stages import assess as A, brief as B, preflight as P
+        from kestra_migration_assistant.vra.stages import assess as A, brief as B, preflight as P
         P.run()
         a = A.run()
         b = B.run()
@@ -211,7 +211,7 @@ def test_a_lifecycle_group_moves_together(estate):
 
 
 def test_waves_keep_a_lifecycle_group_in_one_wave_and_gate_blocking_subscriptions():
-    from vro2k_assess.stages import waves as W
+    from kestra_migration_assistant.vra.stages import waves as W
     wf = {}
     for u, c, subs in (("x-create", "C1", [("create", "deployment.request.pre", True, 15)]),
                        ("x-add", "C2", [("add", "compute.provision.post", True, 10)]),
@@ -263,7 +263,7 @@ def test_lifecycle_order():
 
 
 def test_trigger_plan_on_the_vra_flow_page_and_wording(estate):
-    from vro2k_assess.stages import visuals as V
+    from kestra_migration_assistant.vra.stages import visuals as V
     page = V.vra_view(estate["assess"], estate["brief"])
     assert "<h2>In Kestra</h2>" in page
     assert "If vRA stays" in page and "If vRA is replaced" in page          # Q9 open: both
@@ -275,14 +275,14 @@ def test_trigger_plan_on_the_vra_flow_page_and_wording(estate):
 
 
 def test_brief_shows_one_plan_when_q9_is_answered(estate):
-    from vro2k_assess.stages import brief as B
+    from kestra_migration_assistant.vra.stages import brief as B
     path = C.ANSWERS
     txt = open(path).read()
     try:
         from conftest import answer
         answer("Q9", "replace")
         B.run()
-        from vro2k_assess.stages import assess as A, visuals as V
+        from kestra_migration_assistant.vra.stages import assess as A, visuals as V
         page = V.vra_view(A.load(), C.read_json(os.path.join(C.BRIEF, "brief.json")))
         assert "If vRA is replaced" in page and "If vRA stays" not in page
         assert "vRA is replaced (preflight Q9)" in page
@@ -292,7 +292,7 @@ def test_brief_shows_one_plan_when_q9_is_answered(estate):
 
 
 def test_q9_not_applicable_without_vra(tmp_path):
-    from vro2k_assess.stages import preflight as P
+    from kestra_migration_assistant.vra.stages import preflight as P
     C.configure("conformance", source_dir=os.path.join(ROOT, "tests", "conformance"), stages_dir=str(tmp_path),
                 inputs={"aria-xml": os.path.join(ROOT, "tests", "conformance", "aria-xml")}, vra_inputs={})
     q9 = next(q for q in P.load_answers()["items"] if q["id"] == "Q9")
@@ -300,7 +300,7 @@ def test_q9_not_applicable_without_vra(tmp_path):
 
 
 def test_stage_ignores_a_name_tag():
-    from vro2k_assess.stages import assess as A
+    from kestra_migration_assistant.vra.stages import assess as A
     assert A._stage_of("LB - Create Load Balancer") == "provisioning"
     assert A._stage_of("[NET] Add Route") == "configuration"
     assert A._stage_of("Create VM") == "provisioning"
@@ -328,7 +328,7 @@ def _snapshot(folder, installed_version="1.0.0", catalog_version="1.1.0"):
 
 
 def test_plugin_coverage_from_a_snapshot(estate, tmp_path, monkeypatch):
-    from vro2k_assess.stages import coverage as CV, targets as T
+    from kestra_migration_assistant.vra.stages import coverage as CV, targets as T
     _snapshot(str(tmp_path))
     monkeypatch.setattr(CV, "SNAPSHOT_DIR", str(tmp_path))
     a = estate["assess"]
@@ -349,7 +349,7 @@ def test_plugin_coverage_from_a_snapshot(estate, tmp_path, monkeypatch):
 
 
 def test_plugin_coverage_without_a_snapshot(estate, tmp_path, monkeypatch):
-    from vro2k_assess.stages import coverage as CV, targets as T
+    from kestra_migration_assistant.vra.stages import coverage as CV, targets as T
     monkeypatch.setattr(CV, "SNAPSHOT_DIR", str(tmp_path))
     a = estate["assess"]
     cov = CV.coverage(a["targets"], a["entry_points"]["model"], T.load_plugin_map())
@@ -359,7 +359,7 @@ def test_plugin_coverage_without_a_snapshot(estate, tmp_path, monkeypatch):
 
 def test_estate_report_has_coverage_and_the_visuals_write_both_views(estate):
     assert "## Plugin coverage" in estate["report"]
-    from vro2k_assess.stages import visuals as V
+    from kestra_migration_assistant.vra.stages import visuals as V
     written = V.run()
     names = {os.path.basename(p) for p in written}
     assert {"vra.html", "plugins.html"} <= names

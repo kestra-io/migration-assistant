@@ -1,4 +1,4 @@
-"""`vro.py run` prints one line per stage as it goes, and a last line with the total, the cache and the page."""
+"""`kestra-migrate vra run` prints one line per stage as it goes, and a last line with the total, the cache and the page."""
 from __future__ import annotations
 
 import os
@@ -9,16 +9,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def test_run_prints_a_line_per_stage_and_a_last_line(tmp_path, monkeypatch, capsys):
-    from vro2k_assess import cli
-    from vro2k_assess.stages import common as C
+    from kestra_migration_assistant.vra import cli
+    from kestra_migration_assistant.vra.stages import common as C
     helpers = os.path.join(ROOT, "tests", "conformance", "helpers")
-    src = tmp_path / "sources" / "est"
+    src = tmp_path / "est"
     shutil.copytree(os.path.join(helpers, "vro"), src / "vro")
     shutil.copytree(os.path.join(helpers, "vra"), src / "helpers-vra")
-    monkeypatch.setattr(C, "SOURCES_ROOT", str(tmp_path / "sources"))
-    monkeypatch.setattr(C, "STAGES_ROOT", str(tmp_path / "stages"))
     monkeypatch.setenv("VRO_NO_MODEL", "1")
-    assert cli.main(["run", "--estate", "est", "--no-model"]) == 0
+    assert cli.main(["run", str(src), "--no-model"]) == 0
     out = capsys.readouterr().out
     lines = out.splitlines()
     tops = [x for x in lines if not x.startswith(" ")]
@@ -36,8 +34,8 @@ def test_run_prints_a_line_per_stage_and_a_last_line(tmp_path, monkeypatch, caps
 
 def test_a_long_stage_says_it_started_and_what_it_is_doing(monkeypatch, capsys):
     import time
-    from vro2k_assess import cli
-    from vro2k_assess.stages import common as C
+    from kestra_migration_assistant.vra import cli
+    from kestra_migration_assistant.vra.stages import common as C
 
     def stage(s):
         if s == "understand":

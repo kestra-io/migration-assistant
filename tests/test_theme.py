@@ -13,7 +13,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.stages import theme as TH  # noqa: E402
+from kestra_migration_assistant.vra.stages import theme as TH  # noqa: E402
 
 AA, AA_LARGE = 4.5, 3.0
 HEX = re.compile(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b|rgba?\(\s*\d")
@@ -67,8 +67,8 @@ def test_brand_values_are_as_given():
 
 
 def test_no_colour_outside_the_tokens_file():
-    files = [os.path.join(ROOT, "vro2k_assess", "stages", f) for f in ("theme.py", "visuals.py", "status.py")]
-    viewer = open(os.path.join(ROOT, "vro2k_assess", "assets", "explorer-viewer.html")).read()
+    files = [os.path.join(ROOT, "kestra_migration_assistant", "vra", "stages", f) for f in ("theme.py", "visuals.py", "status.py")]
+    viewer = open(os.path.join(ROOT, "kestra_migration_assistant", "vra", "assets", "explorer-viewer.html")).read()
     viewer = "\n".join(l for l in viewer.splitlines() if not l.startswith("var d3="))   # the vendored d3 bundle
     found = {os.path.basename(f): HEX.findall(open(f).read()) for f in files}
     found["explorer-viewer.html"] = HEX.findall(viewer)
@@ -76,7 +76,7 @@ def test_no_colour_outside_the_tokens_file():
 
 
 def test_font_and_logo_are_vendored_and_unmodified():
-    a = os.path.join(ROOT, "vro2k_assess", "assets")
+    a = os.path.join(ROOT, "kestra_migration_assistant", "vra", "assets")
     assert os.path.getsize(os.path.join(a, TH.F["file"])) > 100_000
     assert "SIL OPEN FONT LICENSE" in open(os.path.join(a, "vendor", "mona-sans", "OFL.txt")).read().upper()
     for v in ("on_dark", "on_light"):

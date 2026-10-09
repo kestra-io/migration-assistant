@@ -21,7 +21,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
 
 REVIEW = os.path.join(ROOT, "tests", "conformance", "review")
 CREATE, REGISTER, DELETE = "review-Dns---Create-Zone", "review-Dns---Register-Host", "review-Dns---Delete-Zone"
@@ -38,7 +38,7 @@ def _answer(qid, text):
 
 
 def _run(tmp, q9):
-    from vro2k_assess.stages import assess as A, brief as B, preflight as P
+    from kestra_migration_assistant.vra.stages import assess as A, brief as B, preflight as P
     _configure(tmp)
     P.run()
     if q9:
@@ -90,7 +90,7 @@ def _decisions(r):
 
 def _prompts(r, spec_dir=None):
     """Every spec prompt as understand would send it (no model call), and what each carries."""
-    from vro2k_assess import understand as U
+    from kestra_migration_assistant.vra import understand as U
     _configure(r["tmp"], spec_dir)
     uids = sorted(r["assess"]["workflows"])
     texts = {}
@@ -127,7 +127,7 @@ def test_1_a_spec_prompt_shows_the_elements_its_code_opens(estate):
 
 
 def test_1_values_only_when_present_and_text_capped():
-    from vro2k_assess import understand as U
+    from kestra_migration_assistant.vra import understand as U
     els = [{"kind": "ConfigurationElement", "category_path": "X.Y", "name": "E", "attributes": [
         {"name": "a", "type": "string", "value": None, "is_null_sentinel": True, "is_secure": False},
         {"name": "b", "type": "string", "value": "v", "is_null_sentinel": False, "is_secure": False},
@@ -155,7 +155,7 @@ def test_1_a_raw_tree_resource_element_keeps_its_text_and_mime(estate):
 
 
 def test_1_the_change_makes_specs_generated_before_it_stale(estate, tmp_path):
-    from vro2k_assess import understand as U
+    from kestra_migration_assistant.vra import understand as U
     spec_dir = tmp_path / "specs"
     spec_dir.mkdir()
     for u in (CREATE, REGISTER, DELETE):
@@ -186,7 +186,7 @@ def test_2_writers_are_specified_before_the_readers_and_shown_to_them(estate):
 
 
 def test_2_the_estate_schema_asks_for_defects_and_state_records():
-    from vro2k_assess import understand as U
+    from kestra_migration_assistant.vra import understand as U
     req = U.ESTATE_SPEC_SCHEMA["required"]
     assert "suspected_defects" in req and "state_records" in req
     assert "suspected_defects" not in U.SPEC_SCHEMA["properties"]   # the closed benchmark's schema is unchanged
@@ -218,7 +218,7 @@ def test_3_suspected_defects_are_their_own_list_and_a_decision_each(estate):
 # ------------------------------------------------------------ 4. stale specs reported by status and brief
 
 def test_4_status_and_brief_report_a_stale_spec(estate, tmp_path):
-    from vro2k_assess.stages import brief as B, status as S
+    from kestra_migration_assistant.vra.stages import brief as B, status as S
     spec_dir = tmp_path / "specs"
     spec_dir.mkdir()
     for u in (CREATE, REGISTER, DELETE):
@@ -290,7 +290,7 @@ def test_8_operations_count_workflows_not_call_sites(estate):
 
 
 def test_8_vro_platform_shows_the_reach_its_operations_have(estate):
-    from vro2k_assess.stages.assess_report import shown_reach
+    from kestra_migration_assistant.vra.stages.assess_report import shown_reach
     t = estate["assess"]["targets"]["vro-platform"]
     assert shown_reach(t) == "replace" and "| vRO platform services | replace |" in estate["inv"]
 
@@ -387,9 +387,9 @@ def test_14_a_persona_with_no_steps_is_not_written_up(estate):
 # ------------------------------------------------------------ also noticed: model IDs
 
 def test_every_model_id_in_models_yaml_is_a_known_model():
-    from vro2k_assess import model as M
+    from kestra_migration_assistant.vra import model as M
     import yaml
-    cfg = yaml.safe_load(open(os.path.join(ROOT, "models.yaml")))
+    cfg = yaml.safe_load(open(os.path.join(ROOT, "kestra_migration_assistant", "vra", "data", "models.yaml")))
     for tier in ("reasoning", "drafting"):
         if cfg[tier]["provider"] == "anthropic":
             assert cfg[tier]["model"] in M.PRICES, (tier, cfg[tier]["model"])
@@ -398,7 +398,7 @@ def test_every_model_id_in_models_yaml_is_a_known_model():
 # ------------------------------------------------------------ 13. preflight asks nothing the exports answered
 
 def test_13_preflight_after_assess_asks_nothing_the_exports_answered(estate):
-    from vro2k_assess.stages import preflight as P
+    from kestra_migration_assistant.vra.stages import preflight as P
     q = P.refresh_questions()
     assert q["contradictions"] == []
     items = {i["id"]: i for i in P.load_answers()["items"]}
@@ -409,7 +409,7 @@ def test_13_preflight_after_assess_asks_nothing_the_exports_answered(estate):
 
 
 def test_13_rewriting_the_questions_keeps_the_answers_file_time(estate):
-    from vro2k_assess.stages import preflight as P
+    from kestra_migration_assistant.vra.stages import preflight as P
     path = C.ANSWERS
     txt = open(path).read()
     assert "    question: For each system" in txt
@@ -420,7 +420,7 @@ def test_13_rewriting_the_questions_keeps_the_answers_file_time(estate):
 
 
 def test_a_defect_question_keeps_names_and_lowers_the_rest():
-    from vro2k_assess.stages.waves import defect_question as D
+    from kestra_migration_assistant.vra.stages.waves import defect_question as D
     end = ". Keep the current behavior, or fix it?"
     assert D("Create", "The registry is read before the teardown check (item1: x).") == \
         "Possible defect in Create: the registry is read before the teardown check" + end

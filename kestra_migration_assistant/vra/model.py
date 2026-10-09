@@ -1,11 +1,11 @@
 """
 The one place that talks to a model.
 
-Which model answers is set in `models.yaml` at the repository root (or the file
-named by VRO_MODELS_CONFIG), in two tiers, deliberately not per stage:
+Which model answers is set in `models.yaml` (the default bundled in data/, or the
+file named by VRO_MODELS_CONFIG), in two tiers, deliberately not per stage:
 
-  reasoning   Understand (specs, cluster summaries), Tests, Review
-  drafting    Convert, domain names, walkthrough text
+  reasoning   Understand (specs, cluster summaries)
+  drafting    domain names, walkthrough text
 
 Each tier names a provider and how it authenticates:
 
@@ -45,10 +45,13 @@ import urllib.request
 
 from . import safety
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CACHE_DIR = os.path.join(ROOT, ".model-cache")
-LOG_PATH = os.path.join(ROOT, "out", "model-calls.jsonl")
-CONFIG_PATH = os.environ.get("VRO_MODELS_CONFIG") or os.path.join(ROOT, "models.yaml")
+# Where replies are cached and calls logged: set by the caller before the first call (stages/common.py's
+# model() points both at the estate's output folder). Nothing is written anywhere until they are set.
+CACHE_DIR: str | None = None
+LOG_PATH: str | None = None
+# The bundled default, inside the installed package, unless VRO_MODELS_CONFIG names another file.
+CONFIG_PATH = os.environ.get("VRO_MODELS_CONFIG") or os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                                   "data", "models.yaml")
 
 LEGACY_BACKEND = "claude-code-headless"     # the cache key every call before models.yaml used
 MAX_PARALLEL = 4
@@ -406,6 +409,8 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
     if model:
         cfg["model"] = model
     who = {"tier": tier, "provider": cfg["provider"], "auth": cfg["auth"], "model": cfg["model"]}
+    if not CACHE_DIR or not LOG_PATH:
+        raise ModelError("no model cache or call log set: configure an estate first (stages/common.py model())")
     os.makedirs(CACHE_DIR, exist_ok=True)
     key = _key(prompt, schema, cfg)
     cache_path = os.path.join(CACHE_DIR, f"{key}.json")
@@ -581,7 +586,7 @@ def _job_key(job):
 
 def cost_summary() -> dict:
     """Read back the call log for the report."""
-    if not os.path.exists(LOG_PATH):
+    if not LOG_PATH or not os.path.exists(LOG_PATH):
         return {"calls": 0, "billed_calls": 0, "cached_calls": 0,
                 "cost_usd": 0.0, "ms": 0, "by_purpose": {}}
     calls, cached, cost, ms = 0, 0, 0.0, 0

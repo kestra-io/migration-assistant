@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Secret scanning of this repository: every git-tracked text file, and anything staged.
+Secret scanning of this repository: every git-tracked file, anything staged, or the whole history.
 
     python tools/secret_scan.py            # exit 1 and list findings if anything looks like a secret
     python tools/secret_scan.py --staged   # only what is staged (for a pre-commit hook)
@@ -21,8 +21,8 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess import safety  # noqa: E402
-from vro2k_assess import sanitize as S  # noqa: E402
+from kestra_migration_assistant.vra import safety  # noqa: E402
+from kestra_migration_assistant.vra import sanitize as S  # noqa: E402
 
 # Fixtures that hold invented secrets on purpose, and the code that defines the patterns.
 ALLOW = (
@@ -31,7 +31,7 @@ ALLOW = (
     "tests/test_intake.py",
     "tests/test_security.py",
     "tests/test_models.py",
-    "vro2k_assess/sanitize.py",
+    "kestra_migration_assistant/vra/sanitize.py",
     "tools/secret_scan.py",
 )
 ENV_ASSIGN = re.compile(r"(?m)^\s*(?:export\s+)?([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY|APIKEY|PRIVATE_KEY))\s*=\s*(\S{6,})")
@@ -39,6 +39,16 @@ ENV_ASSIGN = re.compile(r"(?m)^\s*(?:export\s+)?([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|
 # (a repository secret has digits or symbols; a word like "claude-code" is a setting).
 PLACEHOLDER = re.compile(r"^(<[^>]*>|\$\{?[A-Za-z_.]+\}?|\{\{.*\}\}|x{3,}|\*{3,}|\.\.\.|__NULL__|"
                          r"SecureString|string|boolean|number|Array/.*|[A-Za-z]+:[A-Za-z]+|[A-Za-z][A-Za-z_-]*)$")
+
+
+def not_a_credential(value: str) -> bool:
+    """
+    A literal after a secret-named key that cannot be one: no digit, and either a space in it (prose, like
+    `"auth": "how the flows sign in"`, or code the pattern ran into, like `token: ".concat(wfToken.id, "`)
+    or no letter at all (punctuation, like mermaid's `token:"->>-"`). Only the repository scan applies this;
+    the sanitizer and the intake check stay strict, since an export is not this repository's own code.
+    """
+    return not re.search(r"\d", value) and (bool(re.search(r"\s", value)) or not re.search(r"[A-Za-z]", value))
 
 
 def tracked(staged: bool) -> list[str]:
@@ -61,7 +71,8 @@ def scan_text(path: str, text: str) -> list[tuple[str, int, str]]:
         for m in rx.finditer(text):
             add("token or key", m, m.group(m.lastindex or 0))
     for m in S.SECRET_KV_RE.finditer(text):
-        add("secret assignment", m, m.group(3))
+        if not not_a_credential(m.group(3)):
+            add("secret assignment", m, m.group(3))
     for m in ENV_ASSIGN.finditer(text):
         add("env assignment " + m.group(1), m, m.group(2))
     return found

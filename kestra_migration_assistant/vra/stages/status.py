@@ -100,7 +100,7 @@ def collect() -> dict:
     # a generated spec whose prompt would differ today describes other code or another prompt (no model call)
     stale_spec = {}
     try:
-        from vro2k_assess import understand
+        from kestra_migration_assistant.vra import understand
         stale_spec = understand.stale_specs()
     except (OSError, KeyError, ValueError):
         pass

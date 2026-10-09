@@ -27,8 +27,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.stages import common as C  # noqa: E402
-from vro2k_assess.stages import triage as TR  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import triage as TR  # noqa: E402
 
 CONFORMANCE = os.path.join(ROOT, "tests", "conformance")
 ESTATE_OF = {"alb": "avi-sample", "vspk": "nuage-sample"}
@@ -123,7 +123,7 @@ class Assessed:
 
 @pytest.fixture(scope="module")
 def conformance(tmp_path_factory):
-    from vro2k_assess.stages import assess as A
+    from kestra_migration_assistant.vra.stages import assess as A
     tmp = tmp_path_factory.mktemp("conformance-stages")
     inputs = {"canvas": os.path.join(CONFORMANCE, "canvas"), "aria-xml": os.path.join(CONFORMANCE, "aria-xml"),
               "pkgdiff-v1.0": os.path.join(CONFORMANCE, "pkgdiff-v1.0.package"),

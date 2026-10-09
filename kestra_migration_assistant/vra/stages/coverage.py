@@ -2,8 +2,8 @@
 Plugin coverage: for every system the estate touches, whether a Kestra plugin covers it today, whether it
 would need a new plugin, or whether Kestra reaches it over HTTP.
 
-Built only from the plugin snapshot in kestra-reference/plugins/ (written by tools/kestra_plugins.py from
-a running Kestra's /api/v1/plugins and the kestra.io catalogue), never from memory. The plugin map
+Built only from the dated plugin snapshot bundled in data/plugins/ (taken from a running Kestra's
+/api/v1/plugins and the kestra.io catalogue), never from memory. The plugin map
 (data/plugin-map.yaml) says which plugin group or search words stand for a system and which task does
 which operation; the snapshot says whether that plugin and those tasks exist, where, and in which
 version. When the instance and the catalogue disagree, both are shown.
@@ -20,7 +20,7 @@ import re
 
 from . import common as C
 
-SNAPSHOT_DIR = os.path.join(C.ROOT, "kestra-reference/plugins")
+SNAPSHOT_DIR = os.path.join(C.PACKAGE, "data", "plugins")     # the dated snapshot bundled with the package
 SOURCES = ("installed", "catalog")
 HTTP_TASK = "io.kestra.plugin.core.http.Request"
 STATUS_LABEL = {"plugin": "Kestra plugin", "partial": "Kestra plugin, some operations over HTTP",
@@ -33,7 +33,7 @@ def latest_snapshot(folder: str | None = None) -> dict | None:
     if not files:
         return None
     snap = json.load(open(files[-1], encoding="utf-8"))
-    snap["file"] = os.path.relpath(files[-1], C.ROOT)
+    snap["file"] = os.path.basename(files[-1])
     return snap
 
 
@@ -232,8 +232,8 @@ def markdown(cov: dict) -> list[str]:
     m = cov["snapshot"]
     L = ["## Plugin coverage", ""]
     if not m["file"]:
-        return L + ["No plugin snapshot in kestra-reference/plugins/. Run `python tools/kestra_plugins.py` "
-                    "(read-only) and re-run Assess.", ""]
+        return L + ["No plugin snapshot is bundled with this install (data/plugins/ in the package), so coverage "
+                    "is not shown.", ""]
     src = "; ".join(f"{s}: " + (f"{v.get('plugins')} plugins from {v.get('url')}"
                                 + (f" (Kestra {v.get('kestra_version')} {v.get('edition')})" if v.get("kestra_version") else "")
                                 if v.get("available") else f"unavailable ({v.get('reason', '')})")

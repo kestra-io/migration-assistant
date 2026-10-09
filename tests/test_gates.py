@@ -17,7 +17,7 @@ import yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.stages import common as C, gates as G, your_input as Y  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C, gates as G, your_input as Y  # noqa: E402
 
 HELPERS = os.path.join(ROOT, "tests", "conformance", "helpers")
 
@@ -37,7 +37,7 @@ def _answer(q, text):
 def estate(tmp_path, monkeypatch):
     monkeypatch.setenv("VRO_NO_MODEL", "1")
     _configure(tmp_path)
-    from vro2k_assess.stages import assess as A, brief as B, preflight as P
+    from kestra_migration_assistant.vra.stages import assess as A, brief as B, preflight as P
     P.run()
     _answer("Q9", "replace")
     A.run()
@@ -53,7 +53,7 @@ def _criteria(b):
 
 
 def _fill(updates: dict):
-    from vro2k_assess.stages import your_input as Y
+    from kestra_migration_assistant.vra.stages import your_input as Y
     for k, v in updates.items():
         Y.set_answer(k, v.get("decision", ""))
 
@@ -149,7 +149,7 @@ def test_a_suggested_value_stays_open_until_a_yes_takes_it(estate):
 
 
 def test_a_rewrite_never_changes_an_answer(estate):
-    from vro2k_assess.stages import your_input as Y
+    from kestra_migration_assistant.vra.stages import your_input as Y
     b, _ = estate()
     first = sorted(G.entries(b["plan"]))[0]
     Y.set_answer(first, "my answer, said in the meeting:\n  two lines")
@@ -191,7 +191,7 @@ def test_answers_close_the_preflight_criteria(estate):
 
 
 def test_the_signature_closes_the_approval_gate_of_the_waves_it_covers(estate):
-    from vro2k_assess.stages import your_input as Y
+    from kestra_migration_assistant.vra.stages import your_input as Y
     estate()
     Y.set_signature("wave-1")
     assert _doc()["signed_for"] == "wave 1"
@@ -213,7 +213,7 @@ def test_replacement_wave_decisions_carry_a_recommendation(estate):
 
 
 def test_client_route_recommendation_follows_the_size_of_the_client():
-    from vro2k_assess.stages import waves as W
+    from kestra_migration_assistant.vra.stages import waves as W
     t = {"name": "Thing", "sdk_alternative": "thingsdk on PyPI", "operations": []}
     small = {"plugin_coverage": {"rows": [{"key": "thing", "status": "http", "ops": [1, 2]}]},
              "actions": [{"lines": 100, "library_for": ["thing"]}]}
@@ -225,7 +225,7 @@ def test_client_route_recommendation_follows_the_size_of_the_client():
 
 
 def test_a_delete_path_step_does_not_run_the_create_cleanup():
-    from vro2k_assess.stages import replace_vra as R, waves as W
+    from kestra_migration_assistant.vra.stages import replace_vra as R, waves as W
     assert R._path({"event_topic": "compute.removal.pre"}) == "delete"
     assert R._path({"event_topic": "compute.provision.post"}) == "create"
     d = W.timeout_policy("k", "Remove", 10, path="delete")
@@ -237,7 +237,7 @@ def test_a_delete_path_step_does_not_run_the_create_cleanup():
 def test_a_wave_exit_is_a_gate_the_migration_closes_not_an_open_item(estate):
     """Wave 2 (replacing vRA) runs Wave 1's flows. Wave 1's exit is not asked in answers.yaml and is not an open
     item; once every question is answered, the status line gives the order the waves run in instead."""
-    from vro2k_assess.stages import front as F, status as S, visuals as V
+    from kestra_migration_assistant.vra.stages import front as F, status as S, visuals as V
     b, _ = estate()
     gate = [(n, e) for n, e in _criteria(b) if e["closes"]["kind"] == "gate"]
     assert [(n, e["closes"]["key"]) for n, e in gate] == [(2, "wave-exit.1")]

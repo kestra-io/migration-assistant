@@ -2,7 +2,7 @@
 Shared paths and helpers for the Preflight, Assess and Brief stages.
 
 The stages share the parser, call graph, fingerprints and clusters
-(`vro2k_assess.parse`, `vro2k_assess.cluster`), and point the model adapter's
+(`kestra_migration_assistant.vra.parse`, `kestra_migration_assistant.vra.cluster`), and point the model adapter's
 cache and call log at the estate's output folder at runtime.
 
 Every stage reads the previous stage's files from disk and writes its own.
@@ -16,32 +16,23 @@ import html
 import json
 import os
 import re
-import sys
 import time
 
+from kestra_migration_assistant.vra import outdir
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-PACKAGE = os.path.dirname(HERE)                  # vro2k_assess/
-ROOT = os.environ.get("VRO2K_ROOT") or os.path.dirname(PACKAGE)
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-
-# ------------------------------------------------------------------ estates
-#
-# `sources/<estate>/` is the only input. One estate is one run: every stage is
-# configured for exactly one estate before it runs (`configure`), reads only
-# that estate's folder, and writes only under `stages/<estate>/`. `samples/`
-# holds the public samples and is never read; `use-sample` copies one into
-# `sources/` first.
-
-SOURCES_ROOT = os.path.join(ROOT, "sources")
-SAMPLES_ROOT = os.path.join(ROOT, "samples")
-STAGES_ROOT = os.environ.get("VRO_STAGES_DIR") or os.path.join(ROOT, "stages")
+PACKAGE = os.path.dirname(HERE)                  # kestra_migration_assistant/vra/, as installed
 PLUGIN_MAP = os.path.join(PACKAGE, "data", "plugin-map.yaml")
 ASSETS = os.path.join(PACKAGE, "assets")
 
-# Model replies are content-addressed, so one cache serves every estate; each
-# estate keeps its own call log.
-STAGE_CACHE = os.path.join(STAGES_ROOT, ".model-cache")
+# ------------------------------------------------------------------ estates
+#
+# The export folder is the only input, and one export folder is one estate, named after the folder.
+# Every stage is configured for exactly one estate before it runs (`configure_export`, or `configure`),
+# reads only that folder, and writes only under its output folder: `<export folder>/kestra-assessment/`
+# by default, or the folder `--out` names. Every reader of the export skips the output folder (outdir.py).
+# Bundled assets (the plugin map, the plugin snapshot, the page assets) come from inside the installed
+# package; nothing is resolved against a repository.
 
 ESTATE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 INPUT_SUFFIXES = (".package", ".workflow", ".zip", ".xml")
@@ -50,6 +41,11 @@ TREE_MARKERS = ("Workflow", "workflows", "ScriptModule", "actions", "Configurati
 
 # Set by configure(). None until then, so a stage run without an estate fails loudly.
 ESTATE = SOURCE_DIR = STAGES = PRE = ASSESS = UNDERSTAND = BRIEF = PAGES = INDEX = WORK = None
+# The folder the export folder sits in: paths written into the results and shown on the pages are relative
+# to it (`lb-usecase/kestra-assessment/your-input/answers.yaml`), so they read the same from any machine.
+BASE = None
+# Model replies are content-addressed; the cache lives in the output folder, so a re-run reuses it.
+STAGE_CACHE = None
 SPEC_DIR = CLUSTER_SUMMARIES = STAGE_CALL_LOG = ENTRY_POINTS = INPUT = ANSWERS = CORRECTIONS = BRIEF_MD = DATA = None
 INPUTS: dict[str, str] = {}
 VRA_INPUTS: dict[str, str] = {}
@@ -94,7 +90,7 @@ def old_layout_message(stages_dir: str) -> str | None:
     old = old_layout(stages_dir)
     if not old:
         return None
-    where = os.path.relpath(stages_dir, ROOT)
+    where = rel(stages_dir)
     steps = []
     for n in old:
         new = OLD_LAYOUT[n]
@@ -106,7 +102,7 @@ def old_layout_message(stages_dir: str) -> str | None:
             steps.append(f"  mv {where}/{n} {where}/{new}")
     return (f"{where}/ was written with an older layout ({', '.join(n + '/' for n in old)}). Move the folders "
             "to the names of the 2c layout first, and the next run carries them into data/ and your-input/:\n"
-            + "\n".join(steps) + f"\nthen re-run `vro.py run --estate {os.path.basename(stages_dir)}`.")
+            + "\n".join(steps) + "\nthen run `kestra-migrate vra run` again.")
 
 
 def layout_2c(stages_dir: str) -> list[str]:
@@ -154,8 +150,8 @@ def estate_inputs(source_dir: str) -> tuple[dict[str, str], list[str]]:
     workflow's stable ID. A vRA export (`.vra-ng`, or a Build Tools vRA folder) is neither: it is read
     by vra_inputs_of(). Anything else (a README, a SOURCE.md, run history) is listed as ignored.
     """
-    from vro2k_assess.parse import vra
-    names = sorted(n for n in os.listdir(source_dir) if not n.startswith("."))
+    from kestra_migration_assistant.vra.parse import vra
+    names = sorted(n for n in os.listdir(source_dir) if not n.startswith(".") and not outdir.skipped(source_dir, n))
     if any(n in TREE_MARKERS for n in names):
         return {slug(os.path.basename(os.path.normpath(source_dir))): source_dir}, []
     inputs, ignored = {}, []
@@ -180,41 +176,55 @@ def vra_inputs_of(source_dir: str) -> dict[str, str]:
     folder laid out as a Build Tools vRA project (content.yaml plus blueprints/, subscriptions/ ...).
     They are read for entry points only, never as vRO inputs.
     """
-    from vro2k_assess.parse import vra
+    from kestra_migration_assistant.vra.parse import vra
     out = {}
     for n in sorted(os.listdir(source_dir)):
         p = os.path.join(source_dir, n)
-        if n.startswith(".") or os.path.islink(p):
+        if n.startswith(".") or os.path.islink(p) or outdir.skipped(source_dir, n):
             continue
         if vra.is_vra_input(p):
             out[slug(os.path.splitext(n)[0] if os.path.isfile(p) else n)] = p
     return out
 
 
-def list_estates() -> list[str]:
-    if not os.path.isdir(SOURCES_ROOT):
-        return []
-    return sorted(n for n in os.listdir(SOURCES_ROOT)
-                  if os.path.isdir(os.path.join(SOURCES_ROOT, n)) and ESTATE_NAME.match(n))
+def estate_name(export_dir: str) -> str:
+    """The estate's name, from the export folder's name: what the pages and the results call it."""
+    name = slug(os.path.basename(os.path.normpath(os.path.abspath(export_dir))))[:64].lstrip("._-")
+    return name or "estate"
+
+
+def configure_export(export_dir: str, out_dir: str | None = None) -> None:
+    """
+    Point every stage at one export folder: the estate is named after the folder, and everything the tool
+    writes goes to `out_dir`, by default `<export folder>/kestra-assessment/`.
+    """
+    src = os.path.abspath(export_dir)
+    if not os.path.isdir(src):
+        raise EstateError(f"no such folder: {export_dir}. Pass the folder that holds the export "
+                          "(a .package, a Build Tools source tree or .workflow files, and the vRA export)")
+    out = os.path.abspath(out_dir) if out_dir else os.path.join(src, outdir.OUTPUT_DIRNAME)
+    configure(estate_name(src), source_dir=src, stages_dir=out)
 
 
 def configure(estate: str, *, source_dir: str | None = None, stages_dir: str | None = None,
               spec_dir: str | None = None, inputs: dict[str, str] | None = None,
               vra_inputs: dict[str, str] | None = None) -> None:
-    """Point every stage at one estate. The only way paths below are set."""
+    """Point every stage at one estate: its export folder and its output folder. The only way paths below are set."""
     global ESTATE, SOURCE_DIR, STAGES, PRE, ASSESS, UNDERSTAND, BRIEF, PAGES, INDEX, WORK
     global SPEC_DIR, CLUSTER_SUMMARIES, STAGE_CALL_LOG, INPUTS, IGNORED, VRA_INPUTS, ENTRY_POINTS
-    global INPUT, ANSWERS, CORRECTIONS, BRIEF_MD, DATA
+    global INPUT, ANSWERS, CORRECTIONS, BRIEF_MD, DATA, BASE, STAGE_CACHE
     if not estate or not ESTATE_NAME.match(estate):
         raise EstateError(f"estate name {estate!r}: use letters, digits, '.', '_' or '-', starting with a "
                           "letter or digit")
-    src = source_dir or os.path.join(SOURCES_ROOT, estate)
+    if not source_dir or not stages_dir:
+        raise EstateError("configure needs the export folder and the output folder (use configure_export)")
+    src = os.path.abspath(source_dir)
     if not os.path.isdir(src):
-        have = ", ".join(list_estates()) or "none"
-        raise EstateError(f"no estate folder {os.path.relpath(src, ROOT)}/ (estates in sources/: {have}). "
-                          "Put the export in sources/<estate>/, or run `vro.py use-sample <name>`.")
+        raise EstateError(f"no such folder: {source_dir}")
     ESTATE, SOURCE_DIR = estate, src
-    STAGES = stages_dir or os.path.join(STAGES_ROOT, estate)
+    BASE = os.path.dirname(src)
+    STAGES = os.path.abspath(stages_dir)
+    outdir.skip(STAGES)
     PRE = os.path.join(STAGES, LAYOUT["preflight"])
     ASSESS = os.path.join(STAGES, LAYOUT["assess"])
     UNDERSTAND = os.path.join(STAGES, LAYOUT["understand"])  # written by `vro.py understand`
@@ -227,6 +237,7 @@ def configure(estate: str, *, source_dir: str | None = None, stages_dir: str | N
     SPEC_DIR = spec_dir or UNDERSTAND
     CLUSTER_SUMMARIES = os.path.join(UNDERSTAND, "cluster-summaries.json")
     STAGE_CALL_LOG = os.path.join(DATA, "model-calls.jsonl")
+    STAGE_CACHE = os.path.join(DATA, "model-cache")
     # what a person writes: everything they answer, optional corrections, and the entry points (preflight Q2)
     INPUT = os.path.join(STAGES, LAYOUT["input"])
     ANSWERS = os.path.join(INPUT, "answers.yaml")
@@ -241,18 +252,27 @@ def configure(estate: str, *, source_dir: str | None = None, stages_dir: str | N
     else:
         VRA_INPUTS = vra_inputs_of(src) if inputs is None else {}
     if not INPUTS:
-        raise EstateError(f"{os.path.relpath(src, ROOT)}/ holds no export: expected a .package, a BTVA "
+        raise EstateError(f"{rel(src)}/ holds no export: expected a .package, a BTVA "
                           "source tree, or a .workflow file (see INPUTS.md)")
 
 
 def require_estate() -> None:
     if ESTATE is None:
-        raise EstateError("no estate configured: pass --estate <name>")
+        raise EstateError("no estate configured: pass the export folder")
 
 
 def rel(path: str) -> str:
-    """A path as a reader should see it: relative to the repository."""
-    return os.path.relpath(path, ROOT)
+    """
+    A path as a reader should see it, and as the results record it: relative to the folder the export folder
+    sits in, with forward slashes, so it reads the same on every machine. Before an estate is configured, or for
+    a path on another drive, the path as given.
+    """
+    if BASE is None:
+        return path
+    try:
+        return os.path.relpath(path, BASE).replace(os.sep, "/")
+    except ValueError:                      # Windows: a path on another drive than the export
+        return path
 
 
 def now() -> str:
@@ -381,7 +401,7 @@ def model():
     The model adapter (cached, logged), pointed at the cache and the call log
     of the configured estate.
     """
-    from vro2k_assess import model as M
+    from kestra_migration_assistant.vra import model as M
     ensure(STAGE_CACHE)
     M.CACHE_DIR = STAGE_CACHE
     M.LOG_PATH = STAGE_CALL_LOG

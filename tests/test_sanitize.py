@@ -14,8 +14,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess import sanitize as S  # noqa: E402
-from vro2k_assess.parse import formats, graph, workflow  # noqa: E402
+from kestra_migration_assistant.vra import sanitize as S  # noqa: E402
+from kestra_migration_assistant.vra.parse import formats, graph, workflow  # noqa: E402
 
 PLANTED = os.path.join(ROOT, "tests", "conformance", "sanitize", "planted-secrets")
 PACKAGE = os.path.join(ROOT, "tests", "conformance", "pkgdiff-v1.0.package")
@@ -126,7 +126,7 @@ def test_unsure_names_are_reported_not_redacted(planted):
 
 def test_report_never_prints_a_redacted_value(planted, tmp_path):
     rep, _, _ = planted
-    from vro2k_assess.stages import common as C
+    from kestra_migration_assistant.vra.stages import common as C
     rep = {**rep, "estate": "planted", "generated": "now", "out_dir": str(tmp_path), "source_dir": "x"}
     md = S.report_md(rep, C)
     for cat, vs in PLANTED_VALUES.items():

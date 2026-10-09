@@ -25,7 +25,7 @@ import re
 import zipfile
 from dataclasses import dataclass, field
 
-from .. import safety
+from .. import outdir, safety
 
 
 # --------------------------------------------------------------------------
@@ -306,7 +306,8 @@ def read_raw_tree(root: str) -> tuple[list[Element], dict]:
     elements: list[Element] = []
     summary = {"source_path": root, "format": "raw-xml", "element_counts": {}}
 
-    for dirpath, _dirs, files in os.walk(root):
+    for dirpath, dirs, files in os.walk(root):
+        outdir.prune(dirpath, dirs)
         parts = dirpath.replace("\\", "/").split("/")
         kind = None
         idx = -1

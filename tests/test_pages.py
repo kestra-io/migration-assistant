@@ -16,7 +16,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.stages import common as C, mdhtml, pages as PG  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C, mdhtml, pages as PG  # noqa: E402
 
 LINK = re.compile(r'''(?:href|src)=["']([^"']+)["']|click\s+\S+\s+href\s+"([^"]+)"|url\(["']?([^"')]+)''')
 
@@ -82,7 +82,7 @@ def avi(sample_stages):
     stages = sample_stages("avi-sample")
     src = os.path.join(os.path.dirname(os.path.dirname(stages)), "sources", "avi-sample")
     C.configure("avi-sample", source_dir=src, stages_dir=stages)
-    from vro2k_assess.stages import status, visuals
+    from kestra_migration_assistant.vra.stages import status, visuals
     os.environ["VRO_NO_MODEL"] = "1"
     try:
         visuals.run()
@@ -149,7 +149,7 @@ def test_nav_and_index_open_the_rendered_reports(avi):
 # ------------------------------------------------------------------ an estate with the old layout
 
 def test_old_layout_gets_a_message_not_a_crash(tmp_path, monkeypatch, capsys):
-    from vro2k_assess import cli
+    from kestra_migration_assistant.vra import cli
     src = tmp_path / "sources" / "old"
     shutil.copytree(os.path.join(ROOT, "tests", "conformance", "helpers", "vro"), src / "vro")
     stages = tmp_path / "stages"
@@ -158,9 +158,7 @@ def test_old_layout_gets_a_message_not_a_crash(tmp_path, monkeypatch, capsys):
     (stages / "old" / "2-brief").mkdir()
     (stages / "old" / "2-brief" / "BRIEF.md").write_text("signed")
     (stages / "old" / "visuals").mkdir()
-    monkeypatch.setattr(C, "SOURCES_ROOT", str(tmp_path / "sources"))
-    monkeypatch.setattr(C, "STAGES_ROOT", str(stages))
-    rc = cli.main(["brief", "--estate", "old", "--no-model"])
+    rc = cli.main(["brief", str(src), "--out", str(stages / "old"), "--no-model"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "older layout" in err and "mv " in err and "2-understand" in err and "3-brief" in err and "rm -r" in err
@@ -169,20 +167,19 @@ def test_old_layout_gets_a_message_not_a_crash(tmp_path, monkeypatch, capsys):
     assert sorted(os.listdir(stages / "old")) == ["2-brief", "specs", "visuals"]
 
 
-def test_use_sample_keeps_the_export_alone_and_seeds_the_stages(tmp_path, monkeypatch):
-    from vro2k_assess import cli
-    monkeypatch.setattr(C, "SOURCES_ROOT", str(tmp_path / "sources"))
-    monkeypatch.setattr(C, "STAGES_ROOT", str(tmp_path / "stages"))
-    assert cli.use_sample("nuage", force=False) == 0
-    src = tmp_path / "sources" / "nuage-sample"
+def test_use_sample_keeps_the_export_alone_and_seeds_the_stages(tmp_path):
+    from kestra_migration_assistant.vra import cli
+    sample = os.path.join(ROOT, "samples", "nuage")
+    src = tmp_path / "nuage-sample"
+    assert cli.use_sample(sample, str(src), force=False) == 0
     assert not (src / "model-output").exists() and not (src / "WALKTHROUGH.md").exists()
-    st = tmp_path / "stages" / "nuage-sample"
+    st = src / "kestra-assessment"
     d = st / "data"
     assert (d / "2-understand" / "PROVENANCE.json").exists() and (d / "3-brief" / "walkthroughs.json").exists()
     assert (d / "1-assess" / "domain-names.json").exists() and (st / "WALKTHROUGH.md").exists()
     # never over a file already there
     (d / "2-understand" / "PROVENANCE.json").write_text("mine")
-    assert cli.use_sample("nuage", force=True) == 0
+    assert cli.use_sample(sample, str(src), force=False) == 1                # an existing export is kept
     assert (d / "2-understand" / "PROVENANCE.json").read_text() == "mine"
 
 
@@ -190,8 +187,8 @@ def test_a_2c_estate_is_moved_and_its_answers_carried_into_answers_yaml(tmp_path
     """An estate written with the 2c/2d layout: the stage folders move into data/, the pages are regenerated in
     report/, and every answer, decision, review and the signature lands in your-input/answers.yaml."""
     import yaml
-    from vro2k_assess import cli
-    from vro2k_assess.stages import preflight as P
+    from kestra_migration_assistant.vra import cli
+    from kestra_migration_assistant.vra.stages import preflight as P
     src = tmp_path / "sources" / "old"
     helpers = os.path.join(ROOT, "tests", "conformance", "helpers")
     shutil.copytree(os.path.join(helpers, "vro"), src / "vro")
@@ -213,15 +210,13 @@ def test_a_2c_estate_is_moved_and_its_answers_carried_into_answers_yaml(tmp_path
                                               "Approval covers: [ ] Wave 1 only   [x] Full plan\n```\n<!-- approval:end -->\n")
     (old / "3-brief" / "overrides.yaml").write_text("outcomes:\n  x:\n    outcome: Retire\n    reason: r\n")
     (old / "pages").mkdir()
-    monkeypatch.setattr(C, "SOURCES_ROOT", str(tmp_path / "sources"))
-    monkeypatch.setattr(C, "STAGES_ROOT", str(stages))
-    assert cli.main(["all", "--estate", "old", "--no-model"]) == 0
+    assert cli.main(["all", str(src), "--out", str(old), "--no-model"]) == 0
     out = capsys.readouterr().out
     assert "2c layout" in out and "moved 0-preflight/ to data/0-preflight/" in out and "carried what a person wrote" in out
     names = set(os.listdir(old))
     assert {"data", "report", "your-input", "index.html"} <= names and not names & {"0-preflight", "3-brief", "pages"}
     doc = yaml.safe_load(open(old / "your-input" / "answers.yaml"))
-    from vro2k_assess.stages import your_input as Y
+    from kestra_migration_assistant.vra.stages import your_input as Y
     flat = Y.flat(doc)
     assert flat[P.answer_key("Q3")]["answer"] == "a lab for each system"
     assert flat[P.answer_key("Q9")]["answer"] == "replace"
@@ -234,6 +229,6 @@ def test_a_2c_estate_is_moved_and_its_answers_carried_into_answers_yaml(tmp_path
     assert b["approval"]["signed"] and b["approval"]["scope"] == "full"
     # a second run carries nothing again and changes no answer
     before = open(old / "your-input" / "answers.yaml").read()
-    assert cli.main(["all", "--estate", "old", "--no-model"]) == 0
+    assert cli.main(["all", str(src), "--out", str(old), "--no-model"]) == 0
     assert "carried what a person wrote" not in capsys.readouterr().out
     assert yaml.safe_load(before) == yaml.safe_load(open(old / "your-input" / "answers.yaml").read())

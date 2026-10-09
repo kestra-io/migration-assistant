@@ -18,7 +18,7 @@ trigger side, all from code and the entry points on record, no model:
 - `notes`: blocking subscriptions, and one workflow run by several subscriptions.
 
 The Kestra names used here (the Webhook trigger and its wait / returnOutputs, the Apps Execution app,
-the KV tasks) are checked against the plugin snapshot in kestra-reference/plugins/ by the plugin
+the KV tasks) are checked against the plugin snapshot bundled in data/plugins/ by the plugin
 coverage view, which shows the date it was taken.
 """
 from __future__ import annotations

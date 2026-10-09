@@ -52,7 +52,7 @@ STAGE_RULES = [
 # ------------------------------------------------------------------ parse
 
 def _parse(pm: dict) -> dict:
-    from vro2k_assess.parse import corpus, formats
+    from kestra_migration_assistant.vra.parse import corpus, formats
     C.ensure(C.WORK)
     idx = corpus.parse_corpus(C.WORK, C.INPUTS)
 
@@ -63,7 +63,7 @@ def _parse(pm: dict) -> dict:
         for e in elements:
             if e.kind not in ("ScriptModule", "ScriptingAction"):
                 continue
-            from vro2k_assess.parse.corpus import _module_script
+            from kestra_migration_assistant.vra.parse.corpus import _module_script
             script = _module_script(e.xml) if e.xml else ""
             params = T.action_params(e.xml)
             module = e.category_path
@@ -73,7 +73,7 @@ def _parse(pm: dict) -> dict:
                 n += 1
                 key = f"{label}:{module}/{e.name}~{n}"
             lines = [l for l in script.splitlines() if l.strip() and not l.strip().startswith("//")]
-            from vro2k_assess.parse.workflow import _norm_script
+            from kestra_migration_assistant.vra.parse.workflow import _norm_script
             norm = _norm_script(script)
             actions.append({
                 "key": key, "uid": C.slug(key.replace(":", "-").replace("/", "-")),
@@ -144,7 +144,7 @@ def run() -> dict:
     by_wfid = {m["id"]: m for m in all_models.values() if m.get("id")}
 
     # ---- clusters ----
-    from vro2k_assess.cluster import cluster as CL
+    from kestra_migration_assistant.vra.cluster import cluster as CL
     cres = CL.run(C.WORK, uids, "estate")
     summaries = cluster_summaries(cres["clusters"])
     cluster_of = {u: c["cluster_id"] for c in cres["clusters"] for u in c["members"]}

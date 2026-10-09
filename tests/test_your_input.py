@@ -18,7 +18,7 @@ import yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.stages import common as C, your_input as Y  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C, your_input as Y  # noqa: E402
 
 HELPERS = os.path.join(ROOT, "tests", "conformance", "helpers")
 
@@ -140,7 +140,7 @@ def test_a_file_in_the_old_format_is_carried_over(tmp_path):
 
 
 def test_corrections_yaml_is_read_but_never_created(tmp_path):
-    from vro2k_assess.stages import corrections as CO
+    from kestra_migration_assistant.vra.stages import corrections as CO
     _setup(tmp_path)
     assert CO.load() == {} and not os.path.exists(C.CORRECTIONS)
     C.ensure(C.INPUT)
@@ -152,7 +152,7 @@ def test_corrections_yaml_is_read_but_never_created(tmp_path):
 
 
 def test_the_recommendation_counts_only_client_code_as_client_code():
-    from vro2k_assess.stages import brief as B
+    from kestra_migration_assistant.vra.stages import brief as B
     wf = {f"w{i}": {"cluster": "C1"} for i in range(4)}
     tri = {u: {"outcome": "Convert", "evidence": {}} for u in wf}
     acts = [{"key": "client", "lines": 10, "library_for": ["sys"]}, {"key": "state", "lines": 90, "library_for": []}]

@@ -1,28 +1,21 @@
 """
-The vro2k_assess command line: every stage up to and including the brief.
+`kestra-migrate vra`: the assessment of a vRA / vRO estate, every stage up to and including the brief.
 
-One estate is one run. Every stage needs --estate, reads only sources/<estate>/
-and writes only stages/<estate>/.
+One export folder is one estate, named after the folder. Every stage reads only that folder and writes only
+to its output folder, `<export folder>/kestra-assessment/` unless `--out` names another; the readers of the
+export skip the output folder, so the tool never reads its own output.
 
-    python plugin/scripts/vro.py run        --estate avi-sample   # everything below, then the pages: the one command
-    python plugin/scripts/vro.py estates                          # list sources/<estate>/ folders
-    python plugin/scripts/vro.py use-sample avi                   # samples/avi -> sources/avi-sample/
-    python plugin/scripts/vro.py preflight  --estate avi-sample   # Stage 0: export checks, answers.md
-    python plugin/scripts/vro.py sanitize   --estate avi-sample   # Stage 0: redacted copy + redaction-report.md
-    python plugin/scripts/vro.py assess     --estate avi-sample   # Stage 1: code-only assessment
-    python plugin/scripts/vro.py understand --estate avi-sample   # specs: reuse cached, generate missing (model)
-    python plugin/scripts/vro.py brief      --estate avi-sample   # Stage 2: triage, waves, BRIEF.md
-    python plugin/scripts/vro.py visuals    --estate avi-sample   # the pages: stages/<estate>/index.html, report/
-    python plugin/scripts/vro.py status     --estate avi-sample   # where each stage is; rebuilds index.html
-    python plugin/scripts/vro.py all        --estate avi-sample   # run without understand (never calls the spec model)
-    python plugin/scripts/vro.py check-intake <path>              # reject a received export that carries secrets
+    kestra-migrate vra run <export folder> [--out <folder>] [--no-model]   # every stage, then the pages
+    kestra-migrate vra status <export folder> [--out <folder>]             # where each stage is
+    kestra-migrate vra check-intake <path>                                  # reject an export that carries secrets
 
-Run it as `python -m vro2k_assess <command>`, or through `plugin/scripts/vro.py`, which adds
-the commands of any extension package installed next to this one. This module never
-imports an extension; `main(extensions=...)` is handed them by the caller. An extension
-is a module with `register(subparsers) -> {command: handler}`, and a handler takes the
-parsed arguments and returns an exit code. The Claude Code commands in plugin/commands/
-call exactly the commands above.
+For development, each stage also runs on its own (hidden from --help): preflight, sanitize, assess,
+understand, brief, visuals, and all (run without understand); and `use-sample <sample folder> <export folder>`
+copies a sample's export and seeds its saved model output.
+
+This module never imports an extension; `main(extensions=...)` is handed them by the caller. An extension
+is a module with `register(subparsers) -> {command: handler}`, and a handler takes the parsed arguments
+and returns an exit code.
 """
 from __future__ import annotations
 
@@ -32,38 +25,37 @@ import shutil
 import sys
 import zipfile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+from kestra_migration_assistant.vra import outdir
+from kestra_migration_assistant.vra.stages import common as C
 
-from vro2k_assess.stages import common as C  # noqa: E402
-
+COMMANDS_SHOWN = ["run", "status", "check-intake"]
 STAGES = ["preflight", "sanitize", "assess", "understand", "brief", "visuals", "status", "all", "run"]
-COMMANDS = frozenset(["estates", "use-sample", "check-intake", *STAGES])
+COMMANDS = frozenset(["use-sample", "check-intake", *STAGES])
 
 
-def use_sample(name: str, force: bool) -> int:
-    src = os.path.join(C.SAMPLES_ROOT, name)
+def use_sample(sample: str, export_dir: str, force: bool) -> int:
+    """Copy a sample's export to `export_dir`, and seed its output folder with the sample's saved model output."""
+    src = os.path.abspath(sample)
     if not os.path.isdir(src):
-        have = ", ".join(sorted(n for n in os.listdir(C.SAMPLES_ROOT) if not n.startswith("."))) or "none"
-        print(f"no sample {name!r} in samples/ (have: {have})", file=sys.stderr)
+        print(f"use-sample: no such folder: {sample}", file=sys.stderr)
         return 2
-    dst = os.path.join(C.SOURCES_ROOT, f"{name}-sample")
+    dst = os.path.abspath(export_dir)
     if os.path.exists(dst):
         if not force:
-            print(f"{C.rel(dst)}/ already exists; pass --force to replace it", file=sys.stderr)
+            print(f"use-sample: {export_dir} already exists; pass --force to replace it", file=sys.stderr)
             return 1
         shutil.rmtree(dst)
     shutil.copytree(src, dst, symlinks=False, ignore=lambda d, names: [n for n in names if d == src and n in SAMPLE_EXTRAS])
-    seeded = seed_sample(src, os.path.join(C.STAGES_ROOT, f"{name}-sample"))
-    print(f"[use-sample] copied {C.rel(src)}/ to {C.rel(dst)}/"
-          + (f"; seeded stages/{name}-sample/ with {seeded} saved file(s) (specs, model-written names)" if seeded else "")
-          + f"; run with --estate {name}-sample")
+    seeded = seed_sample(src, os.path.join(dst, outdir.OUTPUT_DIRNAME))
+    print(f"[use-sample] copied {sample} to {export_dir}"
+          + (f"; seeded its output folder with {seeded} saved file(s) (specs, model-written names)" if seeded else "")
+          + f"; run `kestra-migrate vra run {export_dir}`")
     return 0
 
 
-# What a sample carries besides its export. Neither is copied to sources/: the export is the only input.
+# What a sample carries besides its export. Neither is copied with the export: the export is the only input.
 # model-output/ is what the model wrote for the sample once (specs, cluster summaries, domain names,
-# walkthrough text), laid out like stages/<estate>/, so a run on the sample needs no billed call;
+# walkthrough text), laid out like an output folder's data/, so a run on the sample needs no billed call;
 # WALKTHROUGH.md is a hand-written tour of the sample's results.
 SAMPLE_EXTRAS = ("model-output", "WALKTHROUGH.md")
 
@@ -88,7 +80,7 @@ def seed_sample(src: str, stages_dir: str) -> int:
 
 
 def check_intake(path: str) -> int:
-    from vro2k_assess import intake, safety
+    from kestra_migration_assistant.vra import intake, safety
     try:
         r = intake.check(path)
     except FileNotFoundError:
@@ -104,7 +96,7 @@ def check_intake(path: str) -> int:
 def run_stage(s: str) -> str:
     """Run one stage and print what it did; return a short summary of what it found (for `run`)."""
     if s == "preflight":
-        from vro2k_assess.stages import preflight
+        from kestra_migration_assistant.vra.stages import preflight
         r = preflight.run()
         ep = r["export"]["entry_points"]
         res = ep["resolution"] or {"resolved": 0, "unresolved": []}
@@ -120,7 +112,7 @@ def run_stage(s: str) -> str:
                 f"{_n(len(ep['model']['catalog_items']), 'catalog item')}; {len(r['answers']['open'])} of "
                 f"{len(r['answers']['items'])} questions open")
     elif s == "sanitize":
-        from vro2k_assess import sanitize
+        from kestra_migration_assistant.vra import sanitize
         r = sanitize.run()
         print(f"[sanitize] {r['estate']}: {r['files_touched']} of {r['files_seen']} files changed, "
               f"{sum(r['counts'].values())} redactions, {len(r['unsure'])} to review; "
@@ -128,7 +120,7 @@ def run_stage(s: str) -> str:
         return (f"{r['files_touched']} of {r['files_seen']} files changed, {sum(r['counts'].values())} redactions, "
                 f"{len(r['unsure'])} to review")
     elif s == "assess":
-        from vro2k_assess.stages import assess
+        from kestra_migration_assistant.vra.stages import assess
         r = assess.run()
         print(f"[assess] {r['estate']}: {r['counts']['workflows']} workflows, {r['counts']['actions']} actions, "
               f"{r['counts']['clusters']} clusters, {r['counts']['domains']} domains, "
@@ -136,7 +128,7 @@ def run_stage(s: str) -> str:
               f"({r['counts']['entry_point_workflows']} workflows started by one, "
               f"{r['counts']['entry_points_unresolved']} unresolved); wrote {C.rel(C.ASSESS)}/")
         # Preflight's questions are asked again from what Assess found (systems, plugins in the code)
-        from vro2k_assess.stages import preflight
+        from kestra_migration_assistant.vra.stages import preflight
         q = preflight.refresh_questions()
         if q["refreshed"]:
             print(f"[preflight] questions rewritten from what Assess found ({', '.join(q['found'])}); answers kept")
@@ -146,7 +138,7 @@ def run_stage(s: str) -> str:
         return (f"{_n(c['workflows'], 'workflow')}, {_n(c['actions'], 'action')}, {_n(c['targets'], 'target')}, "
                 f"{_n(c['entry_points'], 'entry point')}")
     elif s == "understand":
-        from vro2k_assess import understand
+        from kestra_migration_assistant.vra import understand
         r = understand.run_estate()
         kept = [k for k, v in r["errors"].items() if "since --no-model" in str(v)]
         have = len([f for f in os.listdir(C.SPEC_DIR) if f.endswith(".json") and f not in
@@ -164,23 +156,23 @@ def run_stage(s: str) -> str:
         return (f"{have} specs, {r['generated']} written this run"
                 + (f", {len(kept)} stale and kept" if kept else "") + (f", {failed} failed" if failed else ""))
     elif s == "brief":
-        from vro2k_assess.stages import brief
+        from kestra_migration_assistant.vra.stages import brief
         r = brief.run()
         print(f"[brief] {r['estate']}: {r['counts']}; recommendation: {r['recommendation']['verdict']}")
         waves = r["plan"]["waves"]
         return (f"{sum(r['counts'].values())} workflows triaged, {len(waves)} wave{'s' if len(waves) != 1 else ''}, "
                 f"recommendation {r['recommendation']['verdict']}")
     elif s == "visuals":
-        from vro2k_assess.stages import visuals
+        from kestra_migration_assistant.vra.stages import visuals
         r = visuals.run()
         print(f"[visuals] wrote {len(r)} pages: open {C.rel(C.INDEX)} (the rest are in {C.rel(C.PAGES)}/)")
         return f"{len(r)} pages written"
     elif s == "status":
-        from vro2k_assess.stages import status
+        from kestra_migration_assistant.vra.stages import status
         print(status.run())
     elif s == "migrate-input":
         # an estate written before answers.yaml: carry its answers over, once the stages have said what they ask
-        from vro2k_assess.stages import corrections, your_input
+        from kestra_migration_assistant.vra.stages import corrections, your_input
         your_input.set_renames(_old_keys())
         done = corrections.migrate() + your_input.migrate()
         if done:
@@ -188,11 +180,11 @@ def run_stage(s: str) -> str:
                   "*.migrated, and read by nothing):")
             for d in done:
                 print(f"  - {d}")
-            from vro2k_assess.stages import brief
+            from kestra_migration_assistant.vra.stages import brief
             brief.run()
         return f"{len(done)} item{'s' if len(done) != 1 else ''} carried over" if done else "nothing to carry over"
     elif s == "summary":
-        from vro2k_assess.stages import status
+        from kestra_migration_assistant.vra.stages import status
         line = status.headline()
         print(line)
         return line
@@ -202,7 +194,7 @@ def run_stage(s: str) -> str:
 def _old_keys() -> dict[str, str]:
     """Keys an estate used before 2026-10-01 (built on the workflow's full ID) -> today's (its short name)."""
     import json
-    from vro2k_assess.stages import gates as G
+    from kestra_migration_assistant.vra.stages import gates as G
     p = os.path.join(C.ASSESS, "assess.json")
     if not os.path.exists(p):
         return {}
@@ -215,21 +207,42 @@ def _old_keys() -> dict[str, str]:
     return out
 
 
-def main(argv: list[str] | None = None, extensions: tuple = ()) -> int:
-    ap = argparse.ArgumentParser(prog="vro")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("estates", help="list the estates in sources/")
-    us = sub.add_parser("use-sample", help="copy samples/<name>/ to sources/<name>-sample/ and seed its saved model output")
-    us.add_argument("name")
-    us.add_argument("--force", action="store_true", help="replace an existing sources/<name>-sample/")
-    ci = sub.add_parser("check-intake", help="exit 1 with a masked report if a received export carries secrets")
-    ci.add_argument("path", help="a .package, .workflow, ZIP or folder as received")
-    for s in STAGES:
-        p = sub.add_parser(s, help=("sanitize, Preflight, Assess, Understand (billed only for what changed) and Brief, "
-                                    "then the pages; run it again after answering" if s == "run" else None))
-        p.add_argument("--estate", required=True, help="the folder under sources/ to run on")
+HELP = {
+    "run": "assess an export folder: sanitize, Preflight, Assess, Understand (billed only for what changed) and "
+           "Brief, then the pages. Run it again after answering: it reuses the model cache and keeps every answer",
+    "status": "say where each stage of an export folder's assessment is, and what to do next",
+    "check-intake": "exit 1 with a masked report if a received export carries anything secret-shaped",
+}
+
+
+def _export_args(p: argparse.ArgumentParser, model: bool = True) -> None:
+    p.add_argument("export", metavar="EXPORT_FOLDER",
+                   help="the folder that holds the export: a .package, a Build Tools source tree or .workflow "
+                        "files, and the vRA export if there is one. The estate is named after it")
+    p.add_argument("--out", metavar="FOLDER",
+                   help=f"where to write everything (default: EXPORT_FOLDER/{outdir.OUTPUT_DIRNAME}/)")
+    if model:
         p.add_argument("--no-model", action="store_true",
                        help="never call a model; use cached replies or fall back to code-made labels")
+
+
+def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kestra-migrate vra") -> int:
+    ap = argparse.ArgumentParser(
+        prog=prog, description="Assess a vRA / vRO estate for migration to Kestra, from its export, on this machine.")
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="{" + ",".join(COMMANDS_SHOWN) + "}")
+    _export_args(sub.add_parser("run", help=HELP["run"], description=HELP["run"]))
+    _export_args(sub.add_parser("status", help=HELP["status"], description=HELP["status"]), model=False)
+    ci = sub.add_parser("check-intake", help=HELP["check-intake"], description=HELP["check-intake"])
+    ci.add_argument("path", help="a .package, .workflow, ZIP or folder as received")
+    # For development: each stage on its own, and the samples. Not listed in --help (a parser added without
+    # help= has no line in the command list).
+    for s in STAGES:
+        if s not in ("run", "status"):
+            _export_args(sub.add_parser(s))
+    us = sub.add_parser("use-sample")
+    us.add_argument("sample", help="a sample folder (samples/avi in the repository)")
+    us.add_argument("export", help="the export folder to create")
+    us.add_argument("--force", action="store_true", help="replace an existing export folder")
     handlers = {}
     for ext in extensions:
         for name, run in ext.register(sub).items():
@@ -241,24 +254,27 @@ def main(argv: list[str] | None = None, extensions: tuple = ()) -> int:
     if args.cmd in handlers:
         return handlers[args.cmd](args)
 
-    if args.cmd == "estates":
-        print("\n".join(C.list_estates()) or "(none: put an export in sources/<estate>/ or run use-sample)")
-        return 0
     if args.cmd == "use-sample":
-        return use_sample(args.name, args.force)
+        return use_sample(args.sample, args.export, args.force)
     if args.cmd == "check-intake":
         return check_intake(args.path)
 
-    if args.no_model:
+    if getattr(args, "no_model", False):
         os.environ["VRO_NO_MODEL"] = "1"
     try:
-        C.configure(args.estate)
+        C.configure_export(args.export, args.out)
     except C.EstateError as e:
-        print(f"vro: {e}", file=sys.stderr)
+        print(f"{prog}: {e}", file=sys.stderr)
         return 2
     old = C.old_layout_message(C.STAGES)
     if old:
-        print(f"vro: {old}", file=sys.stderr)
+        print(f"{prog}: {old}", file=sys.stderr)
+        return 2
+    try:
+        C.ensure(C.STAGES)
+    except OSError as e:
+        print(f"{prog}: cannot write the results to {C.STAGES}: {e.strerror}. Pass --out with a folder you can "
+              "write to", file=sys.stderr)
         return 2
     moved = C.migrate_layout(C.STAGES)
     if moved:
@@ -282,6 +298,16 @@ def main(argv: list[str] | None = None, extensions: tuple = ()) -> int:
     for s in stages:
         run_stage(s)
     return 0
+
+
+def shown(path: str) -> str:
+    """A path for the terminal: relative to the current folder when it is under it, else absolute."""
+    a = os.path.abspath(path)
+    try:
+        r = os.path.relpath(a)
+    except ValueError:                      # Windows: another drive
+        return a
+    return a if r.startswith("..") else r
 
 
 def _n(k: int, word: str) -> str:
@@ -366,7 +392,7 @@ def _run_with_progress(stages: list[str]) -> int:
             with contextlib.redirect_stdout(buf):
                 if s == "brief":
                     # understand wrote or regenerated specs: Assess reads them (spec systems), so bring it up to date
-                    from vro2k_assess.stages import assess
+                    from kestra_migration_assistant.vra.stages import assess
                     assess.load()
                 found = run_stage(s)
         finally:
@@ -389,7 +415,7 @@ def _run_with_progress(stages: list[str]) -> int:
     cache = ("model results all from cache" if not total["billed"] and total["cached"] else
              "no model calls" if not total["billed"] else
              f"{total['billed']} billed model call{'s' if total['billed'] != 1 else ''}, ${total['cost']:.2f}")
-    print(f"Done in {time.monotonic() - t_all:.1f}s; {cache}. Open {C.rel(C.INDEX)}")
+    print(f"Done in {time.monotonic() - t_all:.1f}s; {cache}. Open {shown(C.INDEX)}")
     return 0
 
 

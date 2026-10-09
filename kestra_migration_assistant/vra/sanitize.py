@@ -47,7 +47,7 @@ import re
 import zipfile
 from collections import Counter, defaultdict
 
-from . import safety
+from . import outdir, safety
 
 CATEGORIES = ["HOST", "IP", "URL", "EMAIL", "USER", "SECRET", "IDENTITY", "NETWORK"]
 
@@ -363,7 +363,8 @@ def _sanitize_tree(r: Redactor, src: str, dst: str, rel_label: str, touched: lis
                    vra: bool = False) -> int:
     n = 0
     for dp, dirs, files in os.walk(src):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(dp, d))]
+        dirs[:] = [d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(dp, d))
+                   and not outdir.skipped(dp, d)]
         for fn in sorted(files):
             if fn.startswith("."):
                 continue

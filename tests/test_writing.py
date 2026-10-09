@@ -58,8 +58,8 @@ def _files(est: str) -> list[str]:
 
 
 def _run(tmp, name, copy, specs=None, answer=None, write_specs=None):
-    from vro2k_assess import cli
-    from vro2k_assess.stages import common as C
+    from kestra_migration_assistant.vra import cli
+    from kestra_migration_assistant.vra.stages import common as C
     src = tmp / "sources" / name
     for s, d in copy:
         shutil.copytree(s, src / d)
@@ -69,20 +69,18 @@ def _run(tmp, name, copy, specs=None, answer=None, write_specs=None):
         for f in glob.glob(os.path.join(specs, "*.json")):
             shutil.copy(f, stages / "data" / "2-understand")
     mp = pytest.MonkeyPatch()
-    mp.setattr(C, "SOURCES_ROOT", str(tmp / "sources"))
-    mp.setattr(C, "STAGES_ROOT", str(tmp / "stages"))
     mp.setenv("VRO_NO_MODEL", "1")
     try:
-        assert cli.main(["run", "--estate", name, "--no-model"]) == 0
+        assert cli.main(["run", str(src), "--out", str(stages), "--no-model"]) == 0
         if write_specs:
             a = C.read_json(str(stages / "data" / "1-assess" / "assess.json"))
             write_specs(str(stages / "data" / "2-understand"), {u: w["name"] for u, w in a["workflows"].items()})
-            assert cli.main(["run", "--estate", name, "--no-model"]) == 0
+            assert cli.main(["run", str(src), "--out", str(stages), "--no-model"]) == 0
         if answer:
-            from vro2k_assess.stages import your_input as Y
+            from kestra_migration_assistant.vra.stages import your_input as Y
             for k, v in answer.items():
                 Y.set_answer(k, v)
-            assert cli.main(["run", "--estate", name, "--no-model"]) == 0
+            assert cli.main(["run", str(src), "--out", str(stages), "--no-model"]) == 0
     finally:
         mp.undo()
     return str(stages)

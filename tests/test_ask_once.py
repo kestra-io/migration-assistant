@@ -22,7 +22,7 @@ import yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
 
 REVIEW = os.path.join(ROOT, "tests", "conformance", "review")
 CREATE = "review-Dns---Create-Zone"
@@ -54,7 +54,7 @@ def run(tmp_path_factory):
         C.configure("review", source_dir=REVIEW, stages_dir=str(tmp / "stages"), spec_dir=str(specs),
                     inputs={"review": os.path.join(REVIEW, "vro")},
                     vra_inputs={"review-vra": os.path.join(REVIEW, "vra")})
-        from vro2k_assess.stages import assess as A, brief as B, preflight as P, visuals as V
+        from kestra_migration_assistant.vra.stages import assess as A, brief as B, preflight as P, visuals as V
         P.run()
         a = A.run()
         b = B.run()
@@ -84,7 +84,7 @@ def test_each_question_a_decision_asks_is_covered_by_that_decision(run):
 
 
 def test_a_covered_question_is_asked_once_in_answers_yaml(run):
-    from vro2k_assess.stages import your_input as Y
+    from kestra_migration_assistant.vra.stages import your_input as Y
     flat = Y.flat(run["answers"])
     # each spec-question item's question: the TTL question is one, none of the covered ones is
     asked = {k: e["question"] for k, e in flat.items() if k.startswith("question.")}

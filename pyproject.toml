@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kestra-migration-assistant"
+dynamic = ["version"]
+description = "Assess a VMware vRA / vRO estate for migration to Kestra, from its export, on your own machine."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Kestra Technologies" }]
+dependencies = ["PyYAML>=6.0"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://github.com/kestra-io/migration-assistant"
+Issues = "https://github.com/kestra-io/migration-assistant/issues"
+
+[project.scripts]
+kestra-migrate = "kestra_migration_assistant.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "kestra_migration_assistant.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["kestra_migration_assistant*"]
+
+[tool.setuptools.package-data]
+"kestra_migration_assistant.vra" = ["assets/**/*", "data/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = ["kestra_migration_assistant/vra/assets", "tests/conformance"]
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["kestra_migration_assistant"]
+ignore_missing_imports = true

@@ -12,7 +12,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
 
 BUILDERS = os.path.join(ROOT, "tests", "conformance", "builders")
 
@@ -25,7 +25,7 @@ def run(tmp_path_factory):
     try:
         C.configure("builders", source_dir=BUILDERS, stages_dir=str(tmp), spec_dir=os.path.join(BUILDERS, "specs"),
                     inputs={"builders": os.path.join(BUILDERS, "vro")}, vra_inputs={})
-        from vro2k_assess.stages import assess as A, brief as B, preflight as P
+        from kestra_migration_assistant.vra.stages import assess as A, brief as B, preflight as P
         P.run()
         a = A.run()
         b = B.run()
@@ -85,7 +85,7 @@ def test_target_operations_and_workflow_ops_are_concrete(run):
 
 
 def test_an_unknown_argument_keeps_its_placeholder():
-    from vro2k_assess.stages import targets as T
+    from kestra_migration_assistant.vra.stages import targets as T
     b = T.bind_args(["endpoint", "type"], ["ep", "someCall()"], {}, "")
     assert b == {}
     assert T.bind_op({"kind": "rest", "op": "POST /x/{type}"}, b) == "POST /x/{type}"

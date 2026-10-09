@@ -20,7 +20,7 @@ import zipfile
 from collections import Counter
 
 from . import common as C
-from .. import entry_points
+from .. import entry_points, outdir
 
 # Adapted from Anthropic's Check 0. Theirs asks about scope, local build and
 # test, bespoke build infrastructure, prior attempts and what is off limits.
@@ -225,8 +225,8 @@ def _meta(text: str) -> dict:
 # ------------------------------------------------------------------ export
 
 def _meta_from_package(path: str) -> dict:
-    from vro2k_assess.parse import formats
-    from vro2k_assess import safety
+    from kestra_migration_assistant.vra.parse import formats
+    from kestra_migration_assistant.vra import safety
     with safety.open_zip(path) as z:
         for n in z.namelist():
             if n == "dunes-meta-inf":
@@ -254,8 +254,8 @@ ENTRY_KINDS = {
 
 
 def check_export() -> dict:
-    from vro2k_assess import safety
-    from vro2k_assess.parse import formats
+    from kestra_migration_assistant.vra import safety
+    from kestra_migration_assistant.vra.parse import formats
 
     sources = []
     totals = Counter()
@@ -278,7 +278,8 @@ def check_export() -> dict:
         input_forms += sum(1 for e in elements if e.input_form)
         if os.path.isdir(path):
             meta, meta_file = _meta_from_tree(path)
-            for dp, _d, files in os.walk(path):
+            for dp, dirs, files in os.walk(path):
+                outdir.prune(dp, dirs)
                 for fn in files:
                     rel = os.path.relpath(os.path.join(dp, fn), path)
                     if HISTORY_HINTS.search(rel) and not rel.endswith(".xml"):

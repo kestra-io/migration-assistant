@@ -19,7 +19,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.parse import corpus, formats, graph, workflow  # noqa: E402
+from kestra_migration_assistant.vra.parse import corpus, formats, graph, workflow  # noqa: E402
 
 CONFORMANCE = os.path.join(ROOT, "tests", "conformance")
 PACKAGE_V10 = os.path.join(CONFORMANCE, "pkgdiff-v1.0.package")
@@ -127,7 +127,7 @@ def test_resource_element_nested_zip_and_binary():
 
 
 def test_config_element_securestring_and_null_sentinel():
-    from vro2k_assess.parse.corpus import _config_attrs
+    from kestra_migration_assistant.vra.parse.corpus import _config_attrs
     els, _ = formats.read_package(PACKAGE_V10)
     cfg = next(e for e in els if e.kind == "ConfigurationElement"
                and e.name == "test_configurationA")

@@ -14,7 +14,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.stages import waves as W  # noqa: E402
+from kestra_migration_assistant.vra.stages import waves as W  # noqa: E402
 
 TARGETS = {t: {"name": t, "reach": "http"} for t in ("avi", "nuage", "vcd", "vc", "t4", "t5", "t6", "t7", "t8", "t9")}
 ANSWERS = {"open": ["Q3", "Q4"]}

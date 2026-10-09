@@ -22,7 +22,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
 
 HELPERS = os.path.join(ROOT, "tests", "conformance", "helpers")
 PROV, APPROVE = "helpers-Web---Provision-Host", "helpers-Web---Approve-Host"
@@ -46,7 +46,7 @@ def run(tmp_path_factory):
     os.environ["VRO_NO_MODEL"] = "1"
     try:
         _configure(tmp)
-        from vro2k_assess.stages import assess as A, brief as B, preflight as P
+        from kestra_migration_assistant.vra.stages import assess as A, brief as B, preflight as P
         P.run()
         _answer_q9("replace: Kestra takes over the catalog")
         a = A.run()
@@ -97,7 +97,7 @@ def test_a_helper_shared_by_a_covered_and_an_uncovered_system_stays_and_says_whi
 
 def test_every_system_reached_counts_not_only_the_first():
     """An action whose own code calls a plugin system but which reaches a second one through another action."""
-    from vro2k_assess.stages import triage as TR
+    from kestra_migration_assistant.vra.stages import triage as TR
     targets = {"ssh-host": {"reach": "plugin", "name": "SSH", "kestra_tasks": ["io.kestra.plugin.fs.ssh.Command"]},
                "avi-controller": {"reach": "http", "name": "Avi", "kestra_tasks": ["io.kestra.plugin.core.http.Request"]}}
     a = {"uid": "a", "key": "k", "name": "a", "wrapper": False, "library_for": ["ssh-host"], "ops": [{"op": "x"}],
@@ -158,13 +158,13 @@ def test_no_internal_word_in_customer_facing_text(estate):
 # ------------------------------------------------------------------ the spec prompt: the whole call tree
 
 def _abm(estate):
-    from vro2k_assess import understand as U
+    from kestra_migration_assistant.vra import understand as U
     idx = json.load(open(os.path.join(C.WORK, "index.json")))
     return U.actions_index(idx), json.load(open(os.path.join(C.WORK, "model", f"{PROV}.json")))
 
 
 def test_the_spec_prompt_carries_actions_the_workflow_reaches_through_other_actions(estate):
-    from vro2k_assess import understand as U
+    from kestra_migration_assistant.vra import understand as U
     abm, m = _abm(estate)
     inc, omitted, cut = U.action_tree(m, abm)
     got = {a["action"]: a for a in inc}
@@ -180,7 +180,7 @@ def test_the_spec_prompt_carries_actions_the_workflow_reaches_through_other_acti
 
 
 def test_the_budget_leaves_actions_out_and_says_which(estate):
-    from vro2k_assess import understand as U
+    from kestra_migration_assistant.vra import understand as U
     abm, m = _abm(estate)
     inc, omitted, _ = U.action_tree(m, abm, budget=400)
     assert inc and omitted
@@ -190,7 +190,7 @@ def test_the_budget_leaves_actions_out_and_says_which(estate):
 
 
 def test_the_spec_records_what_its_prompt_left_out(estate, tmp_path, monkeypatch):
-    from vro2k_assess import model as M, understand as U
+    from kestra_migration_assistant.vra import model as M, understand as U
     monkeypatch.setattr(U, "ACTION_BUDGET", 400)
     seen = {}
 
@@ -221,7 +221,7 @@ def test_the_spec_records_what_its_prompt_left_out(estate, tmp_path, monkeypatch
 
 def test_every_spec_is_a_review_item_and_an_answer_closes_its_gate(estate):
     import yaml
-    from vro2k_assess.stages import brief as B, your_input as Y
+    from kestra_migration_assistant.vra.stages import brief as B, your_input as Y
     doc = yaml.safe_load(open(C.ANSWERS))
     short = estate["assess"]["workflows"][PROV]["short"]
     key = f"spec.{short}"
@@ -248,7 +248,7 @@ def test_every_spec_is_a_review_item_and_an_answer_closes_its_gate(estate):
 
 
 def test_a_review_goes_stale_when_the_spec_changes():
-    from vro2k_assess.stages import reviews as RV, your_input as Y
+    from kestra_migration_assistant.vra.stages import reviews as RV, your_input as Y
     spec = {"purpose": "a" * 40, "confidence": "medium"}
     wf = {"u": {"name": "U", "short": "u"}}
     loaded = {"entries": {"spec.u": {"answer": "yes"}}, "path": "x", "exists": True, "warnings": [],
@@ -320,7 +320,7 @@ def test_the_replacement_wave_has_entry_criteria_and_takes_the_blocking_policy(e
 
 
 def test_a_signed_approval_closes_the_approval_gate_of_the_waves_it_covers(estate):
-    from vro2k_assess.stages import brief as B, your_input as Y
+    from kestra_migration_assistant.vra.stages import brief as B, your_input as Y
     path = C.ANSWERS
     txt = open(path).read()
     try:
@@ -336,7 +336,7 @@ def test_a_signed_approval_closes_the_approval_gate_of_the_waves_it_covers(estat
 
 
 def test_no_replacement_wave_while_q9_is_open_or_says_keep(estate):
-    from vro2k_assess.stages import brief as B
+    from kestra_migration_assistant.vra.stages import brief as B
     path = C.ANSWERS
     txt = open(path).read()
     try:
@@ -351,7 +351,7 @@ def test_no_replacement_wave_while_q9_is_open_or_says_keep(estate):
 
 
 def test_replacement_waves_render_on_the_waves_page(estate):
-    from vro2k_assess.stages import visuals as V
+    from kestra_migration_assistant.vra.stages import visuals as V
     html = V.waves(estate["assess"], estate["brief"])
     assert "Wave 2, replacing vRA" in html and "First of a kind: one deployment ordered from the App" in html
     assert "pilot" not in html.lower()
@@ -361,12 +361,12 @@ def test_a_spec_whose_input_changed_is_stale(tmp_path, monkeypatch):
     """A generated spec is regenerated when the prompt it would get today differs from the one it came from."""
     import json
     import shutil
-    from vro2k_assess import understand as U
+    from kestra_migration_assistant.vra import understand as U
     monkeypatch.setenv("VRO_NO_MODEL", "1")
     spec_dir = tmp_path / "2-understand"
     shutil.copytree(os.path.join(HELPERS, "specs"), spec_dir)
     _configure(tmp_path / "stages", spec_dir=str(spec_dir))
-    from vro2k_assess.stages import assess as A, preflight as P
+    from kestra_migration_assistant.vra.stages import assess as A, preflight as P
     P.run()
     A.run()
     idx = json.load(open(os.path.join(C.WORK, "index.json")))

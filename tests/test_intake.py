@@ -15,11 +15,10 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess import intake  # noqa: E402
-from vro2k_assess import sanitize as S  # noqa: E402
+from kestra_migration_assistant.vra import intake  # noqa: E402
+from kestra_migration_assistant.vra import sanitize as S  # noqa: E402
 
 PLANTED = os.path.join(ROOT, "tests", "conformance", "sanitize", "planted-secrets")
-VRO = os.path.join(ROOT, "plugin", "scripts", "vro.py")
 
 # The secret-shaped values in the fixture. Hosts, IPs, emails and users are not grounds for rejection.
 SECRETS = {
@@ -32,7 +31,8 @@ SECRETS = {
 
 
 def cli(path: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, VRO, "check-intake", path], capture_output=True, text=True, cwd=ROOT)
+    return subprocess.run([sys.executable, "-m", "kestra_migration_assistant", "vra", "check-intake", path],
+                          capture_output=True, text=True, cwd=ROOT)
 
 
 def zip_tree(src: str, dst: str) -> str:

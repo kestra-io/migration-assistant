@@ -28,8 +28,8 @@ def sample_stages(tmp_path_factory):
     def get(estate: str) -> str:
         if estate in built:
             return built[estate]
-        from vro2k_assess import cli
-        from vro2k_assess.stages import assess, brief, common as C, preflight
+        from kestra_migration_assistant.vra import cli
+        from kestra_migration_assistant.vra.stages import assess, brief, common as C, preflight
         name = SAMPLE_OF[estate]
         sample = os.path.join(ROOT, "samples", name)
         tmp = tmp_path_factory.mktemp(estate)
@@ -55,6 +55,6 @@ def answer(q: str, text, **kw) -> None:
     """Answer one item in the configured estate's your-input/answers.yaml as a person would: a preflight
     question by its id (Q9) or any item by its key."""
     import re as _re
-    from vro2k_assess.stages import preflight, your_input
+    from kestra_migration_assistant.vra.stages import preflight, your_input
     key = preflight.answer_key(q) if _re.fullmatch(r"Q\d+", q) else q
     your_input.set_answer(key, text, **kw)

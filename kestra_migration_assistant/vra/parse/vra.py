@@ -36,7 +36,7 @@ import posixpath
 import re
 from collections import defaultdict
 
-from .. import safety
+from .. import outdir, safety
 
 VRA_SUFFIXES = (".vra-ng",)
 
@@ -81,7 +81,8 @@ def _files(path: str) -> tuple[dict[str, bytes], list[str]]:
     out, warnings = {}, []
     if os.path.isdir(path):
         for dp, dirs, files in os.walk(path):
-            dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(dp, d)))
+            dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(dp, d))
+                             and not outdir.skipped(dp, d))
             for fn in sorted(files):
                 if fn.startswith("."):
                     continue

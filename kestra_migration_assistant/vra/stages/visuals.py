@@ -829,6 +829,17 @@ def workflow_page(u: str, assess: dict, brief: dict) -> str:
         doc_note = (f"<div class='note'>The first task in the file is <code>{C.esc(w['first_task_in_doc_order'])}</code>, "
                     f"but the run starts at <code>{C.esc(w['root_item'])}</code> and its first task is "
                     f"<code>{C.esc(w['first_task_on_root_path'])}</code>. A converter that reads the file top down starts in the wrong place.</div>")
+    def nested_row(n: dict) -> str:
+        # Written outside the page's f-string: a nested f-string reusing its quotes needs Python 3.12
+        if n.get('target_uid') in assess['workflows']:
+            called = (f'<a href="{href(n["target_uid"], "")}">'
+                      + C.esc(n['display_name'] or nm(n['target_uid'])) + '</a>')
+        else:
+            called = C.esc(n['display_name'] or n['workflow_id'])
+        in_export = 'yes' if n['in_export'] else 'no (' + C.esc(n.get('kind') or '') + ')'
+        outcome = C.esc(brief['triage'][n['target_uid']]['outcome']) if n.get('target_uid') in brief['triage'] else ''
+        return f"<tr><td>{C.esc(n['item'])}</td><td>{called}</td><td>{in_export}</td><td>{outcome}</td></tr>"
+    nested_rows = "".join(nested_row(n) for n in w['nested']) or "<tr><td colspan=4>none</td></tr>"
     body = f"""
 <p class="sub"><a href="../index.html">Brief</a> / <a href="index.html">Workflows</a> / {C.esc(dom['name'])} / {C.esc(w['cluster'])}</p>
 <h1>{C.esc(w['name'])}</h1>
@@ -865,7 +876,7 @@ that is not in the export.</p>
 </div>
 <h2>Workflows it calls</h2>
 <div class="scroll"><table><tr><th>Item</th><th>Calls</th><th>In export</th><th>Its brief outcome</th></tr>
-{"".join(f"<tr><td>{C.esc(n['item'])}</td><td>{(f'<a href=\"{href(n['target_uid'], '')}\">' + C.esc(n['display_name'] or nm(n['target_uid'])) + '</a>') if n.get('target_uid') in assess['workflows'] else C.esc(n['display_name'] or n['workflow_id'])}</td><td>{'yes' if n['in_export'] else 'no (' + C.esc(n.get('kind') or '') + ')'}</td><td>{C.esc(brief['triage'][n['target_uid']]['outcome']) if n.get('target_uid') in brief['triage'] else ''}</td></tr>" for n in w['nested']) or "<tr><td colspan=4>none</td></tr>"}
+{nested_rows}
 </table></div>
 <h2>What it touches itself</h2>
 <p class="sub">Operations in its own scripts and the actions it calls. Calls made by the workflows above are on their pages.</p>
@@ -879,9 +890,9 @@ that is not in the export.</p>
 
 def _xml_excerpt(w: dict, max_lines: int = 60) -> tuple[str, str]:
     """The workflow tag and the items up to the entry point, from the file on disk."""
-    path = os.path.join(C.ROOT, w["file"])
-    from vro2k_assess import safety
-    from vro2k_assess.parse import formats
+    path = os.path.join(C.BASE, w["file"])
+    from kestra_migration_assistant.vra import safety
+    from kestra_migration_assistant.vra.parse import formats
     raw = safety.read_file(path)
     text = formats.decode_bytes(raw)
     lines = text.splitlines()
@@ -1153,8 +1164,8 @@ def plugins_view(assess, brief) -> str:
     cov = assess.get("plugin_coverage") or {}
     m = cov.get("snapshot") or {}
     if not m.get("file"):
-        body = ("<h1>Plugin coverage</h1><div class=\"note\">No plugin snapshot in <code>kestra-reference/plugins/</code>. "
-                "Run <code>python tools/kestra_plugins.py</code> (read-only) and re-run Assess.</div>")
+        body = ("<h1>Plugin coverage</h1><div class=\"note\">No plugin snapshot is bundled with this install "
+                "(<code>data/plugins/</code> in the package), so coverage is not shown.</div>")
         return TH.page("Plugin coverage", body, active="plugins.html")
     srcs = []
     for s, v in m["sources"].items():

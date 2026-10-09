@@ -24,10 +24,10 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from vro2k_assess import entry_points as EP  # noqa: E402
-from vro2k_assess import intake, safety  # noqa: E402
-from vro2k_assess import sanitize as S  # noqa: E402
-from vro2k_assess.parse import vra  # noqa: E402
+from kestra_migration_assistant.vra import entry_points as EP  # noqa: E402
+from kestra_migration_assistant.vra import intake, safety  # noqa: E402
+from kestra_migration_assistant.vra import sanitize as S  # noqa: E402
+from kestra_migration_assistant.vra.parse import vra  # noqa: E402
 
 VRA_DIR = os.path.join(ROOT, "tests", "conformance", "vra")
 TREE = os.path.join(VRA_DIR, "sample")
@@ -375,7 +375,7 @@ def test_manual_file_problems_are_warnings(tmp_path):
 @pytest.fixture()
 def estate(tmp_path, monkeypatch):
     """aria-xml (holds Install) plus the fixture .vra-ng, as a customer would drop them in sources/."""
-    from vro2k_assess.stages import common as C
+    from kestra_migration_assistant.vra.stages import common as C
     monkeypatch.setenv("VRO_NO_MODEL", "1")
     src = tmp_path / "sources" / "vra-test"
     src.mkdir(parents=True)
@@ -391,7 +391,7 @@ def test_estate_inputs_route_the_vra_export(estate):
 
 
 def test_preflight_reports_entry_points_and_marks_q2(estate):
-    from vro2k_assess.stages import preflight
+    from kestra_migration_assistant.vra.stages import preflight
     C = estate
     r = preflight.run()
     # a vRA export: no entry-points.yaml in your-input/ (Q2 is answered in answers.yaml)
@@ -411,7 +411,7 @@ def test_preflight_reports_entry_points_and_marks_q2(estate):
 
 
 def test_preflight_never_overwrites_a_filled_in_template(estate):
-    from vro2k_assess.stages import preflight
+    from kestra_migration_assistant.vra.stages import preflight
     C = estate
     preflight.run()
     filled = EP.template().replace("other_triggers: []",
@@ -429,7 +429,7 @@ def test_preflight_never_overwrites_a_filled_in_template(estate):
 
 
 def test_assess_adds_entry_points_to_the_call_graph_and_retire_check(estate):
-    from vro2k_assess.stages import assess, preflight, triage
+    from kestra_migration_assistant.vra.stages import assess, preflight, triage
     preflight.run()
     a = assess.run()
     w = a["workflows"]["aria-xml-Install"]
@@ -445,7 +445,7 @@ def test_assess_adds_entry_points_to_the_call_graph_and_retire_check(estate):
 
 
 def test_call_graph_page_draws_entry_points(estate):
-    from vro2k_assess.stages import assess, preflight, visuals
+    from kestra_migration_assistant.vra.stages import assess, preflight, visuals
     preflight.run()
     a = assess.run()
     src = visuals.entry_points_src(a)

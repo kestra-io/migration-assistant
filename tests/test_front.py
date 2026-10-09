@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests", "conformance", "large"))
 
-from vro2k_assess.stages import common as C  # noqa: E402
+from kestra_migration_assistant.vra.stages import common as C  # noqa: E402
 
 MAX_WORDS = 800           # the front page's fixed length, in words a reader sees (a four-workflow estate: about 670)
 MAX_BRIEF_WORDS = 3000    # BRIEF.md for 60 workflows (a four-workflow estate: about 1,400; the cap there is 2,000)
@@ -26,7 +26,7 @@ MAX_BRIEF_WORDS = 3000    # BRIEF.md for 60 workflows (a four-workflow estate: a
 
 def _estate(tmp, n):
     import build as LB
-    from vro2k_assess.stages import assess as A, brief as B, front as F, preflight as P, visuals as V
+    from kestra_migration_assistant.vra.stages import assess as A, brief as B, front as F, preflight as P, visuals as V
     out = LB.build(str(tmp / "src"), n)
     spec_dir = str(tmp / "specs")
     os.makedirs(spec_dir, exist_ok=True)
@@ -109,7 +109,7 @@ def test_the_front_page_stays_within_a_fixed_length(which, request):
 
 
 def F_CAPS():
-    from vro2k_assess.stages import front as F
+    from kestra_migration_assistant.vra.stages import front as F
     return F.CAPS
 
 
@@ -120,7 +120,7 @@ def test_a_larger_estate_does_not_make_a_longer_page(big, small):
 
 @pytest.mark.parametrize("which", ["big", "small"])
 def test_the_table_adds_up_to_the_estate_and_says_direct_or_redesign(which, request):
-    from vro2k_assess.stages import front as F
+    from kestra_migration_assistant.vra.stages import front as F
     r = request.getfixturevalue(which)
     rows = F.merged_rows(r["assess"], r["brief"])
     num = r["brief"]["translation"]["number"]
@@ -139,7 +139,7 @@ def test_the_table_adds_up_to_the_estate_and_says_direct_or_redesign(which, requ
 
 @pytest.mark.parametrize("which", ["big", "small"])
 def test_the_status_box_and_the_list_agree_on_what_blocks(which, request):
-    from vro2k_assess.stages import status as S
+    from kestra_migration_assistant.vra.stages import status as S
     r = request.getfixturevalue(which)
     st = S.status_of(r["brief"])
     m = re.search(r"Next step: answer (\d+) open items?", r["text"])
@@ -153,7 +153,7 @@ def test_the_status_box_and_the_list_agree_on_what_blocks(which, request):
                 continue
             m2 = re.search(r"<strong>(?:The )?(\w+)", it)
             w = m2.group(1).lower()
-            from vro2k_assess.stages.front import WORDS
+            from kestra_migration_assistant.vra.stages.front import WORDS
             back = {v: k for k, v in WORDS.items()}
             nums.append(int(w) if w.isdigit() else back.get(w, 1))
         assert sum(nums) == len(st["blocking"]), (nums, items)
@@ -162,7 +162,7 @@ def test_the_status_box_and_the_list_agree_on_what_blocks(which, request):
 
 
 def test_the_recommendation_opens_with_what_happens_to_the_workflows():
-    from vro2k_assess.stages import front as F
+    from kestra_migration_assistant.vra.stages import front as F
 
     def brief(verdict, outcomes, reason="exists to serve vRA: calls getVraThing", client=0.0):
         tri = {f"w{i}": {"outcome": o, "reason": reason} for i, o in enumerate(outcomes)}
@@ -205,6 +205,6 @@ def test_no_workflow_id_and_no_internal_path_on_the_front_page(big):
 
 
 def test_the_front_page_names_a_stand_in_only_when_there_is_one():
-    from vro2k_assess.stages import front as F
+    from kestra_migration_assistant.vra.stages import front as F
     assert F.stand_in({"input": {"stand_in": True, "sign": {}}})
     assert not F.stand_in({"input": {"stand_in": False, "sign": {"signed": True}}})
