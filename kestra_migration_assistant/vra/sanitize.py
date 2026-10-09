@@ -104,7 +104,7 @@ XML_TOKENS = re.compile(r"<!\[CDATA\[(.*?)\]\]>|<!--(.*?)-->|<[^>]*>", re.S)
 
 
 class Redactor:
-    def __init__(self):
+    def __init__(self) -> None:
         self.maps: dict[str, dict[str, str]] = {c: {} for c in CATEGORIES}
         self.counts: Counter = Counter()
         self.per_file: dict[str, Counter] = defaultdict(Counter)
