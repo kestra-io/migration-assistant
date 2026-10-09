@@ -397,6 +397,137 @@ def provider_for(cfg: dict, settings: K.Settings | None = None) -> Provider:
     return OpenAICompatibleProvider(cfg, settings)
 
 
+def _cached_path(prompt: str, schema: dict, cfg: dict) -> str | None:
+    """The cached reply to this call, if there is one."""
+    if not CACHE_DIR:
+        return None
+    path = os.path.join(CACHE_DIR, f"{_key(prompt, schema, cfg)}.json")
+    if os.path.exists(path):
+        return path
+    if cfg["provider"] == "anthropic" and cfg["auth"] == "claude-code":
+        # Replies cached before the model settings were made by the same headless claude, on the CLI's
+        # default model; reuse them rather than pay again, and say so in the log.
+        legacy = os.path.join(CACHE_DIR, f"{_legacy_key(prompt, schema)}.json")
+        if os.path.exists(legacy):
+            return legacy
+    return None
+
+
+# ---------------------------------------------------------------- the cost estimate
+
+# A prompt's tokens, from its characters. Calibrated on the load balancer use case's billed run (Opus 5.5
+# through Claude Code, 8 calls, $1.32): the reply, with the model's thinking, runs about 1.25 times the
+# prompt's tokens, and Claude Code adds about 5,000 input tokens of its own to every call.
+CHARS_PER_TOKEN = 3.5
+REPLY_PER_PROMPT_TOKEN = 1.25
+CALL_OVERHEAD_TOKENS = {"claude-code": 5000}
+
+
+def estimate_usd(model: str, provider: str, chars: int) -> float | None:
+    """What one call with a prompt (and schema) of `chars` characters costs at the model's API prices. None
+    when there is no price on record for the model."""
+    p = PRICES.get(model)
+    if not p:
+        return None
+    t_in = chars / CHARS_PER_TOKEN
+    t_out = t_in * REPLY_PER_PROMPT_TOKEN
+    return ((t_in + CALL_OVERHEAD_TOKENS.get(provider, 0)) * p[0] + t_out * p[1]) / 1e6
+
+
+def estimate(calls: list[dict], s: K.Settings) -> dict:
+    """The cost of `calls`, each {"purpose", "prompt", "schema"} (priced exactly, and free when its reply is
+    cached) or {"purpose", "chars"} (a call whose prompt depends on replies not in yet: priced by its expected
+    size, and counted as billed). {"calls", "billed", "cached", "usd"}; usd None when the model has no price."""
+    cfg = call_config(s)
+    billed = cached = 0
+    usd: float | None = 0.0
+    for c in calls:
+        if "prompt" in c:
+            if _cached_path(c["prompt"], c["schema"], cfg):
+                cached += 1
+                continue
+            chars = len(c["prompt"]) + len(json.dumps(c["schema"]))
+        else:
+            chars = c["chars"]
+        billed += 1
+        one = estimate_usd(cfg["model"], s.provider or "", chars)
+        usd = None if one is None or usd is None else usd + one
+    return {"calls": billed + cached, "billed": billed, "cached": cached,
+            "usd": None if usd is None else round(usd, 2)}
+
+
+def model_name(model: str) -> str:
+    """claude-opus-5-5 -> Claude Opus 5.5; any other name as given."""
+    parts = model.split("-")
+    if len(parts) >= 3 and parts[0] == "claude" and all(p.isdigit() for p in parts[2:]):
+        return f"Claude {parts[1].capitalize()} {'.'.join(parts[2:])}"
+    return model
+
+
+def estimate_words(est: dict, s: K.Settings) -> str:
+    """The estimate as the terminal says it."""
+    n = est["billed"]
+    calls = f"{n} model call{'s' if n != 1 else ''}"
+    cached = f" ({est['cached']} more come from the cache)" if est["cached"] else ""
+    name = model_name(s.model or "")
+    if est["usd"] is None:
+        return f"{calls}{cached}. There is no price on record for {name}, so no estimate in dollars."
+    if s.provider == "claude-code":
+        return (f"{calls}, about ${est['usd']:.2f} at {name}'s API prices{cached}. With your Claude Code login "
+                "this is not billed separately: it counts against your Claude plan.")
+    return f"{calls}, about ${est['usd']:.2f} at {name}'s API prices{cached}."
+
+
+class CostNotApproved(BaseException):
+    """The run stopped before its first billed call: the estimate was above max_cost_usd, and nobody said to go
+    on. A BaseException, so a stage that falls back when a call fails does not swallow it."""
+
+
+class Gate:
+    """Before the first billed call of a run: estimate what the run will still send (`planner(current)` returns
+    the calls, the current one among them), say it, and above `max_usd` ask to go on. `confirm` asks the person
+    (a question in, True to go on); None means there is no terminal to ask in, and the run stops. `yes` goes on
+    without asking. Decided once per run: later calls wait for the decision, then follow it."""
+
+    def __init__(self, planner, say, *, yes: bool = False, confirm=None, max_usd: float | None = None):
+        self.planner, self.say, self.yes, self.confirm, self.max_usd = planner, say, yes, confirm, max_usd
+        self.lock = threading.Lock()
+        self.decided: bool | None = None
+        self.estimate: dict | None = None
+        self.why = ""
+
+    def before_billed(self, purpose: str, prompt: str, schema: dict, cfg: dict, s: K.Settings) -> None:
+        with self.lock:
+            if self.decided is None:
+                self.decided = self._decide({"purpose": purpose, "prompt": prompt, "schema": schema}, s)
+        if not self.decided:
+            raise CostNotApproved(self.why)
+
+    def _decide(self, current: dict, s: K.Settings) -> bool:
+        try:
+            calls = self.planner(current)
+        except Exception as e:                  # an estimate that cannot be made never stops the run alone
+            calls = [current]
+            self.say(f"(the run's other calls could not be estimated: {type(e).__name__}: {e})")
+        est = self.estimate = estimate(calls, s)
+        self.say("Estimate: " + estimate_words(est, s))
+        cap = s.max_cost_usd if self.max_usd is None else self.max_usd
+        if est["usd"] is None or est["usd"] <= cap or self.yes:
+            return True
+        where = f"max_cost_usd in {s.path}" if s.path else "max_cost_usd in the config file"
+        if self.confirm is None:
+            self.why = (f"Stopped before any billed call: the estimate is above ${cap:g} ({where}). Run it again "
+                        "with --yes to go ahead, or raise max_cost_usd.")
+            return False
+        if self.confirm(f"That is above ${cap:g} ({where}). Go ahead? [y/N] "):
+            return True
+        self.why = "Stopped before any billed call, as asked. Nothing was billed."
+        return False
+
+
+GATE: Gate | None = None
+
+
 def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
         model: str | None = None, retries: int = 1) -> dict:
     """Ask for one JSON object against `schema`. Guarded, cached, logged, validated."""
@@ -415,12 +546,7 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
     os.makedirs(CACHE_DIR, exist_ok=True)
     key = _key(prompt, schema, cfg)
     cache_path = os.path.join(CACHE_DIR, f"{key}.json")
-    hit_path = cache_path if os.path.exists(cache_path) else None
-    if not hit_path and cfg["provider"] == "anthropic" and cfg["auth"] == "claude-code":
-        # Replies cached before the model settings were made by the same headless claude, on the CLI's
-        # default model; reuse them rather than pay again, and say so in the log.
-        legacy = os.path.join(CACHE_DIR, f"{_legacy_key(prompt, schema)}.json")
-        hit_path = legacy if os.path.exists(legacy) else None
+    hit_path = _cached_path(prompt, schema, cfg)
     if hit_path:
         with open(hit_path) as f:
             hit = json.load(f)
@@ -429,6 +555,8 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
               "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
         return hit["value"]
 
+    if GATE is not None:
+        GATE.before_billed(purpose, prompt, schema, cfg, s)
     backend = provider_for(cfg, s)
     attempt_prompt = prompt
     last_errs: list[str] = []

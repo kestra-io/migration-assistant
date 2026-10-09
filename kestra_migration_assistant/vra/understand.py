@@ -449,10 +449,12 @@ def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: b
     errors: dict[str, str] = {}
     context: dict[str, dict] = {}
     shas: dict[str, str] = {}
+    prompts: dict[str, str] = {}
 
     def build_prompt(uid: str) -> str:
         text = _build_prompt(uid)
         shas[uid] = prompt_sha(text)
+        prompts[uid] = text
         if uid in context:
             context[uid]["prompt_sha"] = shas[uid]
         return text
@@ -536,7 +538,8 @@ def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: b
                 path = os.path.join(spec_dir, f"{uid}.json")
                 if os.path.exists(path):
                     specs[uid] = json.load(open(path))
-        return {"contexts": context, "prompt_sha": shas, "order": order}
+        return {"contexts": context, "prompt_sha": shas, "order": order, "prompts": prompts,
+                "schema": ESTATE_SPEC_SCHEMA if call_tree else SPEC_SCHEMA}
 
     if to_write:
         C.progress(f"writing {len(to_write)} spec{'s' if len(to_write) != 1 else ''}, "

@@ -31,7 +31,9 @@ PROVIDERS = ("claude-code", "anthropic", "openai-compatible")
 DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai-compatible": "OPENAI_API_KEY"}
 ENV = {"provider": "KESTRA_MIGRATE_PROVIDER", "model": "KESTRA_MIGRATE_MODEL", "base_url": "KESTRA_MIGRATE_BASE_URL"}
-FILE_KEYS = ("provider", "model", "base_url", "api_key_env", "api_key", "timeout_s")
+FILE_KEYS = ("provider", "model", "base_url", "api_key_env", "api_key", "timeout_s", "max_cost_usd")
+# Above this estimate (USD) a run asks before its first billed call; max_cost_usd in the config file changes it
+DEFAULT_MAX_COST_USD = 20.0
 # The call to action at the end of every report. A placeholder until the landing page is final: change it here only.
 HELP_URL = "https://kestra.io/vra-migration-assistant?utm_source=migration-assistant&utm_medium=report"
 HELP_ASK = "Need help running it, or want us to run it for you?"
@@ -50,6 +52,7 @@ class Settings:
     api_key_env: str | None = None
     api_key: str | None = field(default=None, repr=False)
     timeout_s: int | None = None
+    max_cost_usd: float = DEFAULT_MAX_COST_USD
     source: dict[str, str] = field(default_factory=dict)     # setting -> where it came from
     path: str = ""                                           # the config file looked at
     why: str = ""
@@ -111,6 +114,9 @@ def read_file(path: str) -> dict:
                           "not the key itself")
     if "timeout_s" in out and not (isinstance(out["timeout_s"], int) and out["timeout_s"] > 0):
         raise ConfigError(f"{path}: timeout_s must be a whole number of seconds")
+    if "max_cost_usd" in out and (isinstance(out["max_cost_usd"], bool)
+                                  or not isinstance(out["max_cost_usd"], (int, float)) or out["max_cost_usd"] < 0):
+        raise ConfigError(f"{path}: max_cost_usd must be a number of US dollars, like 20")
     return out
 
 
@@ -147,10 +153,12 @@ def resolve(flags: dict | None = None, path: str | None = None, detect=None) -> 
             prov, source["provider"] = "anthropic", "found: ANTHROPIC_API_KEY is set"
         else:
             return Settings(None, path=path, why=no_model_help(path))
+    cap = float(got.get("max_cost_usd", DEFAULT_MAX_COST_USD))
     if prov not in PROVIDERS:
         raise ConfigError(f"provider {prov!r} ({source['provider']}) is not one of {', '.join(PROVIDERS)}")
     s = Settings(prov, model=got.get("model"), base_url=got.get("base_url"), api_key_env=got.get("api_key_env"),
-                 api_key=got.get("api_key"), timeout_s=got.get("timeout_s"), source=source, path=path)
+                 api_key=got.get("api_key"), timeout_s=got.get("timeout_s"), max_cost_usd=cap, source=source,
+                 path=path)
     if prov == "openai-compatible":
         if not s.base_url:
             raise ConfigError("provider openai-compatible needs base_url: the server's address, like "
@@ -202,6 +210,11 @@ model: {model}
 
 # How long one call may take, in seconds, before it is given up. The default is 2700 (45 minutes).
 # timeout_s: 2700
+
+# Before its first billed call, a run estimates what it will cost and asks to go on when the estimate is above
+# this many US dollars (`--yes` goes on without asking). With claude-code, the estimate is what the calls would
+# cost at API prices; they count against your Claude plan instead of being billed separately.
+# max_cost_usd: 20
 """
 
 

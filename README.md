@@ -94,15 +94,33 @@ Every reply is checked against the structure the tool expects. A reply that does
 more, with what was wrong; a second miss stops that call with an error that names the model. Other models
 may work, but a smaller one is more likely to miss the structure.
 
+### What a run costs
+
+A typical run: the load balancer use case (4 workflows, 39 actions) cost $1.32 on `claude-opus-5-5`, in 8
+calls. Most of it is one call per workflow, so the cost grows with the number and size of
+the workflows. Before its first billed call, a run prints an estimate from the prompts it is about to send and
+the model's price, with the number of calls:
+
+```
+Cost        Estimate: 8 model calls, about $1.28 at Claude Opus 5.5's API prices. With your Claude Code login this is not billed separately: it counts against your Claude plan.
+```
+
+With `claude-code`, the figure is what the calls would cost at API prices; they count against your Claude
+plan instead of being billed separately. Above $20 the run asks before going on; set `max_cost_usd` in the
+config file to change that, or pass `--yes` to go ahead without asking. With no terminal to ask in (a
+script, a CI job), a run above the threshold stops unless `--yes` is given. Cached replies cost nothing, so a
+run again after answering estimates only what is new, and one with every reply cached makes no billed call.
+For a model with no price on record (a self-hosted one), the estimate gives the number of calls only.
+
 [INPUTS.md](INPUTS.md) says what goes in the export folder and how an administrator produces it, and how
 to answer. [SECURITY.md](SECURITY.md) lists what protects the tool and the export, and what is still missing.
 
 ## The brief
 
 `index.html` is the brief, in the words of the [vRA migration guide](https://kestra.io/resources/migration/vra):
-a status box (the next step, and how many elements are ready to convert today), what is in the estate, the
-recommendation (convert, a mix or rebuild, with how many elements convert Direct and how many need a
-Redesign, and a table of what each kind becomes in Kestra), what we need from you, grouped and counted, the
+a status box (the next step), what is in the estate, the recommendation (convert, a mix or rebuild, with how
+many elements convert Direct, how many need a Redesign and what the rest wait on, and a table of what each kind
+becomes in Kestra), what we need from you, grouped and counted, the
 plan with one line per wave, and where to check. `report/BRIEF.md` is the same text with an appendix.
 
 `your-input/answers.yaml` has two lists, `open` (what a wave waits on, first) and `answered`, then
