@@ -24,8 +24,22 @@ def safe_id(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", s).strip("-")
 
 
-def parse_corpus(out_dir: str, sources: dict[str, str]) -> dict:
-    """Parse every input in `sources` (label -> path). Labels prefix the stable IDs."""
+def _relative(path: str, root: str | None) -> str:
+    """`path` relative to `root` with forward slashes, a container's inner part after '!' kept as is. As given
+    when there is no root, or on another drive."""
+    if not root or not path:
+        return path
+    outer, sep, inner = path.partition("!")
+    try:
+        outer = os.path.relpath(outer, root).replace(os.path.sep, "/")
+    except ValueError:                      # Windows: another drive than the export
+        return path
+    return outer + sep + inner
+
+
+def parse_corpus(out_dir: str, sources: dict[str, str], root: str | None = None) -> dict:
+    """Parse every input in `sources` (label -> path). Labels prefix the stable IDs. Every path written is
+    relative to `root` (the export folder), so the parse cache names no folder of this machine."""
     os.makedirs(os.path.join(out_dir, "model"), exist_ok=True)
 
     workflows: list[dict] = []
@@ -37,8 +51,10 @@ def parse_corpus(out_dir: str, sources: dict[str, str]) -> dict:
         try:
             elements, summary = formats.read_any(path)
         except Exception as exc:
-            failures.append({"source": label, "path": path, "error": str(exc)})
+            failures.append({"source": label, "path": _relative(path, root), "error": str(exc)})
             continue
+        if "source_path" in summary:
+            summary = {**summary, "source_path": _relative(summary["source_path"], root)}
         package_summaries[label] = summary
 
         # workflows
@@ -49,8 +65,9 @@ def parse_corpus(out_dir: str, sources: dict[str, str]) -> dict:
 
         for e in wf_els:
             m = workflow.parse_workflow(e)
+            m["source_path"] = _relative(m.get("source_path") or e.source_path, root)
             if m.get("parse_error"):
-                failures.append({"source": label, "path": e.source_path,
+                failures.append({"source": label, "path": m["source_path"],
                                  "name": e.name, "error": m["parse_error"]})
                 m["source"] = label
                 workflows.append(m)
@@ -96,7 +113,7 @@ def parse_corpus(out_dir: str, sources: dict[str, str]) -> dict:
                 continue
             rec = {
                 "source": label, "kind": e.kind, "uuid": e.uuid, "name": e.name,
-                "category_path": e.category_path, "source_path": e.source_path,
+                "category_path": e.category_path, "source_path": _relative(e.source_path, root),
                 "container_format": e.container_format,
                 "bytes": len(e.raw) if e.raw else len(e.xml or ""),
                 "warnings": e.warnings,

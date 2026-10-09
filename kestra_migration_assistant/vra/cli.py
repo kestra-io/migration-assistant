@@ -189,6 +189,8 @@ def _export_args(p: argparse.ArgumentParser, model: bool = True) -> None:
                             "else ANTHROPIC_API_KEY)")
         p.add_argument("--model", help="the model every call uses (default: the config file, else claude-opus-5-5)")
         p.add_argument("--base-url", help="openai-compatible only: the server's address, ending in /v1")
+        p.add_argument("--yes", action="store_true",
+                       help="go ahead without asking when the cost estimate is above max_cost_usd (default $20)")
 
 
 def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kestra-migrate vra") -> int:
@@ -256,11 +258,40 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
         stages = ["sanitize", "preflight", "assess", "brief", "migrate-input", "visuals", "status"]
     else:
         stages = [args.cmd]
-    if args.cmd == "run":
-        return _run_with_progress(stages)
-    for s in stages:
-        run_stage(s)
-    return 0
+    from kestra_migration_assistant.vra import model
+    if model.SETTINGS is not None and model.SETTINGS.provider and not os.environ.get("VRO_NO_MODEL"):
+        model.GATE = cost_gate(yes=bool(getattr(args, "yes", False)))
+    try:
+        if args.cmd == "run":
+            return _run_with_progress(stages)
+        for s in stages:
+            run_stage(s)
+        return 0
+    except model.CostNotApproved as e:
+        print(str(e), file=sys.stderr)
+        return 3
+    finally:
+        model.GATE = None
+
+
+def cost_gate(yes: bool = False, confirm=None, out=None):
+    """The estimate before the run's first billed call (model.Gate): said on the terminal, and above
+    max_cost_usd asked in it. With no terminal to ask in, a run above it stops unless --yes is given."""
+    from kestra_migration_assistant.vra import model
+    from kestra_migration_assistant.vra.stages import estimate
+    out = out or sys.stdout
+    width = max(len(v) for v in RUN_NAMES.values())
+
+    def say(msg: str) -> None:
+        print(f"{'Cost':<{width}}  {msg}", file=out, flush=True)
+
+    def ask_terminal(question: str) -> bool:
+        print(f"{'Cost':<{width}}  {question}", end="", file=out, flush=True)
+        return sys.stdin.readline().strip().lower() in ("y", "yes")
+
+    if confirm is None and sys.stdin is not None and sys.stdin.isatty():
+        confirm = ask_terminal
+    return model.Gate(estimate.planned, say, yes=yes, confirm=confirm)
 
 
 def set_up_model(args: argparse.Namespace, prog: str) -> bool:

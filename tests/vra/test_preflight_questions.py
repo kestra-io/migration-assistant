@@ -150,3 +150,23 @@ def test_your_input_holds_only_what_the_customer_needs(with_vra, without_vra):
     pointing = [k for k, e in Y.flat({"open": doc["open"]}).items() if "entry-points.yaml" in e["question"]]
     assert pointing == [P.answer_key("Q2")]
     assert "No vRA export was found" in Y.entry_of(doc, P.answer_key("Q2"))["question"]
+
+
+def test_q3_asks_only_for_systems_no_endpoint_question_names():
+    """Q3 in the endpoints group asks only about the systems no endpoint item asks for, matched on the system's
+    key: the endpoint item says "Avi" where Q3's list says "VMware Avi Load Balancer controller"."""
+    from kestra_migration_assistant.vra.stages import preflight as P
+    f = {"vra": None, "systems": [("VMware Avi Load Balancer controller", "the workflows' code"),
+                                  ("F5 BIG-IP (iControl REST)", "the workflows' code"),
+                                  ("VMware vCenter", "the cloud templates (Cloud.vSphere.Machine)")],
+         "system_ids": {"VMware Avi Load Balancer controller": "avi-controller",
+                        "F5 BIG-IP (iControl REST)": "f5-bigip", "VMware vCenter": "vsphere"},
+         "plugins": {}, "history_files": []}
+    q3 = next(it for it in P.input_items(f) if it["key"].startswith("q3-"))
+    endpoints = [Y.item(f"endpoint.{k}", "answer", f"{short}: the URL of a non-production instance?", family="endpoint")
+                 for k, short in (("avi-controller", "Avi"), ("f5-bigip", "F5"))]
+    got = Y._member_question(q3, [q3, *endpoints])
+    assert got.startswith("VMware vCenter: is there a non-production instance?"), got
+    assert "Avi" not in got and "F5" not in got
+    # with no endpoint item, Q3 asks about every system it found
+    assert all(n in Y._member_question(q3, [q3]) for n, _ in f["systems"])

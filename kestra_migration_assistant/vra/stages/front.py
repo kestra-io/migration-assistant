@@ -27,6 +27,7 @@ from . import common as C
 from . import status as S
 from . import theme as TH
 from . import triggers as TG
+from . import your_input as Y
 
 GUIDE = "https://kestra.io/resources/migration/vra"
 # Section 3.2.3 of the guide (how to classify the conversion effort): the guide's page, with no anchor, until the
@@ -37,6 +38,9 @@ CAPS = {"rows": 8, "waves": 6, "systems": 4, "domains": 3, "clients": 4}
 WORDS = {0: "no", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight",
          9: "nine", 10: "ten"}
 HOW_CLASS = {"Direct": "done", "Redesign": "todo", "Keep": "done", "Retire": "done", "Open": "wait"}
+# What the How column shows: the guide's two terms, Direct and Redesign; anything else in its own words
+WAITS = {"vra": "Waits on whether vRA stays", "answer": "Waits on an answer", "model": "Waits on a model"}
+HOW_SHOWN = {"Keep": "Stays in vRA", "Retire": "Retired"}
 
 
 # ------------------------------------------------------------------ small words
@@ -234,7 +238,18 @@ def merged_rows(assess: dict, brief: dict) -> list[dict]:
         x["evidence"] = _evidence(x)
         x["ready"] = sum(r.get("ready", 0) for r in x["rows"])
         x["systems"] = sorted(x["systems"])
+        x["waits"] = _waits(x) if x["how"] == "Open" else None
+        x["how_shown"] = WAITS[x["waits"]] if x["waits"] else HOW_SHOWN.get(x["how"], x["how"])
     return out
+
+
+def _waits(x: dict) -> str:
+    """What an Open row waits on: the vRA question (Q9) when all its rows are vRA's, else an answer, or a model."""
+    if any(r["how"] == "needs a model" for r in x["rows"]):
+        return "model"
+    if all(r["id"].startswith("vra") or r["id"] == "a-payload" for r in x["rows"]):
+        return "vra"
+    return "answer"
 
 
 def _say(x, assess, brief, cov, replacing, n_wf, life) -> tuple[str, str]:
@@ -415,17 +430,34 @@ def recommendation(assess: dict, brief: dict, rows: list[dict]) -> tuple[str, li
     if sp["Redesign"]:
         mostly = (", mostly where vRA itself goes away" if vra_red * 2 > sp["Redesign"] else
                   ", mostly workflows rebuilt from their specs")
-    parts = [f"{sp['Direct']} convert Direct"] if sp["Direct"] else []
-    if sp["Redesign"]:
-        parts.append(f"{sp['Redesign']} {_s(sp['Redesign'], 'needs', 'need')} a Redesign{mostly}")
-    if sp["Keep"]:
-        parts.append(f"{sp['Keep']} stay in vRA")
-    if sp["Retire"]:
-        parts.append(f"{sp['Retire']} can be retired")
-    if sp["Open"]:
-        parts.append(f"{sp['Open']} {_s(sp['Open'], 'has', 'have')} no path until a question is answered")
-    second = f"Of the estate's {sp['total']} elements, " + (_clauses(parts) if len(parts) > 2 else _and(parts)) + "."
-    return head, [first, second]
+    say = {"vra": "on whether vRA stays in front, which is one of the questions below",
+           "answer": "on a question below", "model": "on a model, which this run did not have"}
+    waits: dict[str, int] = {}
+    for x in rows:
+        if x["how"] == "Open":
+            waits[x["waits"]] = waits.get(x["waits"], 0) + x["count"]
+    # (count, what it does, with "depends" or "needs" agreeing with the count)
+    rest = [(n, w) for n, w in (
+        (sp["Redesign"], lambda n: f"{_s(n, 'needs', 'need')} a Redesign{mostly}"),
+        (sp["Keep"], lambda n: f"{_s(n, 'stays', 'stay')} in vRA"),
+        (sp["Retire"], lambda n: "can be retired"),
+        *[(n, (lambda n, w=w: f"{_s(n, 'depends', 'depend')} {say[w]}")) for w, n in waits.items()]) if n]
+    m = sum(n for n, _ in rest)
+    if sp["Direct"]:
+        second = f"{sp['Direct']} of the {sp['total']} elements convert Direct."
+        if len(rest) == 1:
+            n, w = rest[0]
+            second += f" The other {n} {w(n)}."
+        elif rest:
+            second += f" Of the other {m}, " + _clauses([f"{n} {w(n)}" for n, w in rest]) + "."
+    elif len(rest) == 1:
+        n, w = rest[0]
+        second = f"All {n} elements {w(n)}."
+    elif rest:
+        second = f"Of the {sp['total']} elements, " + _clauses([f"{n} {w(n)}" for n, w in rest]) + "."
+    else:
+        second = ""
+    return head, [first, second] if second else [first]
 
 
 # ------------------------------------------------------------------ what we need from you
@@ -507,6 +539,8 @@ def needs(assess: dict, brief: dict, st: dict) -> list[str]:
                     + ": one yes takes them all.")
         elif k == "endpoints":
             names = [by_kp.get(m.split(".", 1)[1], m) for m in ms if m.startswith("endpoint.")]
+            q3 = next((it for it in Y.items() if it["key"] in ms and it["key"].startswith("q3-")), None)
+            names += Y.q3_systems(q3, ms) if q3 else []
             line = "**The non-production systems** the flows run against" + (f": {_and(names)}." if names else ".")
         elif k == "specs":
             line = f"**One look at the {word(n)} specs**: are they right?"
@@ -975,10 +1009,9 @@ def document(assess: dict, brief: dict) -> list[tuple]:
     head, sents = recommendation(assess, brief, rows)
     sp = split(rows)
     B += [("h2", f"The recommendation: {head}"), ("p", " ".join(sents)),
-          ("kpis", [(f"{sp['path']} of {sp['total']}", "have a path to Kestra"),
-                    (f"{num.get('elements_ready', 0)} of {sp['total']}", "are ready now")])]
+          ("kpis", [(f"{sp['path']} of {sp['total']}", "have a path to Kestra"), _second_kpi(brief, st, num, sp)])]
     shown = rows[:CAPS["rows"]]
-    tbl = [[x["label"], x["kestra"], x["how"], str(x["count"])] for x in shown]
+    tbl = [[x["label"], x["kestra"], x["how_shown"], str(x["count"])] for x in shown]
     if len(rows) > len(shown):
         rest = rows[len(shown):]
         tbl.append([f"{len(rest)} more kinds", "on the translation page", "", str(sum(x["count"] for x in rest))])
@@ -1047,12 +1080,27 @@ def page(assess: dict, brief: dict, pre: dict) -> str:
             head, rows = x
             parts.append('<div class="scroll"><table><tr>' + "".join(f"<th>{C.esc(h)}</th>" for h in head) + "</tr>"
                          + "".join("<tr>" + "".join(
-                             (f'<td><span class="status {HOW_CLASS.get(c, "todo")}">{C.esc(c)}</span></td>'
+                             (f'<td><span class="status {_how_class(c)}">{C.esc(c)}</span></td>'
                               if j == 2 and c and head[2] == "How"
                               else f'<td class="num">{C.esc(c)}</td>' if j == 3 else f"<td>{_inline(c)}</td>")
                              for j, c in enumerate(r)) + "</tr>" for r in rows) + "</table></div>")
     parts.append('<p class="sub"><a href="BRIEF.md">Download the brief</a> (Markdown).</p>')
     return TH.page(f"Migration brief: {C.ESTATE}", "\n".join(parts), active="index.html")
+
+
+def _how_class(shown: str) -> str:
+    for how, cls in HOW_CLASS.items():
+        if shown in (how, HOW_SHOWN.get(how)):
+            return cls
+    return "wait" if shown in WAITS.values() else "todo"
+
+
+def _second_kpi(brief: dict, st: dict, num: dict, sp: dict) -> tuple[str, str]:
+    """What is ready, once answers have made something ready; until then, what the open answers unlock."""
+    if not num.get("elements_ready") and st["blocking"] and st["blocks"]:
+        k = st.get("holding") or len(st["blocking"])
+        return f"{k} {_s(k, 'answer')}", f"{_s(k, 'starts', 'start')} {_and(st['blocks'])}"
+    return f"{num.get('elements_ready', 0)} of {sp['total']}", "are ready now"
 
 
 def markdown(assess: dict, brief: dict) -> list[str]:
@@ -1092,7 +1140,8 @@ def translation_page(assess: dict, brief: dict) -> str:
     num = (brief.get("translation") or {}).get("number") or {}
     parts = ["<h1>Translation</h1>",
              f"<p>Every element of the estate, in the row of the brief's table that holds it, with what it becomes and "
-             f"why: {sp['total']} elements, {num.get('elements_ready', 0)} ready now.</p>"]
+             f"why: {sp['total']} elements"
+             + (f", {num['elements_ready']} ready now" if num.get("elements_ready") else "") + ".</p>"]
     for x in rows:
         ev = x.get("evidence")
         evl = (f' Evidence: <a href="{C.esc(ev["href"])}">{C.esc(ev["label"])}</a>.' if ev else "")
@@ -1102,7 +1151,7 @@ def translation_page(assess: dict, brief: dict) -> str:
             f"<td>{C.esc(i.get('why') or '')}</td></tr>" for r in x["rows"] for i in r["items"])
         ids = "".join(f'<span id="{C.esc(r["id"])}"></span>' for r in x["rows"])
         parts.append(f'<h2 id="{C.esc(x["id"])}">{ids}{C.esc(x["label"])} <span class="status '
-                     f'{HOW_CLASS.get(x["how"], "todo")}">{C.esc(x["how"])}</span></h2>'
+                     f'{HOW_CLASS.get(x["how"], "todo")}">{C.esc(x["how_shown"])}</span></h2>'
                      f'<p>In Kestra: {C.esc(x["kestra"])}. {x["count"]} {_s(x["count"], "element")}'
                      + (f", {x['lines']} lines of script" if x["lines"] else "") + f".{evl}</p>"
                      '<div class="scroll"><table><tr><th>Element</th><th>Kind</th><th>Ready now</th>'

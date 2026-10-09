@@ -59,7 +59,7 @@ STAGE_RULES = [
 def _parse(pm: dict) -> dict:
     from kestra_migration_assistant.vra.parse import corpus, formats
     C.ensure(C.WORK)
-    idx = corpus.parse_corpus(C.WORK, C.INPUTS)
+    idx = corpus.parse_corpus(C.WORK, C.INPUTS, root=C.SOURCE_DIR)
 
     # Script modules again, for their parameter types (the index keeps only the script).
     actions: list[dict] = []
@@ -324,7 +324,7 @@ def run() -> dict:
         sp = C.spec(u) or {}
         wf[u] = {
             "uid": u, "wid": m["wid"], "name": m["name"], "source": m["source"],
-            "category_path": m.get("category_path"), "file": C.rel(m["source_path"].split("!")[0]),
+            "category_path": m.get("category_path"), "file": C.rel(os.path.join(C.SOURCE_DIR, m["source_path"].split("!")[0])),
             "cluster": cluster_of.get(u), "band": cres["colours"][u]["band"],
             "red_reasons": cres["colours"][u]["red_reasons"],
             "amber_reasons": cres["colours"][u]["amber_reasons"],

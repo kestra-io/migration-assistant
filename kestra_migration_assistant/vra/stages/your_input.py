@@ -128,11 +128,12 @@ def register_unblocks(m: dict[str, list[str]]) -> None:
 def item(key: str, group: str, ask: str, *, title: str | None = None, why: str | None = None,
          unblocks: list[str] | None = None, options: list[str] | None = None, suggested: str | None = None,
          found: str | None = None, family: str | None = None, link: str | None = None, fixed: dict | None = None,
-         blocks: list[str] | None = None, question: str | None = None) -> dict:
+         blocks: list[str] | None = None, question: str | None = None, systems: list[dict] | None = None) -> dict:
     """One thing a person answers. `ask` is the full question the pages show; `question` the plain one
     answers.yaml shows (derived from `ask` when not given). `suggested` (group confirm) is what the code points
-    to; `fixed` holds what the tool tracks for the item (a spec's fingerprint)."""
-    return {"key": key, "group": group, "ask": ask, "question": question, "title": title or ask, "why": why,
+    to; `fixed` holds what the tool tracks for the item (a spec's fingerprint); `systems` the systems an item
+    asks about, by key and name (Q3)."""
+    return {**({"systems": systems} if systems else {}), "key": key, "group": group, "ask": ask, "question": question, "title": title or ask, "why": why,
             "unblocks": unblocks or [], "options": options or [], "suggested": suggested, "found": found,
             "family": family or key.split(".", 1)[0], "link": link, "fixed": fixed or {}, "blocks": blocks or []}
 
@@ -511,12 +512,22 @@ def group_question(gid: str, its: list[dict]) -> str:
     return "What the export cannot say about the estate:"
 
 
+def q3_systems(it: dict, keys: list[str]) -> list[str]:
+    """The systems Q3 (`it`) still asks about when the items `keys` are asked too: an endpoint item
+    (endpoint.<system key>) asks for its own system. Matched on the system's key, never its display name."""
+    from . import gates as G
+    asked = {k.split(".", 1)[1] for k in keys if k.startswith("endpoint.")}
+    if it.get("systems"):
+        return [s["name"] for s in it["systems"] if G.key_part(s["key"]) not in asked]
+    return [x for x in (re.sub(r" \(from [^;]*\)\.?$", "", p.strip()) for p in str(it.get("found") or "").split("; "))
+            if x]
+
+
 def _member_question(it: dict, siblings: list[dict] | None = None) -> str:
     if it["key"].startswith("q3-") and it.get("found"):
-        # Q3 asks for a non-production instance of each system; an endpoint item already asks for each one it names
-        asked = " ".join(str(s.get("question") or s.get("ask")) for s in siblings or [] if s is not it)
-        rest = [x for x in (re.sub(r" \(from [^;]*\)\.?$", "", p.strip()) for p in str(it["found"]).split("; "))
-                if x and x not in asked]
+        # Q3 asks for a non-production instance of each system; an endpoint item (endpoint.<system key>) already
+        # asks for its system, so Q3 asks only for the others, matched on the key, never on a display name
+        rest = q3_systems(it, [s["key"] for s in siblings or [] if s is not it])
         return (f"{_and(rest)}: is there a non-production instance? And name any other system the workflows reach."
                 if rest else "Do the workflows reach any other system? Name it, or answer none.")
     q = question_of(it)

@@ -100,14 +100,17 @@ def facts(exp: dict | None = None, assess: dict | None = None) -> dict:
            "day2_actions": len(model.get("day2_actions") or [])} if read else None
 
     systems = []                              # (name, how it was found)
+    ids = {}                                  # name -> the system's key (a target of assess.json)
     for k, t in sorted((assess.get("targets") or {}).items()):
         if k not in NOT_SYSTEMS:
             systems.append((t.get("name") or k, "the workflows' code"))
+            ids[t.get("name") or k] = k
     have = {n for n, _ in systems}
     for r in (assess.get("plugin_coverage") or {}).get("rows") or []:
         if r.get("key") in NOT_SYSTEMS or not r.get("resource_type") or (r.get("system") or r["key"]) in have:
             continue
         systems.append((r.get("system") or r["key"], f"the cloud templates ({r['resource_type']})"))
+        ids[r.get("system") or r["key"]] = r["key"]
 
     # vRO plugins the code uses: declared in dunes-meta-inf, plugin object types, the HTTP-REST plugin's
     # classes, and a plugin client's calls
@@ -141,7 +144,7 @@ def facts(exp: dict | None = None, assess: dict | None = None) -> dict:
                 if vp and not vp.startswith("("):
                     add(vp, f"calls such as {o.get('op')}")
     hist = (exp.get("execution_history") or {}).get("files") or []
-    return {"vra": vra, "systems": systems, "plugins": {k: sorted(v) for k, v in sorted(plugins.items())},
+    return {"vra": vra, "systems": systems, "system_ids": ids, "plugins": {k: sorted(v) for k, v in sorted(plugins.items())},
             "history_files": hist, "assessed": bool(assess)}
 
 
@@ -177,6 +180,7 @@ def questions_for(f: dict) -> list[dict]:
                              "non-production instance a converted flow can run against? Name any other system the "
                              "workflows reach.")
             q["found"] = "; ".join(f"{n} (from {how})" for n, how in f["systems"]) + "."
+            q["systems"] = [{"key": (f.get("system_ids") or {}).get(n, n), "name": n} for n in names]
         if q["id"] == "Q7" and f.get("history_files"):
             hs = f["history_files"]
             q["question"] = ("The estate folder holds files that look like run history. Do they cover twelve months "
@@ -419,7 +423,7 @@ def input_items(f: dict) -> list[dict]:
                           f"{q['id']}. {q['question']}", title=f"{q['id']} {q['topic']}", why=q["why"],
                           unblocks=list(q.get("read_by") or []), suggested=q.get("suggested"),
                           found=q.get("found"), family="preflight", link="report/readiness.html",
-                          question=q.get("plain")))
+                          question=q.get("plain"), systems=q.get("systems")))
     for it in out:
         it["family_title"] = "Preflight: what the export cannot say"
     return out
