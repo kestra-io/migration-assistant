@@ -89,17 +89,10 @@ make check               # tests, ruff, mypy, the secret scan over the full hist
 make hooks               # run make check before every commit
 ```
 
-The two public samples in `samples/` (Avi and Nuage vRO plugin libraries, with their licences) carry their
-saved model output, so a run on them costs nothing:
-
-```bash
-uv run kestra-migrate vra use-sample samples/avi /tmp/avi-sample
-uv run kestra-migrate vra run /tmp/avi-sample --no-model
-```
-
 Each stage also runs on its own for development (`preflight`, `sanitize`, `assess`, `understand`, `brief`,
 `visuals`, and `all`, which is `run` without Understand); they are not listed in `--help`.
-Decisions about this repository are in [docs/DECISIONS.md](docs/DECISIONS.md).
+The tests are in `tests/vra/`, on synthetic inputs in `tests/vra/conformance/` (every name in them is invented);
+`scripts/` holds `make check` and the secret scan. Neither ships with the package.
 
 ## Licence
 

@@ -1,0 +1,7 @@
+{
+  "workflow_uid": "triage-Lab---Run-Remote-Command",
+  "purpose": "Runs one command on a host over SSH, with a password or a key pair, and returns its exit code and output.",
+  "confidence": "high",
+  "open_questions": [],
+  "external_systems": []
+}

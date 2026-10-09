@@ -55,25 +55,17 @@ kestra_migration_assistant/vra/data/plugins/kestra-plugins-2026-09-30.json
 
 THIRD-PARTY FILES IN THE REPOSITORY ONLY (not installed with the package)
 
-samples/avi/
-    vmware/vrealize-orchestrator-plugin-for-alb, commit 20740bf.
-    Apache License 2.0 (LICENSE, SOURCE.md).
-
-samples/nuage/
-    nuagenetworks/vspk-vro-workflows, commit 16a8a11.
-    BSD 3-Clause License, Copyright (c) 2015 Alcatel-Lucent, (c) 2016 Nokia (LICENSE, SOURCE.md).
-
-tests/conformance/canvas/
+tests/vra/conformance/canvas/
     vmware/build-tools-for-vmware-aria, commit 4ca2f6a. BSD 2-Clause License, Copyright 2023
     VMware, Inc. (licences/build-tools-for-vmware-aria.LICENSE.txt).
 
-tests/conformance/aria-xml/
+tests/vra/conformance/aria-xml/
     vmware-samples/build-tools-for-vmware-aria-samples, commit 57e4d5b. BSD 2-Clause License
     (licences/build-tools-for-vmware-aria-samples.LICENSE).
 
-tests/conformance/pkgdiff-v1.0.package, tests/conformance/pkgdiff-v1.1.package
+tests/vra/conformance/pkgdiff-v1.0.package, tests/vra/conformance/pkgdiff-v1.1.package
     lrivallain/vro-package-diff, commit 04de43b. MIT License, Copyright (c) 2018 Ludovic Rivallain
     (licences/vro-package-diff.LICENSE.md).
 
-Everything else in tests/conformance/ was written for this repository (CONFORMANCE.md lists each
+Everything else in tests/vra/conformance/ was written for this repository (CONFORMANCE.md lists each
 file's origin) and is under the Apache License 2.0.

@@ -538,7 +538,9 @@ def run() -> dict:
             "declared_only": sorted(u for u in users if not by_wf.get(u)),
             "operations": [{"op": op, "workflows": n, "mode": modes.get(op, "unknown"),
                             "reach": reach_ops.get(op, t["reach"])}
-                           for op, n in op_n.most_common()],
+                           # most workflows first, ties by name: op_n is filled from sets, so most_common()
+                           # alone would order ties by the process's string hash, differently on each run
+                           for op, n in sorted(op_n.items(), key=lambda kv: (-kv[1], kv[0]))],
             "action_only_operations": sorted(o for o in modes if o not in op_n),
             "reads": sum(1 for op in op_n if modes.get(op) == "read"),
             "writes": sum(1 for op in op_n if modes.get(op) == "write"),

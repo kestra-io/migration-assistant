@@ -1,0 +1,7 @@
+{
+  "workflow_uid": "triage-Lab---Create-Admin",
+  "purpose": "Creates a tenant administrator; most of the steps it stands for are not visible in the export.",
+  "confidence": "low",
+  "open_questions": [],
+  "external_systems": []
+}

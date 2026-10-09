@@ -6,15 +6,15 @@ vRO/vRA scope, and it is named after its export folder; one estate is one run
 how an administrator produces it, and what has to come separately because no export contains it.
 
 Every step that describes how the VMware product behaves is marked **(to confirm with a vRO expert)**.
-Those steps come from the formats we have read, public documentation and the samples in this
-repository, not from operating a customer's vRO. Menu names in particular differ between vRO 7.x,
+Those steps come from the formats we have read, public documentation and public vRO
+libraries, not from operating a customer's vRO. Menu names in particular differ between vRO 7.x,
 8.x and VCF 9 Orchestrator.
 
 ## 1. The primary input: a `.package` export
 
 A vRO package is a signed ZIP that holds workflows, actions, configuration elements and resource
 elements, with a folder path for each. It is what vRO itself produces for moving content between
-servers, so it is the format this tool documents first and tests on (`tests/conformance/pkgdiff-*.package`).
+servers, so it is the format this tool documents first and tests on (`tests/vra/conformance/pkgdiff-*.package`).
 
 How an administrator produces one **(to confirm with a vRO expert)**:
 
@@ -42,7 +42,7 @@ declared plugins). The signatures and certificates are not needed.
 Teams that keep vRO content in git with VMware Build Tools for Aria (BTVA, formerly vRBT) have a
 source tree instead of a package: `Workflow/<Folder>/<Name>.xml` with a sibling
 `<Name>.element_info.xml`, `ScriptModule/...` for actions, and usually `META-INF/dunes-meta-inf.xml`.
-Both sample estates in this repository are trees of this kind.
+Most public vRO libraries on GitHub are trees of this kind.
 
 Put the tree in the estate folder as it is in the repository, either as the whole folder
 (`acme/src/main/resources/...` trimmed to the folder holding `Workflow/`) or one tree per
@@ -57,7 +57,7 @@ reports the version as unknown.
 
 vRO can export one workflow at a time as a `.workflow` file (a ZIP of `workflow-info`,
 `workflow-content` and optional input forms). The tool reads it, and **Preflight marks every such
-input "experimental"**: that reader has never run on a real export (none is in the samples). Prefer a
+input "experimental"**: that reader has never run on a real export (none was among the inputs it was built on). Prefer a
 package; if single files are all that is available, send them and check their counts by hand.
 
 ## 4. Entry points: a vRA content export (`.vra-ng`), or `entry-points.yaml`
@@ -224,6 +224,3 @@ re-done, and the model replies already paid for come from the cache in `kestra-a
 Nothing is uploaded anywhere by these commands; the only outbound traffic is to the configured model, and
 only for the model calls the brief lists (domain names, walkthrough text, and the specs, which `run` writes
 unless `--no-model` is given), with every piece of export text marked as untrusted data.
-
-To try the tool without a customer export, run it on a copy of a public sample from this repository:
-`kestra-migrate vra use-sample samples/avi avi-sample`, then `kestra-migrate vra run avi-sample`.
