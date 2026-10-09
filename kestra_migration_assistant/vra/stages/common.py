@@ -270,7 +270,7 @@ def rel(path: str) -> str:
     if BASE is None:
         return path
     try:
-        return os.path.relpath(path, BASE).replace(os.sep, "/")
+        return os.path.relpath(path, BASE).replace(os.path.sep, "/")
     except ValueError:                      # Windows: a path on another drive than the export
         return path
 

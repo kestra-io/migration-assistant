@@ -27,6 +27,15 @@ Issues = "https://github.com/kestra-io/migration-assistant/issues"
 [project.scripts]
 kestra-migrate = "kestra_migration_assistant.cli:main"
 
+[dependency-groups]
+# Development only, pinned; uv.lock pins everything else. `uv sync` installs them with the package.
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.9",
+    "mypy==2.3.1",
+    "types-PyYAML==6.0.12.20260906",
+]
+
 [tool.setuptools.dynamic]
 version = { attr = "kestra_migration_assistant.__version__" }
 
