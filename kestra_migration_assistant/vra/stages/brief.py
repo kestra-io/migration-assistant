@@ -447,7 +447,12 @@ def recommend(assess, tri, act_tri, answers, number: dict | None = None) -> dict
                        "reads_as": "Direct (a plugin, HTTP or core task, a direct conversion, a wrapper or a duplicate) "
                                    "or Redesign (the tool maps it, a person shapes it); the rest waits on a rebuild, "
                                    "a hand rewrite or an answer."})
-    if (share_mr >= 0.6 and reuse < 0.4) or ml < 0.4:
+    unjudged = c.get("Needs a model", 0)
+    if unjudged * 2 > n:
+        verdict = "needs a model"
+        why = (f"{unjudged} of {n} workflows have no spec: what they do, their possible defects and whether to "
+               "convert or rebuild them need a model")
+    elif (share_mr >= 0.6 and reuse < 0.4) or ml < 0.4:
         verdict = "rebuild"
         why = (f"Manual plus Rebuild workflows are {share_mr:.0%} (60% or more) and the five largest clusters hold "
                f"{reuse:.0%} (under 40%)" if share_mr >= 0.6 and reuse < 0.4 else

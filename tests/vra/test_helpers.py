@@ -127,10 +127,13 @@ def test_an_action_with_no_blocker_of_its_own_converts_with_its_workflow(estate)
     assert "through levelTwo" in _act(estate, "levelThree")["reason"]
 
 
-def test_an_action_only_a_manual_workflow_uses_is_manual_and_names_the_blocker(estate):
-    assert estate["brief"]["triage"][APPROVE]["outcome"] == "Manual"
+def test_an_action_only_an_unjudged_workflow_uses_goes_with_it_and_names_it(estate):
+    """Web - Approve Host has no spec and nothing in its code decides it: it needs a model, and so does the action
+    only it uses."""
+    assert estate["brief"]["triage"][APPROVE]["outcome"] == "Needs a model"
     t = _act(estate, "onlyManual")
-    assert t["outcome"] == "Manual" and "Web - Approve Host" in t["reason"] and "no spec" in t["reason"]
+    assert t["outcome"] == "Needs a model" and "Web - Approve Host" in t["reason"] and "needs a model" in t["reason"]
+    assert "no spec" not in t["reason"]
 
 
 def test_an_action_nothing_calls_waits_for_an_owner_not_manual(estate):

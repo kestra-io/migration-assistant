@@ -93,20 +93,26 @@ def run_stage(s: str) -> str:
         from kestra_migration_assistant.vra import understand
         r = understand.run_estate()
         kept = [k for k, v in r["errors"].items() if "since --no-model" in str(v)]
+        unread = [k for k, v in r["errors"].items() if str(v).startswith("needs a model")]
         have = len([f for f in os.listdir(C.SPEC_DIR) if f.endswith(".json") and f not in
                     ("PROVENANCE.json", "cluster-summaries.json")]) if os.path.isdir(C.SPEC_DIR) else 0
         print(f"[understand] {C.ESTATE}: {have} specs on record, {r['generated']} generated this run, "
               + (f"{len(kept)} stale and kept (--no-model), " if kept else "")
-              + f"{len(r['errors']) - len(kept)} failed; "
+              + (f"{len(unread)} need a model, " if unread else "")
+              + f"{len(r['errors']) - len(kept) - len(unread)} failed; "
               f"{r['summaries_generated']} cluster summaries generated; new model spend ${r['cost_usd']:.4f} over {r['billed_calls']} billed call(s)")
         for k, v in sorted(r.get("stale", {}).items()):
             if k not in r["errors"]:
                 print(f"  regenerated: {k}: {v}")
         for k, v in r["errors"].items():
-            print(f"  {'kept, stale' if 'since --no-model' in str(v) else 'failed'}: {k}: {v}")
-        failed = len(r["errors"]) - len(kept)
+            if k not in unread:
+                print(f"  {'kept, stale' if 'since --no-model' in str(v) else 'failed'}: {k}: {v}")
+        failed = len(r["errors"]) - len(kept) - len(unread)
+        if unread and not have:
+            return f"no specs: what each of the {len(unread)} workflows does needs a model"
         return (f"{have} specs, {r['generated']} written this run"
-                + (f", {len(kept)} stale and kept" if kept else "") + (f", {failed} failed" if failed else ""))
+                + (f", {len(kept)} stale and kept" if kept else "")
+                + (f", {len(unread)} need a model" if unread else "") + (f", {failed} failed" if failed else ""))
     elif s == "brief":
         from kestra_migration_assistant.vra.stages import brief
         r = brief.run()

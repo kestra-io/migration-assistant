@@ -26,9 +26,13 @@ Order, and why:
                  vRO's own state), never on being started by a subscription.
 6. Manual        Needs a hand rewrite whatever an owner answers: OGNL form
                  logic, user interaction, a cycle, a file path parameter, a
-                 target with no way to reach it, no spec, or a low-confidence
-                 spec (the model could not read the workflow, so a person
-                 specifies it again).
+                 target with no way to reach it, or a low-confidence spec (the
+                 model could not read the workflow, so a person specifies it
+                 again).
+   Needs a model No spec, and nothing in the code decides it: what it does,
+                 its possible defects and whether to convert or rebuild it
+                 need a model (a run without one, or a call that failed).
+                 Run again with a model and it gets its own outcome.
    Needs owner input  Blocked only on things an owner can answer: a blocking
                  open question, or a callee that is not in the export. Once
                  answered it converts like Convert, so it goes into a wave with
@@ -49,7 +53,8 @@ import re
 from typing import Any
 
 OUTCOMES = ["Retire", "Near-duplicate", "Wrapper", "Plugin-covered library", "Convert", "Needs owner input",
-            "Manual", "Rebuild"]
+            "Needs a model", "Manual", "Rebuild"]
+NEEDS_MODEL = "what it does, its possible defects, and whether to convert or rebuild it need a model"
 BLOCKING_THEMES = {"correctness", "external contract", "concurrency"}
 VRA_SPEC = re.compile(r"\b(vRA|vRealize Automation|Aria Automation|service broker|blueprint)\b", re.I)
 DISPATCH_NAME = re.compile(r"^process .* notification$", re.I)
@@ -121,9 +126,7 @@ def _wf_signals(w: dict, spec: dict | None, first: dict | None, is_first: bool) 
     # 6. manual (hand rewrite) and needs owner input (answers only)
     rewrite, ask = [], []
     conf = sp.get("confidence")
-    if conf is None:
-        rewrite.append("no spec")
-    elif conf == "low":
+    if conf == "low":
         rewrite.append("spec confidence low")
     if w["ognl"]:
         rewrite.append(f"{w['ognl']} OGNL presentation qualifier(s): the input form's logic needs redesign")
@@ -150,6 +153,9 @@ def _wf_signals(w: dict, spec: dict | None, first: dict | None, is_first: bool) 
     if rewrite:
         sig.append({"outcome": "Manual", "reason": "; ".join(rewrite + ask),
                     "evidence": {"blockers": rewrite, "owner_questions": ask}})
+    elif conf is None:
+        sig.append({"outcome": "Needs a model", "reason": NEEDS_MODEL + ("; it also " + "; ".join(ask) if ask else ""),
+                    "evidence": {"blockers": [], "owner_questions": ask}})
     elif ask:
         sig.append({"outcome": "Needs owner input", "reason": "; ".join(ask).rstrip(".")
                     + ". Nothing else stops conversion: once answered it converts like Convert",
@@ -160,7 +166,7 @@ def _wf_signals(w: dict, spec: dict | None, first: dict | None, is_first: bool) 
                                  "spec_review": conf == "medium"}})
 
     # 7. convert: spec confidence high, or medium with an owner review of the spec as a wave gate
-    if not rewrite and not ask:
+    if not rewrite and not ask and conf is not None:
         ext = [t for t in w["targets"] if t != "vro-platform"]
         where = f" ({', '.join(ext)})" if ext else " (no external target)"
         if conf == "high":
@@ -398,9 +404,9 @@ def triage_action(a: dict, targets: dict, first_with_same_code: str | None, over
 
 # How a caller's outcome carries to an action judged by its callers, strongest first.
 _CARRY = {"Convert": "Convert", "Near-duplicate": "Convert", "Needs owner input": "Convert", "Wrapper": "Convert",
-          "Rebuild": "Rebuild", "Manual": "Manual", "Plugin-covered library": "Plugin-covered library",
-          "Retire": "Retire"}
-_CARRY_ORDER = ["Convert", "Rebuild", "Manual", "Plugin-covered library", "Retire"]
+          "Rebuild": "Rebuild", "Manual": "Manual", "Needs a model": "Needs a model",
+          "Plugin-covered library": "Plugin-covered library", "Retire": "Retire"}
+_CARRY_ORDER = ["Convert", "Rebuild", "Manual", "Needs a model", "Plugin-covered library", "Retire"]
 
 
 def _names(xs: list[str], n: int = 4) -> str:
@@ -504,6 +510,9 @@ def follow_callers(act_tri: dict, actions: list[dict], tri: dict, wf: dict) -> N
             first = next((r for x, n, kind, r in callers if x == "Manual"), "")
             reason = (f"its only callers are rewritten by hand, and it is rewritten with them: {_names(of('Manual'))}"
                       + (f" ({first.split(';')[0]})" if first else ""))
+        elif outcome == "Needs a model":
+            reason = (f"goes with the workflows that use it ({_names(of('Needs a model'))}), whose conversion "
+                      "needs a model to judge")
         elif outcome == "Plugin-covered library":
             reason = (f"used only by {_names(of('Plugin-covered library'))}, which a Kestra plugin replaces; "
                       "it goes with them")

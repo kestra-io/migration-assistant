@@ -9,7 +9,8 @@ files. It works out what each workflow does and what starts it, which systems it
 plugins cover them, and sorts every workflow into one of eight outcomes: convert, wrapper, near-duplicate,
 plugin-covered library, needs owner input, manual, rebuild or retire. It plans the migration in waves and
 writes a brief that a person answers and signs. A model is used only where reading intent needs one;
-structure, counts and outcomes always come from code. The export is sanitized before anything reaches a
+structure, counts and outcomes always come from code. Without a model, the brief shows everything the code
+finds, and marks each workflow whose verdict needs one. The export is sanitized before anything reaches a
 model, and nothing leaves the machine except the calls to the configured model.
 
 ## Install

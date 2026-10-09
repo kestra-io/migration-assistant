@@ -35,7 +35,7 @@ wrappers:
   wrapper: []       # workflows that are wrappers the rule missed
 
 # One entry per workflow or action. The outcome must be one of: Retire, Near-duplicate, Wrapper,
-# Plugin-covered library, Convert, Needs owner input, Manual, Rebuild
+# Plugin-covered library, Convert, Needs owner input, Needs a model, Manual, Rebuild
 #   outcomes:
 #     lb-create-load-balancer:
 #       outcome: Retire

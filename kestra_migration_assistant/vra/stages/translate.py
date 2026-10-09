@@ -23,7 +23,7 @@ MECHANICAL = ("plugin", "HTTP", "plugin and HTTP", "core task", "direct conversi
 # mapped by the tool, but a person still designs it: a catalog item becoming an App, a cloud template a flow,
 # subscriptions its steps, vRA's payload typed inputs
 DESIGNED = ("designed",)
-NOT_MECHANICAL = ("redesign", "manual", "needs an answer")
+NOT_MECHANICAL = ("redesign", "manual", "needs an answer", "needs a model")
 
 
 def path_class(how: str) -> str:
@@ -37,6 +37,7 @@ WF_HOW = {
     "Retire": ("deleted", "retire"),
     "Needs owner input": ("a Kestra flow, once its question is answered", "needs an answer"),
     "Manual": ("a flow written by hand", "manual"),
+    "Needs a model": ("decided once a model has read it", "needs a model"),
     "Rebuild": ("rebuilt for Kestra", "redesign"),
     "Plugin-covered library": ("a Kestra plugin", "plugin"),
 }
@@ -145,6 +146,7 @@ def table(assess: dict, brief: dict) -> dict:
             becomes, how = WF_HOW.get(o, ("rebuilt for Kestra", "redesign"))
             label = {"Near-duplicate": "Duplicate actions", "Wrapper": "Wrapper actions", "Retire": "Unused actions",
                      "Needs owner input": "Actions waiting on an answer", "Manual": "Actions rewritten by hand",
+                     "Needs a model": "Actions that go with workflows a model has not read",
                      "Rebuild": "Actions rebuilt with their callers"}.get(o, f"{o} actions")
             r = row(("a", o), label, becomes.replace("a Kestra flow", "converted with its callers"), how)
         sy = set(sysk) | {u.get("system") for u in t.get("uses") or [] if u.get("system")}
