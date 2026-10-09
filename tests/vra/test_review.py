@@ -388,14 +388,10 @@ def test_14_a_persona_with_no_steps_is_not_written_up(estate):
 
 # ------------------------------------------------------------ also noticed: model IDs
 
-def test_every_model_id_in_models_yaml_is_a_known_model():
-    import yaml
-
+def test_the_default_model_has_a_known_price():
+    from kestra_migration_assistant import config as K
     from kestra_migration_assistant.vra import model as M
-    cfg = yaml.safe_load(open(os.path.join(ROOT, "kestra_migration_assistant", "vra", "data", "models.yaml")))
-    for tier in ("reasoning", "drafting"):
-        if cfg[tier]["provider"] == "anthropic":
-            assert cfg[tier]["model"] in M.PRICES, (tier, cfg[tier]["model"])
+    assert K.DEFAULT_MODEL in M.PRICES
 
 
 # ------------------------------------------------------------ 13. preflight asks nothing the exports answered

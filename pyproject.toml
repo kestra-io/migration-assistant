@@ -21,6 +21,10 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 
+[project.optional-dependencies]
+# provider: anthropic (an Anthropic API key). claude-code and openai-compatible need nothing more.
+anthropic = ["anthropic>=1.0"]
+
 [project.urls]
 Homepage = "https://github.com/kestra-io/migration-assistant"
 Issues = "https://github.com/kestra-io/migration-assistant/issues"
