@@ -191,7 +191,7 @@ def test_a_second_run_reuses_the_model_cache_and_keeps_every_answer(tmp_path, mo
             calls.append(1)
             return {"result": json.dumps(_minimal(schema)), "is_error": False, "total_cost_usd": 0.0}
 
-    monkeypatch.setattr(M, "provider_for", lambda cfg: StandIn(cfg))
+    monkeypatch.setattr(M, "provider_for", lambda cfg, s=None: StandIn(cfg))
     export = _export(tmp_path / "estate")
     assert _main("run", export) == 0
     first = len(calls)

@@ -31,6 +31,7 @@ ALLOW = (
     "tests/vra/test_intake.py",
     "tests/vra/test_security.py",
     "tests/vra/test_models.py",
+    "tests/vra/test_config.py",
     "kestra_migration_assistant/vra/sanitize.py",
     "scripts/secret_scan.py",
 )

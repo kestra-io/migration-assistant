@@ -27,7 +27,8 @@ pipx install kestra-migration-assistant
 pip install kestra-migration-assistant
 ```
 
-Python 3.10 or later. The only dependency is PyYAML. Until the first release is on PyPI, install from a
+Python 3.10 or later. The only dependency is PyYAML; to call a model with an Anthropic API key, add the
+`anthropic` extra (`uv tool install 'kestra-migration-assistant[anthropic]'`). Until the first release is on PyPI, install from a
 checkout: `uv tool install ./migration-assistant` (or `pipx install ./migration-assistant`).
 
 ## Run it
@@ -55,12 +56,38 @@ re-done, every answer is kept, and a model reply already paid for comes from the
 
 | Command | What it does |
 |---|---|
-| `kestra-migrate vra run <export folder> [--out <folder>] [--no-model]` | Sanitize, Preflight, Assess, Understand, Brief, then the pages. `--no-model` never calls a model: it uses cached replies or code-made labels |
+| `kestra-migrate init` | Write the config file that says which model to call, and how |
+| `kestra-migrate vra run <export folder> [--out <folder>] [--no-model] [--provider ...] [--model ...] [--base-url ...]` | Sanitize, Preflight, Assess, Understand, Brief, then the pages. `--no-model` never calls a model: it uses cached replies, and the brief says what needs a model |
 | `kestra-migrate vra status <export folder> [--out <folder>]` | Where each stage is, and what to do next |
 | `kestra-migrate vra check-intake <path>` | Exit 1, with a masked report, if a received export carries anything secret-shaped |
 
-Model calls use the local Claude Code login by default (the bundled `models.yaml`; `VRO_MODELS_CONFIG`
-names another file).
+## Choose a model
+
+One model answers every call. There are three ways to connect to it:
+
+| Provider | What it uses |
+|---|---|
+| `claude-code` | Your own Claude Code login, through `claude -p`. No API key needed |
+| `anthropic` | An Anthropic API key |
+| `openai-compatible` | A base URL and a key: a model you host yourself, or Azure OpenAI and Amazon Bedrock through a proxy such as [LiteLLM](https://docs.litellm.ai/) |
+
+With nothing set up, it uses `claude-code` if `claude` is installed and logged in, else `anthropic` if
+`ANTHROPIC_API_KEY` is set, else it runs without a model: the brief still shows everything the code can find,
+and says what a model would add. `kestra-migrate init` writes a config file with every setting explained
+(`~/.config/kestra-migrate/config.yaml`, or `%APPDATA%\kestra-migrate\config.yaml` on Windows), readable by
+you only. A command-line flag overrides an environment variable (`KESTRA_MIGRATE_PROVIDER`,
+`KESTRA_MIGRATE_MODEL`, `KESTRA_MIGRATE_BASE_URL`), which overrides the file, which overrides the defaults.
+Keys go in an environment variable the file names; nothing about the model is written to the export folder.
+
+Tested models, through `claude-code` on a load-balancer estate: `claude-opus-5-5` (the default),
+`claude-fable-5-1` and `claude-sonnet-5-5`. Opus gave the best brief. Fable gave a brief of the same quality,
+but cost about three times as much and took twice as long; to use it, set `model: claude-fable-5-1` in the
+config file, or pass `--model claude-fable-5-1`. Sonnet is the cheapest, but it missed a real defect that the
+other two found.
+
+Every reply is checked against the structure the tool expects. A reply that does not match is asked for once
+more, with what was wrong; a second miss stops that call with an error that names the model. Other models
+may work, but a smaller one is more likely to miss the structure.
 
 [INPUTS.md](INPUTS.md) says what goes in the export folder and how an administrator produces it, and how
 to answer. [SECURITY.md](SECURITY.md) lists what protects the tool and the export, and what is still missing.

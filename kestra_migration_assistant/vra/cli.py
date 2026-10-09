@@ -176,7 +176,12 @@ def _export_args(p: argparse.ArgumentParser, model: bool = True) -> None:
                    help=f"where to write everything (default: EXPORT_FOLDER/{outdir.OUTPUT_DIRNAME}/)")
     if model:
         p.add_argument("--no-model", action="store_true",
-                       help="never call a model; use cached replies or fall back to code-made labels")
+                       help="never call a model; use cached replies, and say what needs a model")
+        p.add_argument("--provider", choices=["claude-code", "anthropic", "openai-compatible"],
+                       help="how to connect to the model (default: the config file, else your Claude Code login, "
+                            "else ANTHROPIC_API_KEY)")
+        p.add_argument("--model", help="the model every call uses (default: the config file, else claude-opus-5-5)")
+        p.add_argument("--base-url", help="openai-compatible only: the server's address, ending in /v1")
 
 
 def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kestra-migrate vra") -> int:
@@ -208,6 +213,9 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
 
     if getattr(args, "no_model", False):
         os.environ["VRO_NO_MODEL"] = "1"
+    elif hasattr(args, "no_model") and args.cmd in ("run", "understand", "brief", "all", "assess"):
+        if not set_up_model(args, prog):
+            return 2
     try:
         C.configure_export(args.export, args.out)
     except C.EstateError as e:
@@ -245,6 +253,25 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
     for s in stages:
         run_stage(s)
     return 0
+
+
+def set_up_model(args: argparse.Namespace, prog: str) -> bool:
+    """Resolve which model this run calls (flags, environment, config file, defaults) and say so. With none set
+    up, the run goes ahead without a model and says how to add one. False on a configuration error."""
+    from kestra_migration_assistant import config as K
+    from kestra_migration_assistant.vra import model
+    try:
+        s = K.resolve({"provider": args.provider, "model": args.model, "base_url": args.base_url})
+    except K.ConfigError as e:
+        print(f"{prog}: {e}", file=sys.stderr)
+        return False
+    model.configure(s)
+    if not s.provider:
+        os.environ["VRO_NO_MODEL"] = "1"
+        print(s.why)
+    else:
+        print(f"Model: {s.describe()}")
+    return True
 
 
 def shown(path: str) -> str:

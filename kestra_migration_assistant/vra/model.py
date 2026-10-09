@@ -1,21 +1,15 @@
 """
 The one place that talks to a model.
 
-Which model answers is set in `models.yaml` (the default bundled in data/, or the
-file named by VRO_MODELS_CONFIG), in two tiers, deliberately not per stage:
+One model answers every call. Which one, and how it connects, is resolved by
+`kestra_migration_assistant.config` (flags, environment, the user's config file, defaults):
 
-  reasoning   Understand (specs, cluster summaries)
-  drafting    domain names, walkthrough text
-
-Each tier names a provider and how it authenticates:
-
-  anthropic + claude-code        headless `claude -p` on the local Claude Code login (the default,
-                                 and how every run so far was made)
-  anthropic + api-key            the official `anthropic` SDK, key from ANTHROPIC_API_KEY
-  openai-compatible              POST {base_url}/chat/completions, key from the environment variable
-                                 named in api_key_env (OpenAI, Ollama, vLLM, an internal gateway)
-
-Keys never go in the file; the loader refuses one that looks like it holds a key.
+  claude-code        headless `claude -p` on the user's own Claude Code login. Each call runs in a fresh,
+                     empty, private folder made for it and removed after it, with project settings, hooks,
+                     CLAUDE.md files, MCP servers, skills and tools turned off
+  anthropic          the official `anthropic` SDK, with an API key
+  openai-compatible  POST {base_url}/chat/completions, with a key (a self-hosted model, or Azure OpenAI and
+                     Bedrock through a proxy such as LiteLLM)
 
 Contract
 --------
@@ -29,7 +23,7 @@ ask(purpose, workflow_id, prompt, schema) -> dict validated against schema
   and the reply is validated here. On a validation failure the call is retried
   once with the validation error appended, then raises.
 - At most MAX_PARALLEL calls in flight; quota and rate limits back off and resume.
-- Every call is appended to the call log with purpose, tier, provider, model,
+- Every call is appended to the call log with purpose, provider, model,
   workflow, ms and cost.
 """
 from __future__ import annotations
@@ -37,11 +31,15 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
+
+from kestra_migration_assistant import config as K
 
 from . import safety
 
@@ -49,112 +47,70 @@ from . import safety
 # model() points both at the estate's output folder). Nothing is written anywhere until they are set.
 CACHE_DIR: str | None = None
 LOG_PATH: str | None = None
-# The bundled default, inside the installed package, unless VRO_MODELS_CONFIG names another file.
-CONFIG_PATH = os.environ.get("VRO_MODELS_CONFIG") or os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                                                   "data", "models.yaml")
-
-LEGACY_BACKEND = "claude-code-headless"     # the cache key every call before models.yaml used
+LEGACY_BACKEND = "claude-code-headless"     # the cache key every call before the model settings used
 MAX_PARALLEL = 4
-TIMEOUT_S = 900
+TIMEOUT_S = 2700                            # a whole flow of 80+ tasks takes longer than 15 minutes
 
-# ---------------------------------------------------------------- config
-
-TIERS = ("reasoning", "drafting")
-PROVIDERS = ("anthropic", "openai-compatible")
-AUTHS = ("claude-code", "api-key")
-TIER_OF_PURPOSE = {
-    "understand": "reasoning", "cluster-summary": "reasoning", "tests": "reasoning", "review": "reasoning",
-    "plan": "reasoning",
-    "convert": "drafting", "stages-domain-names": "drafting", "stages-walkthroughs": "drafting",
-}
-DEFAULT_CONFIG = {
-    "reasoning": {"provider": "anthropic", "auth": "claude-code", "model": "claude-fable-5-1"},
-    "drafting": {"provider": "anthropic", "auth": "claude-code", "model": "claude-sonnet-5"},
-}
-_SECRET_KEYS = ("api_key", "apikey", "key", "token", "secret", "password", "authorization")
 # USD per million tokens (input, output), for the call log when a provider reports tokens, not cost.
 PRICES = {"claude-fable-5-1": (10, 50), "claude-fable-5": (10, 50), "claude-opus-5-5": (4, 20),
-          "claude-opus-5": (5, 25), "claude-opus-4-8": (5, 25), "claude-sonnet-5": (2, 10),
-          "claude-sonnet-4-6": (3, 15), "claude-haiku-4-5": (1, 5)}
+          "claude-opus-5": (5, 25), "claude-opus-4-8": (5, 25), "claude-sonnet-5-5": (2, 10),
+          "claude-sonnet-5": (2, 10), "claude-sonnet-4-6": (3, 15), "claude-haiku-5-5": (0.1, 0.5),
+          "claude-haiku-4-5": (1, 5)}
+
+# The settings every call uses: set by the command line (configure), else resolved on the first call.
+SETTINGS: K.Settings | None = None
 
 
-class ConfigError(ValueError):
-    pass
+def configure(settings: K.Settings | None) -> None:
+    global SETTINGS
+    SETTINGS = settings
 
 
-def load_config(path: str | None = None) -> dict:
-    """The two tiers, validated. A missing file means the defaults (both tiers on claude-code)."""
-    path = path or CONFIG_PATH
-    if not os.path.exists(path):
-        return json.loads(json.dumps(DEFAULT_CONFIG))
-    import yaml
-    with open(path) as f:
-        raw = yaml.safe_load(f) or {}
-    if not isinstance(raw, dict):
-        raise ConfigError(f"{path}: expected a mapping with 'reasoning' and 'drafting'")
-    unknown = sorted(set(raw) - set(TIERS))
-    if unknown:
-        raise ConfigError(f"{path}: unknown tier(s) {unknown}; the tiers are {list(TIERS)}")
-    cfg = {}
-    for tier in TIERS:
-        t = dict(raw.get(tier) or DEFAULT_CONFIG[tier])
-        for k, v in t.items():
-            if k.lower() in _SECRET_KEYS or (isinstance(v, str) and v.startswith(("sk-", "sk_"))):
-                raise ConfigError(f"{path}: {tier}.{k} looks like a key. Keys never go in this file: "
-                                  "use auth: api-key (ANTHROPIC_API_KEY) or api_key_env: <VARIABLE NAME>")
-        prov = t.get("provider")
-        if prov not in PROVIDERS:
-            raise ConfigError(f"{path}: {tier}.provider must be one of {list(PROVIDERS)}, not {prov!r}")
-        if not t.get("model"):
-            raise ConfigError(f"{path}: {tier}.model is required")
-        if prov == "anthropic":
-            t.setdefault("auth", "claude-code")
-            if t["auth"] not in AUTHS:
-                raise ConfigError(f"{path}: {tier}.auth must be one of {list(AUTHS)}, not {t['auth']!r}")
-        else:
-            if not t.get("base_url"):
-                raise ConfigError(f"{path}: {tier}.base_url is required for openai-compatible")
-            env = t.get("api_key_env")
-            if env is not None and (not isinstance(env, str) or not env.replace("_", "").isalnum()):
-                raise ConfigError(f"{path}: {tier}.api_key_env must be an environment variable name")
-            t["auth"] = "api-key-env" if env else "none"
-        if "timeout_s" in t and not (isinstance(t["timeout_s"], int) and t["timeout_s"] > 0):
-            raise ConfigError(f"{path}: {tier}.timeout_s must be a positive number of seconds")
-        cfg[tier] = t
+def settings() -> K.Settings:
+    global SETTINGS
+    if SETTINGS is None:
+        SETTINGS = K.resolve()
+    return SETTINGS
+
+
+def call_config(s: K.Settings) -> dict:
+    """What a call is cached and logged under. The provider and auth strings are the ones replies were
+    cached under before the three providers, so a cache made then is still found."""
+    cfg: dict = {}
+    if s.provider == "claude-code":
+        cfg = {"provider": "anthropic", "auth": "claude-code"}
+    elif s.provider == "anthropic":
+        cfg = {"provider": "anthropic", "auth": "api-key"}
+    else:
+        cfg = {"provider": "openai-compatible", "auth": "api-key-env" if s.key() else "none",
+               "base_url": s.base_url}
+    cfg["model"] = s.model
+    if s.timeout_s:
+        cfg["timeout_s"] = s.timeout_s
     return cfg
-
-
-def tier_for(purpose: str) -> str:
-    return TIER_OF_PURPOSE.get(purpose, "reasoning")
-
-
-_cfg_cache: dict = {}
-
-
-def config() -> dict:
-    if CONFIG_PATH not in _cfg_cache:
-        _cfg_cache[CONFIG_PATH] = load_config(CONFIG_PATH)
-    return _cfg_cache[CONFIG_PATH]
 
 
 # ---------------------------------------------------------------- claude-code backend and quota
 
 # Trimming the dynamic sections of the system prompt cut a measured call from
-# $0.234 to $0.078 with no change in output quality. Tool schemas are not needed:
-# every prompt here is a pure text-in, JSON-out transformation.
+# $0.234 to $0.078 with no change in output quality.
+# Every prompt here is text in, JSON out, so the call gets nothing else: no tools (with tools the backend
+# explored the folder it ran in and answered from files it found), and none of what Claude Code would load
+# from that folder or the user's setup. --safe-mode turns off CLAUDE.md files, hooks, plugins, skills, MCP
+# servers and custom agents; --setting-sources user skips project and local settings files. Without these,
+# a CLAUDE.md or .claude/settings.json in the folder the call ran in could add instructions to every prompt
+# or run commands through a hook (checked on Claude Code 2.1.295: a planted CLAUDE.md changed the reply and
+# planted hooks ran; with these flags neither happened).
 BASE_ARGS = [
     "--output-format", "json",
     "--exclude-dynamic-system-prompt-sections",
-    # Every prompt here is text in, JSON out. With tools available the backend
-    # explored the repository and answered from files it found, which is both
-    # non-deterministic and, for the held-out run, a leak. Tools off.
-    "--disallowed-tools", "Bash", "Read", "Write", "Edit", "Glob", "Grep",
-    "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite", "NotebookEdit",
-    "SlashCommand",
+    "--safe-mode",
+    "--setting-sources", "user",
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+    "--no-session-persistence",
+    "--tools", "",
 ]
-
-# Run the backend from a neutral directory so no project context is picked up.
-NEUTRAL_CWD = "/tmp"
 
 # Quota back-off. Headless `claude -p` shares the interactive session's quota,
 # so a long run will hit a session limit partway through. That is backpressure,
@@ -211,17 +167,17 @@ def _is_quota(text: str) -> bool:
     return any(m in t for m in QUOTA_MARKERS)
 
 
-def _key(prompt: str, schema: dict, tier_cfg: dict) -> str:
+def _key(prompt: str, schema: dict, cfg: dict) -> str:
     h = hashlib.sha256()
-    h.update(f"{tier_cfg['provider']}|{tier_cfg['auth']}|{tier_cfg.get('base_url', '')}".encode())
-    h.update(tier_cfg["model"].encode())
+    h.update(f"{cfg['provider']}|{cfg['auth']}|{cfg.get('base_url', '')}".encode())
+    h.update(cfg["model"].encode())
     h.update(json.dumps(schema, sort_keys=True).encode())
     h.update(prompt.encode())
     return h.hexdigest()
 
 
 def _legacy_key(prompt: str, schema: dict) -> str:
-    """The key calls made before models.yaml used: headless claude, the CLI's default model."""
+    """The key calls made before the model settings used: headless claude, the CLI's default model."""
     h = hashlib.sha256()
     h.update(LEGACY_BACKEND.encode())
     h.update(b"default")
@@ -290,7 +246,7 @@ def validate(obj, schema: dict, path: str = "$") -> list[str]:
 # ---------------------------------------------------------------- backend
 
 def timeout_of(cfg: dict) -> int:
-    """How long one call may take: the tier's `timeout_s` in models.yaml, else TIMEOUT_S. Not part of the cache key."""
+    """How long one call may take: `timeout_s` in the config file, else TIMEOUT_S. Not part of the cache key."""
     return int(cfg.get("timeout_s") or TIMEOUT_S)
 
 
@@ -298,32 +254,38 @@ class Provider:
     """One way of asking a model. `invoke` returns a normalised envelope:
     {"result": text, "is_error": bool, "total_cost_usd": float, "duration_api_ms": int}."""
 
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, settings: K.Settings | None = None):
         self.cfg = cfg
+        self.settings = settings
 
     def invoke(self, prompt: str, schema: dict) -> dict:
         raise NotImplementedError
 
 
 class ClaudeCodeProvider(Provider):
-    """Headless `claude -p` on the local Claude Code login. Tools off, neutral working directory."""
+    """Headless `claude -p` on the user's Claude Code login. Each call runs in a fresh, empty folder made for it
+    (private to the user: mkdtemp creates it with mode 0700), which is removed afterwards."""
 
-    def invoke(self, prompt, schema):
-        args = ["claude", "-p", prompt, *BASE_ARGS, "--json-schema", json.dumps(schema),
-                "--model", self.cfg["model"]]
+    def invoke(self, prompt: str, schema: dict) -> dict:
+        exe = shutil.which("claude")
+        if not exe:
+            raise ModelError("provider claude-code needs the `claude` command, and it is not installed")
+        args = [exe, "-p", prompt, *BASE_ARGS, "--json-schema", json.dumps(schema), "--model", self.cfg["model"]]
+        workdir = tempfile.mkdtemp(prefix="kestra-migrate-call-")
         t0 = time.time()
         try:
-            proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout_of(self.cfg),
-                                  cwd=NEUTRAL_CWD)
+            proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout_of(self.cfg), cwd=workdir)
         except subprocess.TimeoutExpired as e:
-            raise ModelError(f"backend gave no reply within {timeout_of(self.cfg)} s (timeout_s in models.yaml)") from e
+            raise ModelError(f"no reply within {timeout_of(self.cfg)} s (timeout_s in the config file)") from e
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
         wall_ms = int((time.time() - t0) * 1000)
         if proc.returncode != 0 and not proc.stdout.strip():
-            raise ModelError(f"backend exited {proc.returncode}: {proc.stderr[:400]}")
+            raise ModelError(f"claude exited {proc.returncode}: {proc.stderr[:400]}")
         try:
             env = json.loads(proc.stdout)
         except json.JSONDecodeError as e:
-            raise ModelError(f"backend did not return JSON: {e}: {proc.stdout[:300]}") from e
+            raise ModelError(f"claude did not return JSON: {e}: {proc.stdout[:300]}") from e
         env["_wall_ms"] = wall_ms
         return env
 
@@ -334,69 +296,92 @@ def _price(model: str, tokens_in: int, tokens_out: int) -> float:
 
 
 class AnthropicAPIProvider(Provider):
-    """The official `anthropic` SDK, key from ANTHROPIC_API_KEY. Structured output via output_config."""
+    """The official `anthropic` SDK, with an API key. Structured output through output_config, streamed so a
+    long reply does not run into the HTTP timeout."""
 
-    def invoke(self, prompt, schema):
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            raise ModelError("auth: api-key needs ANTHROPIC_API_KEY in the environment")
+    def invoke(self, prompt: str, schema: dict) -> dict:
+        key = self.settings.key() if self.settings else os.environ.get("ANTHROPIC_API_KEY")
+        if not key:
+            raise ModelError("provider anthropic needs an API key (api_key_env in the config file, "
+                             "ANTHROPIC_API_KEY by default)")
         try:
             import anthropic
         except ImportError as e:
-            raise ModelError("auth: api-key needs the `anthropic` package: pip install anthropic") from e
-        client = anthropic.Anthropic(timeout=timeout_of(self.cfg))
+            raise ModelError("provider anthropic needs the `anthropic` package: "
+                             "uv tool install 'kestra-migration-assistant[anthropic]' "
+                             "(or pip install anthropic)") from e
+        client = anthropic.Anthropic(api_key=key, timeout=timeout_of(self.cfg))
         t0 = time.time()
         try:
-            r = client.messages.create(
-                model=self.cfg["model"], max_tokens=16000,
-                messages=[{"role": "user", "content": prompt}],
-                output_config={"format": {"type": "json_schema", "schema": schema}})
+            with client.messages.stream(
+                    model=self.cfg["model"], max_tokens=64000,
+                    messages=[{"role": "user", "content": prompt}],
+                    output_config={"format": {"type": "json_schema", "schema": schema}}) as stream:
+                r = stream.get_final_message()
         except anthropic.RateLimitError as e:
             return {"result": f"rate limit: {e}", "is_error": True}
         except anthropic.APIStatusError as e:
             txt = f"{e.status_code}: {e}"
             return {"result": ("overloaded " + txt) if e.status_code >= 500 else txt, "is_error": True}
+        except anthropic.APIConnectionError as e:
+            raise ModelError(f"cannot reach the Anthropic API: {e}") from e
         if r.stop_reason == "refusal":
-            return {"result": "refusal", "is_error": True}
+            return {"result": "the model declined to answer (refusal)", "is_error": True}
         text = next((b.text for b in r.content if b.type == "text"), "")
         return {"result": text, "is_error": False, "duration_api_ms": int((time.time() - t0) * 1000),
                 "total_cost_usd": _price(self.cfg["model"], r.usage.input_tokens, r.usage.output_tokens)}
 
 
 class OpenAICompatibleProvider(Provider):
-    """POST {base_url}/chat/completions. Covers OpenAI, Ollama, vLLM and internal gateways."""
+    """POST {base_url}/chat/completions: a self-hosted model (Ollama, vLLM), or Azure OpenAI and Bedrock through a
+    proxy such as LiteLLM. A server that refuses `response_format` is asked again without it, with the schema in
+    the prompt; the reply is validated here either way."""
 
-    def invoke(self, prompt, schema):
+    def invoke(self, prompt: str, schema: dict) -> dict:
         headers = {"Content-Type": "application/json"}
-        env = self.cfg.get("api_key_env")
-        if env:
-            key = os.environ.get(env)
-            if not key:
-                raise ModelError(f"api_key_env {env} is not set in the environment")
+        key = self.settings.key() if self.settings else None
+        if key:
             headers["Authorization"] = f"Bearer {key}"
-        body = {"model": self.cfg["model"], "messages": [{"role": "user", "content": prompt}],
-                "response_format": {"type": "json_schema",
-                                    "json_schema": {"name": "reply", "schema": schema, "strict": False}}}
-        req = urllib.request.Request(self.cfg["base_url"].rstrip("/") + "/chat/completions",
-                                     data=json.dumps(body).encode(), headers=headers, method="POST")
+        elif self.settings and self.settings.api_key_env and self.settings.api_key_env != "OPENAI_API_KEY":
+            raise ModelError(f"api_key_env {self.settings.api_key_env} is not set in the environment")
+        body: dict = {"model": self.cfg["model"], "messages": [{"role": "user", "content": prompt}],
+                      "response_format": {"type": "json_schema",
+                                          "json_schema": {"name": "reply", "schema": schema, "strict": False}}}
         t0 = time.time()
-        try:
-            with urllib.request.urlopen(req, timeout=timeout_of(self.cfg)) as resp:
-                data = json.loads(resp.read())
-        except urllib.error.HTTPError as e:
-            detail = e.read()[:300].decode("utf-8", "replace")
-            quota = "rate limit " if e.code == 429 else ("overloaded " if e.code >= 500 else "")
-            return {"result": f"{quota}HTTP {e.code}: {detail}", "is_error": True}
-        except urllib.error.URLError as e:
-            raise ModelError(f"{self.cfg['base_url']}: {e.reason}") from e
+        data = self._post(body, headers)
+        if data.get("_status") == 400 and "response_format" in data.get("_detail", ""):
+            body.pop("response_format")
+            body["messages"] = [{"role": "user", "content": prompt + "\n\nReply with one JSON object, and nothing "
+                                 "else, that matches this JSON Schema:\n" + json.dumps(schema)}]
+            data = self._post(body, headers)
+        if "_status" in data:
+            code = data["_status"]
+            quota = "rate limit " if code == 429 else ("overloaded " if code >= 500 else "")
+            return {"result": f"{quota}HTTP {code}: {data['_detail']}", "is_error": True}
         text = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
         return {"result": text, "is_error": False, "duration_api_ms": int((time.time() - t0) * 1000),
                 "total_cost_usd": 0.0, "usage": data.get("usage")}
 
+    def _post(self, body: dict, headers: dict) -> dict:
+        req = urllib.request.Request(self.cfg["base_url"].rstrip("/") + "/chat/completions",
+                                     data=json.dumps(body).encode(), headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_of(self.cfg)) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            return {"_status": e.code, "_detail": e.read()[:300].decode("utf-8", "replace")}
+        except urllib.error.URLError as e:
+            raise ModelError(f"{self.cfg['base_url']}: {e.reason}") from e
+        except json.JSONDecodeError as e:
+            raise ModelError(f"{self.cfg['base_url']} did not return JSON: {e}") from e
 
-def provider_for(tier_cfg: dict) -> Provider:
-    if tier_cfg["provider"] == "anthropic":
-        return ClaudeCodeProvider(tier_cfg) if tier_cfg["auth"] == "claude-code" else AnthropicAPIProvider(tier_cfg)
-    return OpenAICompatibleProvider(tier_cfg)
+
+def provider_for(cfg: dict, settings: K.Settings | None = None) -> Provider:
+    if cfg["provider"] == "anthropic":
+        if cfg["auth"] == "claude-code":
+            return ClaudeCodeProvider(cfg, settings)
+        return AnthropicAPIProvider(cfg, settings)
+    return OpenAICompatibleProvider(cfg, settings)
 
 
 def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
@@ -405,11 +390,13 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
     if not safety.is_guarded(prompt):
         raise ModelError(f"{purpose}/{workflow_id}: prompt does not start with the untrusted-input notice "
                          "(wrap export text with safety.wrap and the prompt with safety.guard)")
-    tier = tier_for(purpose)
-    cfg = dict(config()[tier])
+    s = settings()
+    if not s.provider:
+        raise ModelError(f"{purpose}/{workflow_id}: no model is set up. {s.why}")
+    cfg = call_config(s)
     if model:
         cfg["model"] = model
-    who = {"tier": tier, "provider": cfg["provider"], "auth": cfg["auth"], "model": cfg["model"]}
+    who = {"provider": cfg["provider"], "auth": cfg["auth"], "model": cfg["model"]}
     if not CACHE_DIR or not LOG_PATH:
         raise ModelError("no model cache or call log set: configure an estate first (stages/common.py model())")
     os.makedirs(CACHE_DIR, exist_ok=True)
@@ -417,8 +404,8 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
     cache_path = os.path.join(CACHE_DIR, f"{key}.json")
     hit_path = cache_path if os.path.exists(cache_path) else None
     if not hit_path and cfg["provider"] == "anthropic" and cfg["auth"] == "claude-code":
-        # Replies cached before models.yaml were made by the same headless claude, on the CLI's default
-        # model; reuse them rather than pay again, and say so in the log.
+        # Replies cached before the model settings were made by the same headless claude, on the CLI's
+        # default model; reuse them rather than pay again, and say so in the log.
         legacy = os.path.join(CACHE_DIR, f"{_legacy_key(prompt, schema)}.json")
         hit_path = legacy if os.path.exists(legacy) else None
     if hit_path:
@@ -429,7 +416,7 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
               "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
         return hit["value"]
 
-    backend = provider_for(cfg)
+    backend = provider_for(cfg, s)
     attempt_prompt = prompt
     last_errs: list[str] = []
     quota_attempt = 0
@@ -497,8 +484,9 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
             attempt += 1
 
     raise SchemaError(
-        f"{purpose}/{workflow_id}: reply failed schema after {retries + 1} attempt(s): "
-        + "; ".join(last_errs[:6]))
+        f"{purpose}/{workflow_id}: {cfg['model']} gave a reply that does not have the expected structure, "
+        f"{retries + 1} time(s): " + "; ".join(last_errs[:6])
+        + ". Run the same command again (finished work is kept), or use one of the tested models (README)")
 
 
 def _quota_backoff(purpose: str, workflow_id: str, attempt: int, detail: str,
