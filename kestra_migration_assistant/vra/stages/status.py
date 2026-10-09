@@ -20,7 +20,7 @@ def headline(brief: dict | None = None) -> str:
     """The status line the front page leads with, and `run` ends with."""
     brief = brief or (C.read_json(_p(C.BRIEF, "brief.json")) if os.path.exists(_p(C.BRIEF, "brief.json")) else None)
     if not brief:
-        return "Not run yet: `vro.py run --estate " + str(C.ESTATE) + "`"
+        return f"Not run yet: `{C.run_command()}`"
     st = status_of(brief)
     return st["line"]
 
@@ -57,7 +57,7 @@ def status_of(brief: dict) -> dict:
                 "defects, and whether to convert or rebuild it are not judged yet.")
     elif blocking:
         k = len(blocking)
-        line = (f"Next step: answer {k} open item{'s' if k != 1 else ''}, then run vro2k again. "
+        line = (f"Next step: answer {k} open item{'s' if k != 1 else ''}, then run `{C.run_command()}` again. "
                 f"{'They hold' if k != 1 else 'It holds'} {_and(blocks)}"
                 + (f"; {n_open - k} more block nothing" if n_open > k else "") + ".")
     elif blocks:
@@ -109,7 +109,7 @@ def collect() -> dict:
     except (OSError, KeyError, ValueError):
         pass
     for u, why in sorted(stale_spec.items()):
-        stale.append(f"{C.rel(C.SPEC_DIR)}/{u}.json is stale: {why}; `vro.py understand` (billed) regenerates it")
+        stale.append(f"{C.rel(C.SPEC_DIR)}/{u}.json is stale: {why}; `{C.run_command()}` with a model (billed) regenerates it")
     older(assess_json, a_over, C.PLUGIN_MAP, pre_json)
     older(brief_md, assess_json, b_over, answers)
     for v in visuals:
@@ -176,9 +176,9 @@ def collect() -> dict:
                                                   ("done" if not n_wf or len(specs) >= n_wf else "waiting on a person")),
         "did": [f"{len(specs)} spec(s) in {C.rel(C.SPEC_DIR)}/" + (f" for {n_wf} workflows" if n_wf else ""),
                 "A spec says what a workflow is for, from its code and every action it calls (model-written)"],
-        "next": (["Run `vro.py understand --estate " + str(C.ESTATE) + f"` (billed): {len(stale_spec)} spec(s) are "
+        "next": ([f"Run `{C.run_command()}` with a model (billed): {len(stale_spec)} spec(s) are "
                   "stale (listed under Stale)"] if stale_spec else []) +
-                ["Run `vro.py understand --estate " + str(C.ESTATE) + "` (billed) for the workflows without a spec"
+                [f"Run `{C.run_command()}` with a model (billed) for the workflows without a spec"
                  if n_wf and len(specs) < n_wf else "Review the specs (the review items in your-input/answers.yaml)"],
         "links": []})
     stages.append({
@@ -250,7 +250,7 @@ def run() -> str:
     mc = st["model_calls"]
     L += ["", f"New model calls by these stages: {mc['billed']} billed, {mc['cached']} cached, ${mc['cost_usd']}",
           "", regen]
-    L += [f"Status: {headline()}", f"Next: answer in {C.rel(C.ANSWERS)}, then `vro.py run --estate {C.ESTATE}` again"]
+    L += [f"Status: {headline()}", f"Next: answer in {C.rel(C.ANSWERS)}, then `{C.run_command()}` again"]
     return "\n".join(L)
 
 

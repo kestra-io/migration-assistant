@@ -193,7 +193,8 @@ def _export_args(p: argparse.ArgumentParser, model: bool = True) -> None:
 
 def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kestra-migrate vra") -> int:
     ap = argparse.ArgumentParser(
-        prog=prog, description="Assess a vRA / vRO estate for migration to Kestra, from its export, on this machine.")
+        prog=prog, description="Kestra Migration Assistant for vRA: assess a vRA / vRO estate for migration to Kestra, "
+                               "from its export, on this machine.")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="{" + ",".join(COMMANDS_SHOWN) + "}")
     _export_args(sub.add_parser("run", help=HELP["run"], description=HELP["run"]))
     _export_args(sub.add_parser("status", help=HELP["status"], description=HELP["status"]), model=False)

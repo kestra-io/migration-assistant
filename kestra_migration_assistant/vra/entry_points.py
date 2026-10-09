@@ -54,7 +54,7 @@ FIELDS = {
 }
 # Kinds whose records run a vRO workflow.
 RUNS_WORKFLOW = ("subscriptions", "catalog_items", "day2_actions", "other_triggers")
-TEMPLATE_MARKER = "# vro2k entry points template"
+TEMPLATE_MARKER = "# entry points template"
 
 
 def key(kind: str, r: dict) -> tuple:
@@ -150,7 +150,7 @@ def from_vra(r: dict, label: str) -> dict:
 # ------------------------------------------------------------------ the hand-written file
 
 def template() -> str:
-    return f"""{TEMPLATE_MARKER} (preflight Q2). Written by `vro.py preflight`.
+    return f"""{TEMPLATE_MARKER} (preflight Q2). Written by `kestra-migrate vra run`.
 #
 # What starts these workflows from outside vRO. Fill this in when you have no vRA or Aria Automation
 # export (.vra-ng), or to add what that export never holds: vRO scheduled tasks and policies, ITSM

@@ -32,7 +32,9 @@ DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai-compatible": "OPENAI_API_KEY"}
 ENV = {"provider": "KESTRA_MIGRATE_PROVIDER", "model": "KESTRA_MIGRATE_MODEL", "base_url": "KESTRA_MIGRATE_BASE_URL"}
 FILE_KEYS = ("provider", "model", "base_url", "api_key_env", "api_key", "timeout_s")
-LANDING_PAGE = "https://kestra.io/vra-migration"      # placeholder until the landing page is live
+# The call to action at the end of every report. A placeholder until the landing page is final: change it here only.
+HELP_URL = "https://kestra.io/vra-migration-assistant?utm_source=migration-assistant&utm_medium=report"
+HELP_ASK = "Need help running it, or want us to run it for you?"
 
 
 class ConfigError(ValueError):

@@ -885,7 +885,7 @@ def _name_domains(keys, by_key, cres, summaries, tinv) -> dict:
 def cluster_summaries(clusters: list[dict]) -> dict:
     """
     The model-written summary per cluster, from `2-understand/cluster-summaries.json` (written by
-    `vro.py understand`). Matched by member set, not cluster id, so a renumbered cluster keeps its
+    Understand). Matched by member set, not cluster id, so a renumbered cluster keeps its
     summary and a cluster whose members changed gets none rather than the wrong one.
     """
     if not os.path.exists(C.CLUSTER_SUMMARIES):

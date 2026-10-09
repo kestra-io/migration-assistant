@@ -9,10 +9,21 @@ from __future__ import annotations
 import re
 from typing import cast
 
+from . import common as C
 from . import front as FR
 
 
 def render(r: dict, assess: dict, specs: dict, answers: dict, old_approval: dict) -> str:
+    """BRIEF.md: the front page and the appendices, ending, like every page, with the one call to action and what
+    made it."""
+    from kestra_migration_assistant.config import HELP_ASK, HELP_URL
+    f = C.run_facts(r.get("generated"))
+    return (_body(r, assess).rstrip() + f"\n\n---\n\n[{HELP_ASK}]({HELP_URL})\n\n"
+            f"{C.PRODUCT} {f['version']} · model: {f['model']} · run on {f['date']} · Kestra plugin catalog snapshot of "
+            f"{f['snapshot']}\n")
+
+
+def _body(r: dict, assess: dict) -> str:
     L = FR.markdown(assess, r)
     L += ["## Appendix A. Every element", "",
           ("Each element of the estate, grouped by kind, with how it converts where the code can tell (Open where it "

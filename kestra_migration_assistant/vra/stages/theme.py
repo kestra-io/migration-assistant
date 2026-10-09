@@ -121,6 +121,9 @@ header.top .brand .logo-light {{ display:none; }}
 header.top .brand .product {{ color:var(--text-2); font-weight:var(--fw-medium); padding-left:var(--sp-sm); border-left:var(--sp-border_width) solid var(--border-strong); }}
 header.top a {{ color:var(--text-2); font-size:var(--fs-small); }} header.top a.on {{ color:var(--accent); font-weight:var(--fw-semibold); }}
 main {{ padding:var(--sp-xl); max-width:var(--sp-page_max_width); margin:0 auto; }}
+footer.foot {{ max-width:var(--sp-page_max_width); margin:0 auto; padding:var(--sp-lg) var(--sp-xl) var(--sp-xl);
+  border-top:var(--sp-border_width) solid var(--border-strong); color:var(--text-2); font-size:var(--fs-small); }}
+footer.foot p {{ margin:var(--sp-xs) 0; }} footer.foot .cta {{ font-size:var(--fs-base); font-weight:var(--fw-semibold); }}
 h1 {{ font-size:var(--fs-h1); font-weight:var(--fw-semibold); margin:var(--sp-xs) 0 var(--sp-sm); color:var(--text-strong); }}
 h2 {{ font-size:var(--fs-h2); font-weight:var(--fw-semibold); margin:var(--sp-xxl) 0 var(--sp-sm); color:var(--text-strong); }}
 h3 {{ font-size:var(--fs-h3); font-weight:var(--fw-semibold); margin:var(--sp-md) 0 var(--sp-sm); color:var(--text-strong); }}
@@ -233,12 +236,26 @@ def page(title: str, body: str, *, depth: int = 0, mermaid: bool = False, active
 <style>{css(up)}</style>
 {mm}
 </head><body>
-<header class="top"><span class="brand">{logo_html(up)}<span class="product">vRO to Kestra</span></span>{nav}</header>
+<header class="top"><span class="brand">{logo_html(up)}<span class="product">{C.esc(C.PRODUCT)}</span></span>{nav}</header>
 <main>
 {body}
 </main>
+{footer()}
 </body></html>
 """)
+
+
+def footer() -> str:
+    """Every page ends with the one call to action, then what made the page: version, model, date, snapshot."""
+    return f'<footer class="foot">{footer_lines()}</footer>'
+
+
+def footer_lines() -> str:
+    from kestra_migration_assistant.config import HELP_ASK, HELP_URL
+    f = C.run_facts()
+    return (f'<p class="cta"><a href="{C.esc(HELP_URL)}">{C.esc(HELP_ASK)}</a></p>'
+            f'<p>{C.esc(C.PRODUCT)} {C.esc(f["version"])} · model: {C.esc(f["model"])} · run on {C.esc(f["date"])}'
+            f' · Kestra plugin catalog snapshot of {C.esc(f["snapshot"])}</p>')
 
 
 def legend(items: dict[str, str], shape: str = "dot") -> str:

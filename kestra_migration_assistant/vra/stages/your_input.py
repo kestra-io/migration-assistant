@@ -1,7 +1,7 @@
 """
 your-input/answers.yaml: the one file a person fills in.
 
-    # Answer what's open, then run vro2k again.
+    # Answer what's open, then run: kestra-migrate vra run lb-usecase
 
     open:
       - id: endpoint.f5-bigip
@@ -53,7 +53,11 @@ import yaml
 from .. import safety
 from . import common as C
 
-HEADER = "# Answer what's open, then run vro2k again."
+HEADER = "# Answer what's open, then run: "
+
+
+def header() -> str:
+    return HEADER + C.run_command()
 GROUPS = ("confirm", "answer", "review", "sign")
 YES = ("yes", "y", "true", "confirmed", "confirm", "ok", "x")
 TOOL_FIELDS = ("id", "question", "suggested", "answer")
@@ -408,7 +412,7 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple[str, dict]], list[tu
 
 def render(its: list[dict], loaded: dict) -> str:
     opened, answered, gone = plan(its, loaded)
-    L = [HEADER, ""]
+    L = [header(), ""]
     for sec, rows in (("open", opened), ("answered", answered), ("no_longer_asked", gone)):
         if not rows and sec == "no_longer_asked":
             continue
@@ -722,7 +726,7 @@ def _edit(path: str, change) -> str:
         for e in d.get(sec) or []:
             ld["entries"][str(e["id"])] = {f: v for f, v in e.items() if f != "id"}
             order.append((sec, str(e["id"])))
-    L = [HEADER, ""]
+    L = [header(), ""]
     for sec in SECTIONS:
         rows = [k for s, k in order if s == sec]
         if not rows and sec == "no_longer_asked":

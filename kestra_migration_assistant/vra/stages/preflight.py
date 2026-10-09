@@ -558,7 +558,7 @@ def run() -> dict:
             "Review redaction-report.md before anything leaves the network.")
     else:
         chk("Sanitized copy for sharing", "gap", "not made yet",
-            f"Run `vro.py sanitize --estate {C.ESTATE}` and review redaction-report.md before sharing the export.")
+            f"Run `{C.run_command()}`: it sanitizes first. Review redaction-report.md before sharing the export.")
     n_open = len(ans["open"])
     chk("Customer answers", "gap" if n_open else "ready",
         f"{len(QUESTIONS) - n_open} of {len(QUESTIONS)} answered in your-input/answers.yaml",

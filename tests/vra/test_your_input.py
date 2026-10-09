@@ -38,7 +38,7 @@ def test_the_file_has_one_comment_two_lists_and_the_signature(tmp_path):
     Y.register("t", [Y.item("a", "answer", "A? More words.", unblocks=["Wave 1: a"]),
                      Y.item("b", "confirm", "B?", suggested="one"), Y.item("c", "answer", "C?")])
     text = open(C.ANSWERS).read()
-    assert text.splitlines()[0] == "# Answer what's open, then run vro2k again."
+    assert text.splitlines()[0].startswith("# Answer what's open, then run: kestra-migrate vra run ")
     assert sum(1 for ln in text.splitlines() if ln.lstrip().startswith("#")) == 1
     d = _doc()
     assert list(d) == ["open", "answered", "signed_for"] and d["answered"] == [] and d["signed_for"] is None

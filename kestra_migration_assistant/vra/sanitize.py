@@ -2,10 +2,10 @@
 Sanitize (part of Preflight): a redacted copy of one estate's export, for the customer to review
 before anything leaves their network.
 
-    vro.py sanitize --estate <name>
-      -> stages/<estate>/0-preflight/sanitized/<input>/...   the redacted copy, same layout
-      -> stages/<estate>/0-preflight/redaction-report.md      counts, files touched, what to check
-      -> stages/<estate>/0-preflight/redaction-report.json
+    kestra-migrate vra run <export folder>     (sanitize runs first)
+      -> kestra-assessment/data/0-preflight/sanitized/<input>/...   the redacted copy, same layout
+      -> kestra-assessment/data/0-preflight/redaction-report.md      counts, files touched, what to check
+      -> kestra-assessment/data/0-preflight/redaction-report.json
 
 What is redacted, everywhere text can carry it (scripts, attribute values, configuration element
 values, presentation defaults, element_info and dunes-meta-inf entries, input forms):
@@ -495,7 +495,7 @@ def run() -> dict:
 
 def report_md(r: dict, C) -> str:
     L = [f"# Redaction report ({r['estate']})", "",
-         f"Generated {r['generated']} by `vro.py sanitize` from `{r['source_dir']}/`. The sanitized copy is in "
+         f"Generated {r['generated']} by `kestra-migrate vra run` (sanitize) from `{r['source_dir']}/`. The sanitized copy is in "
          f"`{C.rel(r['out_dir'])}/`, laid out like the original.", "",
          "**Review this before anything leaves your network.** Open a few files from the copy and check that "
          "nothing identifying is left, especially the items under \"Not sure\" below, which were deliberately "

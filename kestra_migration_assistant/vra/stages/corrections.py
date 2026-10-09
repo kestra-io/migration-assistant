@@ -18,7 +18,7 @@ import yaml
 
 from . import common as C
 
-TEMPLATE = """# vro2k: corrections (optional). Read on every run; leave a section empty to change nothing.
+TEMPLATE = """# Kestra Migration Assistant for vRA: corrections (optional). Read on every run; leave a section empty to change nothing.
 #
 # Only for what the tool found wrong. Answers to its questions go in answers.yaml, next to this file.
 # Keys are the short names the pages show (or the workflow IDs in data/3-brief/triage.csv).

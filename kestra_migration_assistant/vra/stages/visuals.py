@@ -698,12 +698,13 @@ def explorer(assess, brief) -> str:
     # Same escaping as Anthropic's injector: node names come from untrusted source.
     data = data.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     th = TH.explorer_theme()
-    for m in ("/*__THEME_VARS__*/", "/*__THEME__*/ null", "__FONT_FILE__", "__LOGO__"):
+    for m in ("/*__THEME_VARS__*/", "/*__THEME__*/ null", "__FONT_FILE__", "__LOGO__", "__FOOTER__"):
         assert m in tpl, m
     tpl = (tpl.replace("/*__THEME_VARS__*/", th["css_vars"])
               .replace("/*__THEME__*/ null", "/*__THEME__*/ " + json.dumps(th))
               .replace("__FONT_FILE__", "vendor/" + th["font_file"].split("vendor/", 1)[-1])
-              .replace("__LOGO__", TH.logo_html("")))
+              .replace("__LOGO__", TH.logo_html(""))
+              .replace("__FOOTER__", TH.footer_lines()))
     return C.no_em_dashes(tpl.replace(marker, "/*__TOPOLOGY_DATA__*/ " + data))
 
 

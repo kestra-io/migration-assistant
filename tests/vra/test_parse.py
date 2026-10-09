@@ -39,7 +39,7 @@ def parsed_dir() -> str:
     """Parse every conformance input in INPUTS once."""
     if "dir" not in _PARSED:
         import tempfile
-        d = tempfile.mkdtemp(prefix="vro2k-parse-")
+        d = tempfile.mkdtemp(prefix="kma-parse-")
         corpus.parse_corpus(d, INPUTS)
         _PARSED["dir"] = d
     return _PARSED["dir"]

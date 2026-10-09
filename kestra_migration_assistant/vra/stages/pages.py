@@ -121,6 +121,8 @@ def render_reports(mapping: dict[str, str] | None = None) -> list[str]:
     written, listing = [], []
     for src, dst in pages.items():
         md = open(src, encoding="utf-8", errors="replace").read()
+        if os.path.abspath(src) == os.path.abspath(C.BRIEF_MD) and "\n---\n" in md:
+            md = md.rsplit("\n---\n", 1)[0]       # its call to action and run facts: the page's footer says them
         body, info = mdhtml.render(md)
         rel = posixpath.join(*os.path.relpath(src, C.STAGES).split(os.sep))
         title = info["title"] or os.path.basename(src)

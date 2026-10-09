@@ -20,7 +20,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
-from kestra_migration_assistant.config import LANDING_PAGE
+from kestra_migration_assistant.config import HELP_URL
 
 REVIEW = os.path.join(ROOT, "tests", "vra", "conformance", "review")
 SECTIONS = ["What's in this estate", "What starts each workflow", "What calls what",
@@ -82,7 +82,7 @@ def test_one_plain_line_says_what_needs_a_model_and_two_ways_forward(out):
     assert "Next step: run it again with a model." in t
     assert "its possible defects, and whether to convert or rebuild it need a model" in t
     assert "`kestra-migrate vra run acme`" in open(out / "report" / "BRIEF.md").read()
-    assert LANDING_PAGE in open(out / "index.html", encoding="utf-8").read()
+    assert open(out / "index.html", encoding="utf-8").read().count(html.escape(HELP_URL)) == 1     # one call to action
     assert "—" not in t
 
 
