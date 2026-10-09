@@ -4,7 +4,8 @@
 - an export folder whose name has spaces, given relative to the current folder;
 - Windows-style paths (drive letters, backslashes, case-insensitive names), with ntpath standing in for os.path;
 - a read-only export folder: refused without --out, assessed with it, and left untouched;
-- a run over an existing output: the tool never reads its own output, re-uses the model cache, keeps answers.
+- a run over an existing output: the tool never reads its own output, re-uses the model cache, keeps answers;
+- no output file names a folder of this machine (the export's absolute path, or the home folder).
 """
 from __future__ import annotations
 
@@ -48,6 +49,19 @@ def _no_model(monkeypatch):
 
 
 # ------------------------------------------------------------------ names and paths
+
+def test_no_output_file_names_a_folder_of_this_machine(tmp_path):
+    """The output folder gets zipped and shared: no file in it, the parse cache included, may carry the export
+    folder's absolute path or the user's home folder. Run on a raw tree, a vRA export and a .package."""
+    export = _export(tmp_path / "export")
+    shutil.copy(os.path.join(ROOT, "tests", "vra", "conformance", "pkgdiff-v1.0.package"), export)
+    assert _main("run", export, "--no-model") == 0
+    leaks = {os.path.realpath(export), os.path.abspath(export), os.path.expanduser("~")}
+    found = [(rel, p) for rel, body in _tree(os.path.join(export, "kestra-assessment")).items()
+             for p in leaks if p.encode() in body or p.replace(os.sep, "\\\\").encode() in body]
+    assert any(r.startswith(os.path.join("data", "1-assess", "work")) for r in _tree(os.path.join(export, "kestra-assessment")))
+    assert not found, found
+
 
 def test_an_export_folder_with_spaces_given_relative(tmp_path, monkeypatch, capsys):
     export = _export(tmp_path / "Customer exports" / "LB use case 2026")
