@@ -579,7 +579,7 @@ def run() -> dict:
         "generated": C.now(),
         "estate": C.ESTATE,
         "inputs": {"export": C.rel(C.SOURCE_DIR), "export_inputs": {k: C.rel(v) for k, v in C.INPUTS.items()},
-                   "plugin_map": C.rel(C.PLUGIN_MAP), "specs": C.rel(C.SPEC_DIR),
+                   "plugin_map": C.package_rel(C.PLUGIN_MAP), "specs": C.rel(C.SPEC_DIR),
                    "cluster_summaries": C.rel(C.CLUSTER_SUMMARIES),
                    "answers": answers["path"], "corrections": C.rel(ov_path)},
         "open_preflight_items": answers["open"],

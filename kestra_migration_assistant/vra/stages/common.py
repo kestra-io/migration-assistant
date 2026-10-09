@@ -314,6 +314,13 @@ def require_estate() -> None:
         raise EstateError("no estate configured: pass the export folder")
 
 
+def package_rel(path: str) -> str:
+    """A file of the installed package as `kestra_migration_assistant/vra/...`, never as a path through the home
+    folder or the site-packages of this machine."""
+    top = os.path.dirname(os.path.dirname(PACKAGE))          # the folder that holds kestra_migration_assistant/
+    return os.path.relpath(path, top).replace(os.path.sep, "/")
+
+
 def rel(path: str) -> str:
     """
     A path as a reader should see it, and as the results record it: relative to the folder the export folder
