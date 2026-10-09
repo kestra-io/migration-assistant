@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import sys
 import zipfile
 
@@ -270,6 +271,11 @@ def set_up_model(args: argparse.Namespace, prog: str) -> bool:
         s = K.resolve({"provider": args.provider, "model": args.model, "base_url": args.base_url})
     except K.ConfigError as e:
         print(f"{prog}: {e}", file=sys.stderr)
+        return False
+    if s.provider == "claude-code" and not shutil.which("claude"):
+        print(f"{prog}: provider claude-code ({s.source.get('provider')}) needs the `claude` command, and it is not "
+              "installed. Install Claude Code, or choose another provider (--provider, or the config file: "
+              f"{s.path})", file=sys.stderr)
         return False
     model.configure(s)
     if not s.provider:
