@@ -209,6 +209,12 @@ def test_no_workflow_id_and_no_internal_path_on_the_front_page(big):
     assert "internal/" not in big["page"]
 
 
+def test_no_link_points_at_an_anchor_the_guide_does_not_have_yet(big):
+    from kestra_migration_assistant.vra.stages import front as F
+    assert "#" not in F.GUIDE_323                     # the guide's page until its anchors are published
+    assert "ANCHOR" not in big["md"] and "ANCHOR" not in big["page"]
+
+
 def test_the_front_page_names_a_stand_in_only_when_there_is_one():
     from kestra_migration_assistant.vra.stages import front as F
     assert F.stand_in({"input": {"stand_in": True, "sign": {}}})

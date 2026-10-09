@@ -66,7 +66,8 @@ def criterion_label(e: dict, assess: dict) -> str:
     if fam == "defect":
         parts = key.split(".")
         w = wf.get(parts[1]) if len(parts) > 2 else None
-        return f"Possible defect {parts[-1]} in {w['name'] if w else parts[1]}"
+        from .ids import defect_words
+        return f"Possible defect ({defect_words(key)}) in {w['name'] if w else parts[1]}"
     names = {t["key"] if "key" in t else k: t.get("short_name") or t["name"] for k, t in assess["targets"].items()}
     from .gates import key_part
     by_part = {key_part(k): v for k, v in names.items()}

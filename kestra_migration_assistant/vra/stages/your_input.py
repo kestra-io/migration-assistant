@@ -24,7 +24,9 @@ decisions, the specs' open questions, the reviews. The registry is kept in data/
 replaces only its own part and the file always shows everything asked. The file is rewritten from the registry
 on every run, and **an answer is never changed**: the tool moves an item to `answered` once it has one, keeps
 the answer exactly as written (and any field a person added), and never drops an id that has an answer: an
-item no longer asked stays under `answered`, its question saying so. A file that does not parse is never
+item no longer asked moves to a third list, `no_longer_asked`, with the question it was answered for. An item's
+id says what it is about, not where it falls in a list (ids.py), so an answer never lands on another item; an
+answer under an id of an older run moves to the new id only when the item is asked in exactly the same words. A file that does not parse is never
 rewritten: the run says what is wrong and reads nothing from it. The version before each rewrite that changes
 anything is kept in data/answers.yaml.previous.
 
@@ -58,6 +60,7 @@ TOOL_FIELDS = ("id", "question", "suggested", "answer")
 OLD_SECTIONS = ("blocking", "open", "done", "confirm", "answer", "review", "no_longer_asked")
 OLD_FIELDS = ("answer", "confirmed", "by", "date", "note", "spec")    # the old format's own fields
 GONE = "No longer asked: "
+SECTIONS = ("open", "answered", "no_longer_asked")
 SIGN = {"full": "full plan", "wave-1": "wave 1"}
 
 
@@ -124,9 +127,21 @@ def item(key: str, group: str, ask: str, *, title: str | None = None, why: str |
 def register(section: str, new_items: list[dict]) -> dict:
     """Replace one section's items in the registry and rewrite answers.yaml. Returns write()'s result."""
     reg = registry()
+    renames = _renames(reg.get(section) or [], new_items)
     reg[section] = new_items
     C.write_json(_registry_path(), reg)
-    return write()
+    return write(renames)
+
+
+def _renames(old: list[dict], new: list[dict]) -> dict[str, str]:
+    """Old key -> new key of an item asked again in exactly the same words under another key (an estate answered
+    before the IDs said what an item is about). Only identical text counts, never a position."""
+    by_ask: dict[str, list[str]] = {}
+    for it in new:
+        by_ask.setdefault(str(it.get("ask")), []).append(it["key"])
+    new_keys = {it["key"] for it in new}
+    return {it["key"]: by_ask[str(it.get("ask"))][0] for it in old
+            if it["key"] not in new_keys and len(by_ask.get(str(it.get("ask"))) or []) == 1}
 
 
 def _memo(reg: dict | None = None) -> dict:
@@ -168,7 +183,7 @@ def load(path: str | None = None) -> dict:
         out["old_format"] = True
         _from_old(data, reg, out)
     elif data:
-        for sec in ("open", "answered"):
+        for sec in SECTIONS:
             block = data.get(sec)
             if block is None:
                 continue
@@ -351,9 +366,10 @@ def _entry(k: str, e: dict) -> list[str]:
     return L
 
 
-def plan(its: list[dict], loaded: dict) -> tuple[list[tuple[str, dict]], list[tuple[str, dict]]]:
-    """What goes under open and answered, in order: (id, entry). Open: what a wave waits on, then the rest.
-    Answered: in the order asked, then what is no longer asked."""
+def plan(its: list[dict], loaded: dict) -> tuple[list[tuple[str, dict]], list[tuple[str, dict]], list[tuple[str, dict]]]:
+    """What goes under open, answered and no_longer_asked, in order: (id, entry). Open: what a wave waits on, then
+    the rest. Answered: in the order asked. No longer asked: an answer whose item a run no longer finds, with the
+    question as it was last asked, so the answer never lands on another item."""
     opened: list[tuple[str, dict]] = []
     waits: list[tuple[str, dict]] = []
     answered: list[tuple[str, dict]] = []
@@ -380,19 +396,22 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple[str, dict]], list[tu
         if k in asked or is_open(old.get("answer")) and not any(f not in TOOL_FIELDS for f in old):
             continue
         q = str(old.get("question") or "").strip()
-        e = {"question": q if q.startswith(GONE.strip()) else (GONE + q if q else GONE.strip())}
+        q = q[len(GONE):].strip() if q.startswith(GONE) else "" if q == GONE.strip() else q
+        e = {"question": q} if q else {}
         if old.get("suggested") not in (None, ""):
             e["suggested"] = old["suggested"]
         e["answer"] = old.get("answer")
         e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
         gone.append((k, e))
-    return waits + opened, answered + sorted(gone)
+    return waits + opened, answered, sorted(gone)
 
 
 def render(its: list[dict], loaded: dict) -> str:
-    opened, answered = plan(its, loaded)
+    opened, answered, gone = plan(its, loaded)
     L = [HEADER, ""]
-    for sec, rows in (("open", opened), ("answered", answered)):
+    for sec, rows in (("open", opened), ("answered", answered), ("no_longer_asked", gone)):
+        if not rows and sec == "no_longer_asked":
+            continue
         if not rows:
             L += [f"{sec}: []", ""]
             continue
@@ -435,14 +454,17 @@ def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
     return True
 
 
-def write() -> dict:
-    """Rewrite answers.yaml from the registry, keeping every answer. Never over a file that does not parse."""
+def write(renames: dict[str, str] | None = None) -> dict:
+    """Rewrite answers.yaml from the registry, keeping every answer. Never over a file that does not parse.
+    `renames` carries an answer from an item's old key to its new one (register)."""
     C.ensure(C.INPUT)
     path = C.ANSWERS
     loaded = load(path)
     if not loaded["ok"]:
         return {"written": False, "warnings": loaded["warnings"]}
     reg = registry()
+    if _rename(loaded, reg, renames or {}):
+        C.write_json(_registry_path(), reg)
     its = items()
     if _remember(its, loaded, reg):
         C.write_json(_registry_path(), reg)
@@ -475,6 +497,25 @@ def write() -> dict:
         # rewrite for a person's edit
         os.utime(path, (st.st_atime, st.st_mtime))
     return {"written": True, "warnings": loaded["warnings"], "migrated": loaded["old_format"]}
+
+
+def _rename(loaded: dict, reg: dict, renames: dict[str, str]) -> bool:
+    """Move each answer (and what the memo keeps for it) from an old key to its new one, unless the new key has an
+    answer of its own. True when the memo changed."""
+    memo = reg.get("_memo") or {}
+    changed = False
+    for old, new in renames.items():
+        e = loaded["entries"].get(old)
+        if e is None or not is_open((loaded["entries"].get(new) or {}).get("answer")):
+            continue
+        loaded["entries"][new] = {**e, "question": None}
+        del loaded["entries"][old]
+        for part in ("confirmed", "reviewed"):
+            for m in (memo.get(part), (loaded.get("memo") or {}).get(part)):
+                if isinstance(m, dict) and old in m:
+                    m[new] = m.pop(old)
+                    changed = True
+    return changed
 
 
 def _same(a, b) -> bool:
@@ -624,12 +665,12 @@ def set_renames(m: dict[str, str]) -> None:
 def flat(data: dict) -> dict[str, dict]:
     """id -> entry (without the id) of a parsed answers.yaml, from both lists (tests use it)."""
     return {str(e["id"]): {f: v for f, v in e.items() if f != "id"}
-            for sec in ("open", "answered") for e in (data.get(sec) or []) if isinstance(e, dict) and "id" in e}
+            for sec in SECTIONS for e in (data.get(sec) or []) if isinstance(e, dict) and "id" in e}
 
 
 def entry_of(data: dict, key: str) -> dict | None:
     """One entry of a parsed answers.yaml, whichever list it sits in (tests use it)."""
-    for sec in ("open", "answered"):
+    for sec in SECTIONS:
         for e in data.get(sec) or []:
             if isinstance(e, dict) and str(e.get("id")) == key:
                 return {f: v for f, v in e.items() if f != "id"}
@@ -637,7 +678,7 @@ def entry_of(data: dict, key: str) -> dict | None:
 
 
 def section_of(data: dict, key: str) -> str | None:
-    for sec in ("open", "answered"):
+    for sec in SECTIONS:
         if any(isinstance(e, dict) and str(e.get("id")) == key for e in data.get(sec) or []):
             return sec
     return None
@@ -657,7 +698,7 @@ def set_signature(covers: str, path: str | None = None) -> None:
 
 
 def _set(d: dict, key: str, field: str, value) -> None:
-    for sec in ("open", "answered"):
+    for sec in SECTIONS:
         for e in d.get(sec) or []:
             if isinstance(e, dict) and str(e.get("id")) == key:
                 e[field] = value
@@ -677,13 +718,15 @@ def _edit(path: str, change) -> str:
     change(d)
     ld = {"entries": {}, "sign": {"signed_for": _text(d.get("signed_for"))}, "memo": loaded["memo"]}
     order = []
-    for sec in ("open", "answered"):
+    for sec in SECTIONS:
         for e in d.get(sec) or []:
             ld["entries"][str(e["id"])] = {f: v for f, v in e.items() if f != "id"}
             order.append((sec, str(e["id"])))
     L = [HEADER, ""]
-    for sec in ("open", "answered"):
+    for sec in SECTIONS:
         rows = [k for s, k in order if s == sec]
+        if not rows and sec == "no_longer_asked":
+            continue
         if not rows:
             L += [f"{sec}: []", ""]
             continue

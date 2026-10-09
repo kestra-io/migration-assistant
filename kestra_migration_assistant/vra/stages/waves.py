@@ -47,6 +47,7 @@ import re
 from collections import Counter, defaultdict
 
 from . import gates as G
+from . import ids as I
 
 RISK_LABEL = {0: "no external target", 1: "read-only", 2: "writes"}
 WAVED = ("Convert", "Near-duplicate", "Needs owner input")
@@ -397,12 +398,14 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                                        "(see the proposal on the vRA flow page)",
                                  why="the replacement flow calls these flows with values, not with an event payload"
                                      + ("; until then the bridge maps the payload to them" if front == TG.BRIDGE else ""))})
+        names = I.action_names(assess)
         for u in members:
-            for i, d in enumerate(((specs or {}).get(u) or {}).get("suspected_defects") or [], 1):
+            ds = ((specs or {}).get(u) or {}).get("suspected_defects") or []
+            for key, d in zip(I.defect_ids(_sh(wf, u), ds, names), ds, strict=True):
                 crit.append({"criterion": f"Suspected defect in {wf[u].get('name') or u}: {d['what']}. Preserve it or "
                                           "fix it in the conversion", "source": "spec",
                              "closes": G.by_decision(
-                                 f"defect.{_sh(wf, u)}.{i}",
+                                 key,
                                  f"{wf[u].get('name') or u}: {d['what']} ({d.get('evidence')}). {d.get('question')}",
                                  ["keep", "fix"],
                                  why="the converter builds one or the other; the spec found it in the code",

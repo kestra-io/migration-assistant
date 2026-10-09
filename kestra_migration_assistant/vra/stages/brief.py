@@ -21,6 +21,7 @@ from .. import safety
 from . import assess as A
 from . import common as C
 from . import gates as G
+from . import ids as I
 from . import preflight
 from . import reviews as RV
 from . import triage as TR
@@ -82,7 +83,7 @@ def run() -> dict:
         eff = {u: effective_spec(specs[u], cover.get(u)) for u in wf}
         tri, act_tri = _triage(assess, eff, fok, overrides, coverage, reaching, vra_replaced, stale)
         qgroups = group_questions(assess, eff)
-        qkeys = question_keys(qgroups, wf)
+        qkeys = question_keys(qgroups, wf, I.action_names(assess))
         plan = W.plan(assess, tri, answers, reviews=reviews, act_tri=act_tri, trigger_plan=trigger_plan, specs=specs,
                       question_keys=qkeys)
         asked_keys = set(G.entries(plan))
@@ -284,20 +285,18 @@ def attach_covers(plan: dict, cover: dict, wf: dict) -> None:
                 c["also_answers"] = by_key[c["key"]]
 
 
-def question_keys(qgroups: list[dict], wf: dict) -> dict[tuple, str]:
-    """(uid, question) -> the answers.yaml key of the grouped question it belongs to."""
+def question_keys(qgroups: list[dict], wf: dict, names: list[str] | None = None) -> dict[tuple, str]:
+    """(uid, question) -> the answers.yaml key of the grouped question it belongs to: what it is about (ids.py),
+    never its position or its exact words."""
+    keys = I.unique([I.question_id(wf[g["workflows"][0]]["short"], g["question"], g.get("why_it_matters"),
+                                   g.get("theme"), names or []) for g in qgroups],
+                    [g["question"] for g in qgroups])
     out = {}
-    for g in qgroups:
-        k = f"question.{wf[g['workflows'][0]]['short']}.{_hash(g['question'])}"
+    for g, k in zip(qgroups, keys, strict=True):
         g["key"] = k
         for x in g["wordings"]:
             out[(x["workflow"], x["question"])] = k
     return out
-
-
-def _hash(s: str) -> str:
-    import hashlib
-    return hashlib.sha256(s.encode()).hexdigest()[:6]
 
 
 def spec_question_items(qgroups, wf, tri, qkeys, asked) -> list[dict]:
@@ -668,12 +667,13 @@ def group_questions(assess, specs, threshold: float = 0.5) -> list[dict]:
 def suspected_defects(assess, specs) -> list[dict]:
     """Every suspected defect the specs name, with its workflow and the decision key that settles it."""
     wf = assess["workflows"]
+    names = I.action_names(assess)
     out = []
     for u in sorted(wf):
-        for i, d in enumerate((specs.get(u) or {}).get("suspected_defects") or [], 1):
+        ds = (specs.get(u) or {}).get("suspected_defects") or []
+        for i, (key, d) in enumerate(zip(I.defect_ids(wf[u]["short"], ds, names), ds, strict=True), 1):
             out.append({"workflow": u, "name": wf[u]["name"], "short": wf[u]["short"], "n": i, "what": d.get("what"),
-                        "evidence": d.get("evidence"), "question": d.get("question"),
-                        "decision": f"defect.{wf[u]['short']}.{i}"})
+                        "evidence": d.get("evidence"), "question": d.get("question"), "decision": key})
     return out
 
 
@@ -693,7 +693,7 @@ def open_questions_md(assess, specs, tri, answers, cover=None) -> str:
     for u, w in wf.items():
         by_dom[w["domain"]].append(u)
     groups = group_questions(assess, specs)
-    keys = question_keys(groups, wf)  # noqa: F841  (sets each group's key)
+    keys = question_keys(groups, wf, I.action_names(assess))  # noqa: F841  (sets each group's key)
     for did in sorted(by_dom, key=lambda d: int(d[1:])):
         d = doms[did]
         mine = [g for g in groups if set(g["workflows"]) & set(by_dom[did])]
