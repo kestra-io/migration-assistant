@@ -29,9 +29,9 @@ from . import theme as TH
 from . import triggers as TG
 
 GUIDE = "https://kestra.io/resources/migration/vra"
-# PLACEHOLDER: the guide's anchor for section 3.2.3 (how to classify the conversion effort) is not published yet.
-# Replace "#section-3-2-3-ANCHOR-TO-FILL" with the real anchor once the guide is out.
-GUIDE_323 = GUIDE + "#section-3-2-3-ANCHOR-TO-FILL"
+# Section 3.2.3 of the guide (how to classify the conversion effort): the guide's page, with no anchor, until the
+# guide is published and its anchors are known.
+GUIDE_323 = GUIDE
 
 CAPS = {"rows": 8, "waves": 6, "systems": 4, "domains": 3, "clients": 4}
 WORDS = {0: "no", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight",

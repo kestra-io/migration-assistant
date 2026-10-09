@@ -79,10 +79,12 @@ def test_no_id_with_an_answer_is_ever_lost(tmp_path):
     Y.set_answer("x", "an answer")
     Y.register("t", [])
     d = _doc()
-    assert d["answered"] == [{"id": "x", "question": "No longer asked: X?", "answer": "an answer"}]
-    assert d["open"] == []                               # an item with no answer simply goes
+    assert d["no_longer_asked"] == [{"id": "x", "question": "X?", "answer": "an answer"}]
+    assert d["open"] == [] and d["answered"] == []      # an item with no answer simply goes
     Y.register("t", [])
-    assert _doc() == d                                   # the prefix is not added twice
+    assert _doc() == d                                   # and stays where it is
+    Y.register("t", [Y.item("x", "answer", "X?")])       # asked again: the answer is back on it
+    assert _doc()["answered"] == [{"id": "x", "question": "X?", "answer": "an answer"}] and "no_longer_asked" not in _doc()
 
 
 def test_a_rewrite_of_the_tools_text_keeps_the_files_time(tmp_path):

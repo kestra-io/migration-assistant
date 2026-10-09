@@ -167,8 +167,8 @@ def test_a_rewrite_never_changes_an_answer(estate):
     assert flat[first]["mine"] == "a field of my own"
     assert Y.section_of(_doc(), first) == "answered"
     assert flat["gone.key"]["answer"] == "an answer to something no longer asked"
-    assert flat["gone.key"]["question"] == "No longer asked: something"
-    assert Y.section_of(_doc(), "gone.key") == "answered"
+    assert flat["gone.key"]["question"] == "something"
+    assert Y.section_of(_doc(), "gone.key") == "no_longer_asked"
     assert open(C.ANSWERS).read().startswith("# Answer what's open")
 
 
