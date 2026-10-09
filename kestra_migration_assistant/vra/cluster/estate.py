@@ -18,15 +18,15 @@ def write_estate_report(out_dir: str, label: str, path: str) -> str:
     colours = res["colours"]
     totals = Counter(c["band"] for c in colours.values())
 
-    plugin_use = Counter()
-    unmapped_use = Counter()
+    plugin_use: Counter[str] = Counter()
+    unmapped_use: Counter[str] = Counter()
     for m in models.values():
         for t in m.get("plugin_types", []):
             plugin_use[t] += 1
             if t.split(":")[0] not in KNOWN_PLUGIN_PREFIXES:
                 unmapped_use[t] += 1
 
-    action_use = Counter()
+    action_use: Counter[str] = Counter()
     for m in models.values():
         for a in m.get("action_calls", []):
             key = a["module"] + (f".{a['action']}" if a.get("action") else "")
@@ -39,12 +39,12 @@ def write_estate_report(out_dir: str, label: str, path: str) -> str:
     called = {e["to"] for e in cg["edges"] if e["from"] in wids_in_scope}
     orphans = sorted(u for u, m in models.items() if m["wid"] not in called)
 
-    sdk_use = Counter()
+    sdk_use: Counter[str] = Counter()
     for m in models.values():
         for c in m.get("sdk_calls", []):
             sdk_use[c] += 1
 
-    L = []
+    L: list[str] = []
     A = L.append
     A(f"# Estate report: {label} set")
     A("")
@@ -70,7 +70,7 @@ def write_estate_report(out_dir: str, label: str, path: str) -> str:
     A("| Blocker | Workflows |")
     A("|---|---:|")
     import re as _re
-    reason_counts = Counter()
+    reason_counts: Counter[str] = Counter()
     for c in colours.values():
         for r in c["red_reasons"]:
             head = r.split(":")[0].split(";")[0].split("(")[0].strip()
@@ -99,8 +99,8 @@ def write_estate_report(out_dir: str, label: str, path: str) -> str:
                 hits.append(key)
         fired[u] = hits or ["(unclassified)"]
 
-    only = Counter()
-    any_of = Counter()
+    only: Counter[str] = Counter()
+    any_of: Counter[str] = Counter()
     for hits in fired.values():
         for h in hits:
             any_of[h] += 1

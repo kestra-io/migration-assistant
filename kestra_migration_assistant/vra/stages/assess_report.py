@@ -70,7 +70,7 @@ def estate(r: dict) -> str:
     L += ["## Readiness colour", "",
           "A first colour score from the parse alone: green converts as is, amber needs choices, red has a hard blocker.", "",
           T(["Colour", "Workflows"], [[k, b.get(k, 0)] for k in ("green", "amber", "red")]), ""]
-    reasons = Counter()
+    reasons: Counter[str] = Counter()
     for w in wf.values():
         for x in w["red_reasons"]:
             reasons[x.split(":")[0].split(";")[0].split("(")[0].strip().lstrip("0123456789 ")] += 1
@@ -251,7 +251,7 @@ def unexported(r: dict) -> str:
                "Nothing says what it is. Ask the owner (preflight Q1)."],
               ["action not in export", kinds.get("action not in export", 0),
                "An action from a module that was not exported."]]), ""]
-    by = {}
+    by: dict[str, list[dict]] = {}
     for x in rows:
         by.setdefault(x["caller"], []).append(x)
     for caller in sorted(by):

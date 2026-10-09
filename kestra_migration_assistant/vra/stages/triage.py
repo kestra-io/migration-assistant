@@ -46,6 +46,7 @@ criteria for the workflow's wave: an owner answers them before it converts.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 OUTCOMES = ["Retire", "Near-duplicate", "Wrapper", "Plugin-covered library", "Convert", "Needs owner input",
             "Manual", "Rebuild"]
@@ -226,7 +227,7 @@ def _covered(t: str, ops: list[str], targets: dict, coverage: dict | None) -> bo
 def _uses(a: dict, targets: dict, coverage: dict | None) -> list[dict]:
     """Per system an action reaches: its operations (or, for a REST helper, its call sites), whether a Kestra
     plugin covers them, and what replaces them."""
-    by = {}
+    by: dict[str, dict] = {}
     if a.get("rest_helper"):
         for x in a.get("uses") or []:
             if x["system"] == "rest-host":
@@ -302,7 +303,7 @@ def triage_action(a: dict, targets: dict, first_with_same_code: str | None, over
     vRA goes (replace, or replace with a bridge); vra_only: every workflow that reaches the action is started
     by vRA. With both, an action that reads vRA's event payload or decides on its event type is Rebuild: the
     flow takes typed inputs and its trigger or path decides."""
-    sig = []
+    sig: list[tuple[Any, str]] = []
     uses = _uses(a, targets, coverage)
     covered = [u for u in uses if u["covered"]]
     not_covered = [u for u in uses if not u["covered"]]

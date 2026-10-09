@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import html
 import re
+from typing import Any
 
 _FENCE = re.compile(r"^(\s*)(```|~~~)\s*([A-Za-z0-9_-]*)\s*$")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
@@ -111,14 +112,15 @@ def _table(rows: list[str]) -> str:
 
 def _list(lines: list[str]) -> str:
     """A list block; nesting follows indentation. Continuation lines join the item above."""
-    items = []                                    # (indent, ordered, text)
+    items: list[list[Any]] = []                   # (indent, ordered, text)
     for ln in lines:
         m = _ITEM.match(ln)
         if m:
             items.append([len(m.group(1).expandtabs(4)), m.group(2)[0].isdigit(), m.group(3), m.group(2)])
         elif items:
             items[-1][2] += " " + ln.strip()
-    out, stack = [], []                           # stack of (indent, tag)
+    out: list[str] = []
+    stack: list[tuple[int, str]] = []             # stack of (indent, tag)
 
     def close_to(indent):
         while stack and stack[-1][0] > indent:
@@ -152,7 +154,7 @@ def render(md: str) -> tuple[str, dict]:
     md = _COMMENT.sub("", md.replace("\r\n", "\n"))
     lines = md.split("\n")
     out: list[str] = []
-    info = {"title": None, "mermaid": False, "headings": []}
+    info: dict[str, Any] = {"title": None, "mermaid": False, "headings": []}
     ids: dict[str, int] = {}
     i = 0
     para: list[str] = []
@@ -167,13 +169,13 @@ def render(md: str) -> tuple[str, dict]:
         if fm:
             flush()
             fence, lang = fm.group(2), fm.group(3).lower()
-            body = []
+            code = []
             i += 1
             while i < len(lines) and not lines[i].strip().startswith(fence):
-                body.append(lines[i])
+                code.append(lines[i])
                 i += 1
             i += 1
-            text = "\n".join(body)
+            text = "\n".join(code)
             if lang == "mermaid":
                 info["mermaid"] = True
                 out.append(f'<pre class="mermaid">{html.escape(text, quote=False)}</pre>')
@@ -224,7 +226,7 @@ def render(md: str) -> tuple[str, dict]:
             continue
         if _ITEM.match(ln) and (not para or not ln.startswith(" ")):
             flush()
-            block = []
+            block: list[str] = []
             while i < len(lines):
                 cur = lines[i]
                 if not cur.strip():

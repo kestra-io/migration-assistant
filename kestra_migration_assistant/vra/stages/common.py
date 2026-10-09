@@ -39,14 +39,32 @@ INPUT_SUFFIXES = (".package", ".workflow", ".zip", ".xml")
 TREE_MARKERS = ("Workflow", "workflows", "ScriptModule", "actions", "ConfigurationElement",
                 "ResourceElement", "PolicyTemplate", "META-INF", "dunes-meta-inf.xml")
 
-# Set by configure(). None until then, so a stage run without an estate fails loudly.
-ESTATE = SOURCE_DIR = STAGES = PRE = ASSESS = UNDERSTAND = BRIEF = PAGES = INDEX = WORK = None
+# Set by configure(). None until then, so a stage run without an estate fails loudly. Typed as what
+# configure() sets: no stage reads them before it.
+ESTATE: str = None  # type: ignore[assignment]
+SOURCE_DIR: str = None  # type: ignore[assignment]
+STAGES: str = None  # type: ignore[assignment]
+PRE: str = None  # type: ignore[assignment]
+ASSESS: str = None  # type: ignore[assignment]
+UNDERSTAND: str = None  # type: ignore[assignment]
+BRIEF: str = None  # type: ignore[assignment]
+PAGES: str = None  # type: ignore[assignment]
+INDEX: str = None  # type: ignore[assignment]
+WORK: str = None  # type: ignore[assignment]
 # The folder the export folder sits in: paths written into the results and shown on the pages are relative
 # to it (`lb-usecase/kestra-assessment/your-input/answers.yaml`), so they read the same from any machine.
-BASE = None
+BASE: str | None = None
 # Model replies are content-addressed; the cache lives in the output folder, so a re-run reuses it.
-STAGE_CACHE = None
-SPEC_DIR = CLUSTER_SUMMARIES = STAGE_CALL_LOG = ENTRY_POINTS = INPUT = ANSWERS = CORRECTIONS = BRIEF_MD = DATA = None
+STAGE_CACHE: str = None  # type: ignore[assignment]
+SPEC_DIR: str = None  # type: ignore[assignment]
+CLUSTER_SUMMARIES: str = None  # type: ignore[assignment]
+STAGE_CALL_LOG: str = None  # type: ignore[assignment]
+ENTRY_POINTS: str = None  # type: ignore[assignment]
+INPUT: str = None  # type: ignore[assignment]
+ANSWERS: str = None  # type: ignore[assignment]
+CORRECTIONS: str = None  # type: ignore[assignment]
+BRIEF_MD: str = None  # type: ignore[assignment]
+DATA: str = None  # type: ignore[assignment]
 INPUTS: dict[str, str] = {}
 VRA_INPUTS: dict[str, str] = {}
 IGNORED: list[str] = []

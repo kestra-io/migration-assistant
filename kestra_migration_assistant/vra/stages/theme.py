@@ -45,7 +45,7 @@ def target_colour(key: str) -> str:
 
 # ------------------------------------------------------------------ contrast (WCAG 2.x)
 
-def _rgb(c: str) -> tuple[float, float, float]:
+def _rgb(c: str) -> tuple[float, ...]:
     c = c.strip()
     m = re.match(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)", c)
     if m:

@@ -7,6 +7,7 @@ The answers and the signature live in your-input/answers.yaml; this file is rege
 from __future__ import annotations
 
 import re
+from typing import cast
 
 from . import front as FR
 
@@ -29,7 +30,7 @@ def render(r: dict, assess: dict, specs: dict, answers: dict, old_approval: dict
         crit = w["entry_criteria"]
         met = sum(1 for e in crit if e.get("status") == "done")
         L += [f"### Wave {w['wave']} ({met} of {len(crit)} met)", ""]
-        defects: dict[str, list] = {}
+        defects: dict[tuple[str, str], list] = {}
         for e in crit:
             k = closes_key(e)
             st = "met" if e.get("status") == "done" else e.get("status") or "open"
@@ -81,7 +82,7 @@ def criterion_label(e: dict, assess: dict) -> str:
         "app": lambda: f"The App for '{q[0]}' is agreed" if q else None,
     }.get(fam)
     if template and template():
-        return template()
+        return cast(str, template())
     s = e["criterion"]
     for t in assess["targets"].values():
         if t.get("short_name"):

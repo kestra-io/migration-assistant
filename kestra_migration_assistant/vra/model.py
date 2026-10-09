@@ -231,6 +231,7 @@ def _legacy_key(prompt: str, schema: dict) -> str:
 
 
 def _log(rec: dict) -> None:
+    assert LOG_PATH is not None
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
     with _log_lock:
         with open(LOG_PATH, "a") as f:
@@ -516,7 +517,7 @@ def _quota_backoff(purpose: str, workflow_id: str, attempt: int, detail: str,
             return True               # another thread already waited this out
         if _quota_waited_s >= QUOTA_WAIT_BUDGET_S:
             return False
-        wait = QUOTA_BACKOFF_S[min(attempt, len(QUOTA_BACKOFF_S) - 1)]
+        wait: float = QUOTA_BACKOFF_S[min(attempt, len(QUOTA_BACKOFF_S) - 1)]
         wait = min(wait, QUOTA_WAIT_BUDGET_S - _quota_waited_s)
         _quota_gate.clear()
         _log({"purpose": purpose, "workflow": workflow_id, "event": "quota-backoff",

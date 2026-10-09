@@ -171,13 +171,13 @@ def coverage(targets: dict, ep_model: dict, pm: dict) -> dict:
         ops = [o["op"] for o in t.get("operations") or []] + list(t.get("action_only_operations") or [])
         rows.append(_row(key, spec, ops, snap, "workflow code"))
     # What the cloud templates create: only reached from Kestra once vRA is replaced.
-    rtypes = {}
+    rtypes: dict[str, list[str]] = {}
     for tpl in ep_model.get("cloud_templates") or []:
         for r in tpl.get("creates") or []:
             if (r.get("network_type") or "").lower() == "existing":
                 continue                      # referenced, not created: nothing for a Kestra task to do
             rtypes.setdefault(r["type"], []).append(f"{tpl['name']}/{r['name']}")
-    merged = {}
+    merged: dict[str, dict] = {}
     for rtype, where in sorted(rtypes.items()):
         key = next((k for k, v in pmt.items() for p in v.get("vra_resource_types") or [] if rtype.startswith(p)), None)
         spec = pmt.get(key) or {"name": rtype}

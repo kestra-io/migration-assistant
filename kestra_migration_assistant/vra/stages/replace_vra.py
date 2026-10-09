@@ -17,6 +17,7 @@ workflow waves and have entry criteria like any other wave.
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import cast
 
 from . import gates as G
 from . import triggers as TG
@@ -61,7 +62,7 @@ def _short(cls: str) -> str:
     return ".".join(parts[-2:]) if len(parts) > 3 else cls
 
 
-def plan(assess: dict, triage: dict, answers: dict, trigger_plan: dict, wave_of: dict[str, int],
+def plan(assess: dict, triage: dict, answers: dict, trigger_plan: dict | None, wave_of: dict[str, int],
          first_number: int, blocked: dict[str, list[str]]) -> list[dict]:
     """Replacement waves, numbered from `first_number`. Empty unless the trigger plan says vRA is replaced."""
     if not trigger_plan or trigger_plan.get("front_end") not in TG.REPLACING:
@@ -197,7 +198,8 @@ def _wave(n, deps, its, wf, triage, open_q, app_where, blocked, assess) -> dict:
                              recommended="the KV store, one entry per deployment",
                              why="the delete path runs in another execution than the create, so it needs the record; "
                                  "Kestra's KV store keeps it per namespace")})
-        scaled = [(r["name"], _input_of(r.get("count"))) for r in machines if _input_of(r.get("count"))]
+        scaled = cast("list[tuple[str, str]]",
+                      [(r["name"], _input_of(r.get("count"))) for r in machines if _input_of(r.get("count"))])
         if scaled:
             per_machine = [s_["name"] for s_ in it["steps"] if TG.position(s_.get("event_topic"), s_.get("condition"))[1]
                            in ("machine", "removal")]

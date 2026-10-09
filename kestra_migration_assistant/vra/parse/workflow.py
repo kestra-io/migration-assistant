@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 import xml.etree.ElementTree as ET
+from typing import Any
 
 from .. import safety
 from .jscalls import module_calls
@@ -138,10 +139,10 @@ def parse_workflow(element) -> dict:
         for sc in root.iter():
             if sc.tag.split("}")[-1] == "script":
                 safety.check_script(sc.text, element.name or element.source_path)
-    except (ET.ParseError, safety.UnsafeInput) as e:
+    except (ET.ParseError, safety.UnsafeInput) as exc:
         return {
-            "id": "", "name": element.name, "parse_error": str(e),
-            "source_path": element.source_path, "warnings": warnings + [f"parse error: {e}"],
+            "id": "", "name": element.name, "parse_error": str(exc),
+            "source_path": element.source_path, "warnings": warnings + [f"parse error: {exc}"],
         }
 
     tag = root.tag.split("}")[-1]
@@ -291,7 +292,7 @@ def parse_workflow(element) -> dict:
 
     # ---- presentation ---------------------------------------------------
     pres = _find(root, "presentation")
-    presentation = {"params": [], "ognl": [], "raw_present": pres is not None}
+    presentation: dict[str, Any] = {"params": [], "ognl": [], "raw_present": pres is not None}
     if pres is not None:
         for p in _findall(pres, "p-param"):
             pd = {"name": p.attrib.get("name", ""),

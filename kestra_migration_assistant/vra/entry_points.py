@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import os
 import re
+from typing import Any
 
 from . import safety
 
@@ -81,7 +82,7 @@ def from_vra(r: dict, label: str) -> dict:
     src_type = {s["name"]: s["type_id"] for s in r["content_sources"]}
     bp_by_name = {b["name"].casefold(): b for b in r["blueprints"]}
     wf_by_name = {w["name"].casefold(): w for w in r["catalog_workflows"]}
-    projects = {}
+    projects: dict[str, list[str]] = {}
     for e in r["entitlements"]:
         if e["project"]:
             projects.setdefault(e["name"], []).append(e["project"])
@@ -215,7 +216,8 @@ def _clean(v, depth=0):
 
 def load_manual(path: str) -> tuple[dict, list[str]]:
     """The hand-written file, normalized, and what was wrong with it. A missing file is empty."""
-    out, warnings = empty(), []
+    out = empty()
+    warnings: list[str] = []
     if not os.path.exists(path):
         return out, warnings
     try:
@@ -320,7 +322,7 @@ def resolve(model: dict, workflows: dict[str, dict]) -> dict:
     for a record that runs no workflow), `resolved_by`, `workflow` (name in the package) and `workflow_uid`.
     Returns {"resolved": n, "unresolved": [records], "no_workflow": n}.
     """
-    by_name = {}
+    by_name: dict[str, list[str]] = {}
     for wid, w in workflows.items():
         by_name.setdefault((w.get("name") or "").casefold(), []).append(wid)
     unresolved, n_ok, n_none = [], 0, 0
@@ -420,7 +422,8 @@ def collect(vra_inputs: dict[str, str], manual_path: str) -> dict:
     "manual": {path, exists, filled, entries, warnings}}.
     """
     from .parse import vra
-    parts, exports = [], []
+    parts: list[dict] = []
+    exports: list[dict[str, Any]] = []
     for label, path in vra_inputs.items():
         try:
             r = vra.read_vra(path)

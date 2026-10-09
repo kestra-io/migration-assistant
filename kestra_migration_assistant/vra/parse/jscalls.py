@@ -21,6 +21,7 @@ finding a call, which the call graph then checks against the actions in the expo
 from __future__ import annotations
 
 import re
+from typing import Any
 
 _GET_MODULE = re.compile(r'System\s*\.\s*getModule\s*\(\s*(["\'])([^"\'\n]+)\1\s*\)')
 _IDENT = r'[A-Za-z_$][\w$]*'
@@ -77,7 +78,7 @@ def module_calls(src: str | None) -> list[tuple[str, str]]:
         if masked[m.start()] == "S":
             modules[m.start()] = (m.end(), m.group(2).strip())
 
-    events = []                                   # (pos, kind, payload)
+    events: list[tuple[int, str, tuple[str, Any]]] = []  # (pos, kind, payload)
     for m in _ASSIGN.finditer(masked):
         rhs_at = m.end()
         rest = masked[rhs_at:]

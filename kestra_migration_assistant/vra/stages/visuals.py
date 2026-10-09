@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 from collections import Counter, defaultdict
+from typing import Any, cast
 
 from . import common as C
 from . import pages as PG
@@ -42,7 +43,7 @@ def _set_names(assess) -> None:
 
 
 def nm(u: str | None) -> str:
-    return (_NAMES.get(u) or (u or "", u or ""))[0]
+    return (_NAMES.get(cast(str, u)) or (u or "", u or ""))[0]
 
 
 def href(u: str, prefix: str = "workflows/") -> str:
@@ -57,7 +58,7 @@ def _load():
 
 
 def _crit_cls(e: dict) -> str:
-    return {"done": "done", "blocked": "stale"}.get(e.get("status"), "wait")
+    return {"done": "done", "blocked": "stale"}.get(cast(str, e.get("status")), "wait")
 
 
 def _vendor():
@@ -238,22 +239,22 @@ Domain and cluster names are model-written from the cached cluster summaries; ev
 def call_graph(assess, brief) -> str:
     wf = assess["workflows"]
     cl = {c["cluster_id"]: c for c in assess["clusters"]}
-    edges = Counter()
+    edges: Counter[tuple[str, str]] = Counter()
     for _u, w in wf.items():
         for n in w["nested"]:
             v = n.get("target_uid")
             if v in wf and wf[v]["cluster"] != w["cluster"]:
                 edges[(w["cluster"], wf[v]["cluster"])] += 1
-    internal = Counter()
+    internal: Counter[str] = Counter()
     for _u, w in wf.items():
         for n in w["nested"]:
             v = n.get("target_uid")
             if v in wf and wf[v]["cluster"] == w["cluster"]:
                 internal[w["cluster"]] += 1
-    ux_edges = Counter()
+    ux_edges: Counter[tuple[str, str]] = Counter()
     for x in assess["unexported_calls"]:
         ux_edges[(wf[x["caller"]]["cluster"], x["workflow_id"])] += 1
-    names = defaultdict(list)
+    names: defaultdict[str, list[str]] = defaultdict(list)
     for x in assess["unexported_calls"]:
         n = x["display_name"] or x["workflow_id"]
         if n not in names[x["workflow_id"]]:
@@ -627,7 +628,7 @@ def explorer_data(assess, brief) -> dict:
                      f"{len(t['workflows'])} workflows, {len(t['operations'])} operations."}
                     for k, t in assess["targets"].items()]
     domains.append({"id": "dom:targets", "name": "Target systems", "kind": "domain", "children": tgt_children})
-    ux = {}
+    ux: dict[str, Any] = {}
     for x in assess["unexported_calls"]:
         ux.setdefault(x["workflow_id"], x)
     if ux:
@@ -888,7 +889,7 @@ that is not in the export.</p>
 
 def _xml_excerpt(w: dict, max_lines: int = 60) -> tuple[str, str]:
     """The workflow tag and the items up to the entry point, from the file on disk."""
-    path = os.path.join(C.BASE, w["file"])
+    path = os.path.join(cast(str, C.BASE), w["file"])
     from kestra_migration_assistant.vra import safety
     from kestra_migration_assistant.vra.parse import formats
     raw = safety.read_file(path)

@@ -20,6 +20,8 @@ import json
 import os
 import re
 from collections import Counter, defaultdict
+from collections.abc import Sequence
+from typing import cast
 
 from .. import entry_points, safety
 from ..parse.jscalls import module_calls
@@ -60,7 +62,7 @@ def _parse(pm: dict) -> dict:
     idx = corpus.parse_corpus(C.WORK, C.INPUTS)
 
     # Script modules again, for their parameter types (the index keeps only the script).
-    actions = []
+    actions: list[dict] = []
     for label, path in C.INPUTS.items():
         elements, _ = formats.read_any(path)
         for e in elements:
@@ -204,7 +206,7 @@ def run() -> dict:
                     tgt["referenced_by_forms"].append(u)
 
     # the concrete REST operations seen for each action across its call sites: action key -> op -> variants
-    resolved_ops = defaultdict(lambda: defaultdict(set))
+    resolved_ops: defaultdict[str, defaultdict[str, set]] = defaultdict(lambda: defaultdict(set))
 
     def callee_bindings(script, t, outer):
         """One binding of t's parameters per call of t in this script (one empty binding if none is found)."""
@@ -260,7 +262,7 @@ def run() -> dict:
         own_state = [TG.state_paths(T.extract_ops(i.get("script") or "", vt)) for i in m["items"]]
         acalls = _wf_action_calls(m)
         via_ops = []
-        called_actions = []
+        called_actions: list[dict] = []
         for mod, act in acalls:
             found = alook.get((mod, act), [])
             called_actions.append({"module": mod, "action": act, "in_export": bool(found),
@@ -276,15 +278,15 @@ def run() -> dict:
         # nested calls, and what the unexported ones reach
         nested = []
         for c in m.get("nested_calls", []):
-            tgt = by_wfid.get(c["workflow_id"])
-            item = next((i for i in m["items"] if i["name"] == c["item"]), {})
+            callee = by_wfid.get(c["workflow_id"])
+            item: dict = next((i for i in m["items"] if i["name"] == c["item"]), {})
             passed_types = [b["type"] for b in item.get("in_bindings", [])]
             rec = {"item": c["item"], "mode": c["mode"], "workflow_id": c["workflow_id"],
-                   "display_name": c.get("display_name"), "in_export": bool(tgt),
-                   "target_uid": tgt["uid"] if tgt else None,
-                   "in_scope": bool(tgt) and tgt["uid"] in models}
-            if not tgt:
-                reached = sorted({T.target_for_type(t) for t in passed_types if T.target_for_type(t)})
+                   "display_name": c.get("display_name"), "in_export": bool(callee),
+                   "target_uid": callee["uid"] if callee else None,
+                   "in_scope": bool(callee and callee["uid"] in models)}
+            if not callee:
+                reached = sorted(cast("set[str]", {T.target_for_type(t) for t in passed_types if T.target_for_type(t)}))
                 name = c.get("display_name") or ""
                 if reached:
                     rec["kind"] = "plugin library workflow"
@@ -307,7 +309,7 @@ def run() -> dict:
                 seen_n.add(k)
                 nested_u.append(n)
 
-        declared = sorted({T.target_for_type(t) for t in m.get("plugin_types", []) if T.target_for_type(t)})
+        declared = sorted(cast("set[str]", {T.target_for_type(t) for t in m.get("plugin_types", []) if T.target_for_type(t)}))
         ops = own_ops + via_ops
         st_reads, _ = TG.state_paths(ops)
         st_writes = set().union(*[w_ for _, w_ in own_state], *[
@@ -366,7 +368,7 @@ def run() -> dict:
         wf[u]["short"] = k
 
     # ---- entry points: what starts a workflow from outside vRO (vRA export, entry-points.yaml) ----
-    ep_wfs = {}
+    ep_wfs: dict[str, dict] = {}
     for u, m in sorted(all_models.items()):
         if m.get("id"):
             ep_wfs.setdefault(m["id"], {"name": m["name"], "uid": u})
@@ -499,7 +501,7 @@ def run() -> dict:
         modes = {}
         reach_ops = {}
         by_wf = defaultdict(set)
-        detected = set()
+        detected: set[str | None] = set()
         for u in users:
             if key in wf[u]["declared_targets"]:
                 detected.add("plugin type")
@@ -517,7 +519,7 @@ def run() -> dict:
                         reach_ops.setdefault(v, T.reach_for(o, pm)["reach"])
                     detected.add(_detected_by(o))
         # workflows per operation: each workflow once, however many of its call sites reach it
-        ops = Counter(op for u in by_wf for op in by_wf[u])
+        op_n = Counter(op for u in by_wf for op in by_wf[u])
         client = [a for a in actions if key in (a.get("library_for") or [])] + \
                  [h for h in actions if h.get("rest_helper") and key in (h.get("reaches") or [])]
         tinv[key] = {
@@ -529,17 +531,17 @@ def run() -> dict:
             "kestra_tasks": t.get("kestra_tasks", []), "kestra_evidence": t.get("kestra_evidence"),
             "api": t.get("api"), "sdk_alternative": t.get("sdk_alternative"),
             "unconfirmed": t.get("unconfirmed", []),
-            "detected_by": sorted(detected - {None}),
+            "detected_by": sorted(cast("set[str]", detected - {None})),
             "api_auth": t.get("api_auth"),
             "client_auth": _client_auth(client), "tls_off": _tls_off(client),
             "workflows": users, "actions": a_users,
             "declared_only": sorted(u for u in users if not by_wf.get(u)),
             "operations": [{"op": op, "workflows": n, "mode": modes.get(op, "unknown"),
                             "reach": reach_ops.get(op, t["reach"])}
-                           for op, n in ops.most_common()],
-            "action_only_operations": sorted(o for o in modes if o not in ops),
-            "reads": sum(1 for op in ops if modes.get(op) == "read"),
-            "writes": sum(1 for op in ops if modes.get(op) == "write"),
+                           for op, n in op_n.most_common()],
+            "action_only_operations": sorted(o for o in modes if o not in op_n),
+            "reads": sum(1 for op in op_n if modes.get(op) == "read"),
+            "writes": sum(1 for op in op_n if modes.get(op) == "write"),
         }
 
     # ---- domains ----
@@ -703,7 +705,7 @@ def _domains(cres, wf, tinv, summaries, ov) -> dict:
 
     rows = []
     for c in cres["clusters"]:
-        with_ops = Counter()
+        with_ops: Counter[str] | dict[str, int] = Counter()
         basis = "own operations"
         for u in c["members"]:
             with_ops += op_targets(u)
@@ -795,7 +797,7 @@ VERBS = re.compile(r"^(create|add|delete|remove|get|set|update|edit|change|list|
                    r"import|export|execute|invoke|build|make|handle|clean|cleanup|validate)$")
 
 
-def _topic(names: list[str], categories: list[str], sources: list[str] = ()) -> str | None:
+def _topic(names: list[str], categories: list[str], sources: Sequence[str] = ()) -> str | None:
     """What the members' own names have in common, without verbs and tags: a word pair or a word
     shared by at least two members, else the last part of their shared folder. Among equally common
     candidates, one that also appears in the folder or package name wins."""

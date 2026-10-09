@@ -15,6 +15,7 @@ import os
 import threading
 import time
 from collections import defaultdict
+from typing import Any
 
 from kestra_migration_assistant.vra import model as M
 from kestra_migration_assistant.vra import safety
@@ -295,7 +296,8 @@ def action_tree(m: dict, actions_by_module: dict, budget: int | None = None,
         return next((c for c in actions_by_module.get(f"{mod}/{act}", [])), None) or \
             next((c for c in actions_by_module.get(act or "", []) if (c.get("category_path") or "") == mod), None)
 
-    queue, seen = [], set()
+    queue: list[tuple[tuple[str, str], int, str | None, Any]] = []
+    seen = set()
     for a in m.get("action_calls", []):
         k = (a["module"], a.get("action") or "")
         if k not in seen:
@@ -380,7 +382,8 @@ def dependency_levels(uids: list[str], models: dict, call_graph: dict,
         if u in deps:
             deps[u] |= {v for v in vs if v in deps and v != u}
 
-    levels, done = [], set()
+    levels: list[list[str]] = []
+    done: set[str] = set()
     while len(done) < len(uids):
         ready = sorted(u for u in uids if u not in done and deps[u] <= done)
         if not ready:                      # a cycle: break it deterministically
@@ -399,7 +402,8 @@ def order_leaves_first(uids: list[str], models: dict, call_graph: dict) -> list[
         if src in deps and dst in deps and src != dst:
             deps[src].add(dst)
 
-    ordered, done = [], set()
+    ordered: list[str] = []
+    done: set[str] = set()
     while len(ordered) < len(uids):
         ready = sorted(u for u in uids if u not in done and deps[u] <= done)
         if not ready:                      # a cycle: break it deterministically

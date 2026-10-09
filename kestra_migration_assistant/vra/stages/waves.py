@@ -214,7 +214,9 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
 
     # --- step 4: order, callees first, then lower risk
     gd = gdeps_of(groups)
-    order, done, pending = [], set(), set(groups)
+    order: list[str] = []
+    done: set[str] = set()
+    pending = set(groups)
     while pending:
         ready = [k for k in pending if gd[k] <= done] or list(pending)
         k = min(ready, key=lambda k: (tier(members_of(groups[k])), len(members_of(groups[k])), k))
@@ -223,7 +225,9 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
         pending.discard(k)
 
     total_lines = sum(wf[u]["script_lines"] + 1 for u in waved) or 1
-    waves, wave_of, wave_of_uid = [], {}, {}
+    waves: list[dict] = []
+    wave_of: dict[str, int] = {}
+    wave_of_uid: dict[str, int] = {}
     for n, k in enumerate(order, 1):
         clusters = sorted(groups[k])
         members = members_of(clusters)

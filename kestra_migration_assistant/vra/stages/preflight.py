@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import re
 from collections import Counter
+from typing import Any
 
 from .. import entry_points, outdir
 from . import common as C
@@ -26,7 +27,7 @@ from . import common as C
 # For vRO the build questions do not apply (a workflow is not built), and the
 # things that decide a migration are who calls the workflows and whether there
 # is somewhere safe to run them.
-QUESTIONS = [
+QUESTIONS: list[dict[str, Any]] = [
     {"id": "Q1", "topic": "scope",
      "question": "Is this export the whole vRO estate? If not, what is missing, and how many vRO nodes or clusters does the estate run on?",
      "why": "Every count in Assess and Brief is only as complete as the export. A partial export hides callers and callees.",
@@ -256,8 +257,8 @@ def check_export() -> dict:
     from kestra_migration_assistant.vra import safety
     from kestra_migration_assistant.vra.parse import formats
 
-    sources = []
-    totals = Counter()
+    sources: list[dict[str, Any]] = []
+    totals: Counter[str] = Counter()
     input_forms = 0
     history_files = []
     failures = []
@@ -265,8 +266,8 @@ def check_export() -> dict:
     for label, path in C.INPUTS.items():
         try:
             elements, summary = formats.read_any(path)
-        except Exception as e:
-            failures.append({"source": label, "path": C.rel(path), "error": f"{type(e).__name__}: {e}"})
+        except Exception as exc:
+            failures.append({"source": label, "path": C.rel(path), "error": f"{type(exc).__name__}: {exc}"})
             continue
         kinds = Counter(e.kind for e in elements)
         totals.update(kinds)
@@ -389,7 +390,7 @@ def load_answers(f: dict | None = None) -> dict:
     items = []
     for q in questions_for(facts() if f is None else f):
         key = answer_key(q["id"])
-        it = {"group": "confirm" if q.get("suggested") else "answer", "suggested": q.get("suggested"), "fixed": {}}
+        it: dict[str, Any] = {"group": "confirm" if q.get("suggested") else "answer", "suggested": q.get("suggested"), "fixed": {}}
         st = Y.state(key, loaded, it)
         a = st["answer"] or "" if st["state"] == "answered" else ""
         status = "answered" if st["state"] == "answered" else "open"

@@ -303,7 +303,7 @@ def read_raw_tree(root: str) -> tuple[list[Element], dict]:
     exporter does.
     """
     elements: list[Element] = []
-    summary = {"source_path": root, "format": "raw-xml", "element_counts": {}}
+    summary: dict = {"source_path": root, "format": "raw-xml", "element_counts": {}}
 
     for dirpath, dirs, files in os.walk(root):
         outdir.prune(dirpath, dirs)

@@ -15,6 +15,7 @@ import json
 import os
 import re
 from collections import Counter, defaultdict
+from typing import Any
 
 from .. import safety
 from . import assess as A
@@ -64,7 +65,7 @@ def run() -> dict:
     specs = {u: C.spec(u) for u in wf}
     stale = stale_specs()
 
-    q9 = next((q for q in answers["items"] if q["id"] == "Q9"), {})
+    q9: dict = next((q for q in answers["items"] if q["id"] == "Q9"), {})
     trigger_plan = TG.plan((assess.get("entry_points") or {}).get("model") or {},
                            q9.get("answer") if q9.get("status") == "answered" else None)
     vra_replaced = trigger_plan.get("front_end") in TG.REPLACING
@@ -214,7 +215,7 @@ def cover_questions(assess, specs) -> dict[str, list[dict]]:
     that runs it. A question naming one system is covered by that system's decision only."""
     wf, targets = assess["workflows"], assess["targets"]
     groups = {g["id"]: g for g in assess.get("lifecycle_groups") or []}
-    out = {}
+    out: dict[str, list[dict]] = {}
     for u, w in wf.items():
         sp = specs.get(u) or {}
         ext = [t for t in w["targets"] if t in targets and t not in ("vro-platform", "rest-host")]
@@ -404,7 +405,7 @@ def recommend(assess, tri, act_tri, answers, number: dict | None = None) -> dict
                              for t in actions[k]["library_for"]
                              if t in assess["targets"] and assess["targets"][t]["reach"] != "plugin"})
     pl_share, cl_share = plugin_lib_lines / total_lines, client_rebuild_lines / total_lines
-    signals = [
+    signals: list[dict[str, Any]] = [
         {"signal": "Share of all script that is plugin-covered library",
          "value": f"{plugin_lib_lines} of {total_lines} lines ({pl_share:.0%})",
          "reads_as": ("Low. Almost nothing here is a client Kestra already ships." if pl_share < 0.1 else
@@ -518,7 +519,7 @@ def walkthrough_paths(assess, tri) -> list[dict]:
     # operator: day-two operations on one target, reads before writes
     dom_ops = {d["id"] for d in assess["domains"]["domains"] if d["stage"] in ("operations", "configuration")}
     entries = [u for u in wf if wf[u]["domain"] in dom_ops and not wf[u]["called_by"]]
-    fam = Counter()
+    fam: Counter[str] = Counter()
     for u in entries:
         fam[wf[u]["source"]] += 100 if (wf[u]["reads"] and not wf[u]["writes"]) else 1
     src = fam.most_common(1)[0][0] if fam else None
@@ -627,7 +628,7 @@ def group_questions(assess, specs, threshold: float = 0.5) -> list[dict]:
         scope = wf[u].get("lifecycle_group") or wf[u].get("cluster") or u
         by_scope[scope].append(u)
     for scope, us in sorted(by_scope.items()):
-        groups = []
+        groups: list[dict[str, Any]] = []
         for u in us:
             for q in (specs.get(u) or {}).get("open_questions", []):
                 theme = (q.get("theme") or "general").lower()

@@ -44,6 +44,7 @@ import datetime as _dt
 import json
 import os
 import re
+from typing import Any
 
 import yaml
 
@@ -161,7 +162,7 @@ def load(path: str | None = None) -> dict:
     path = path or C.ANSWERS
     data, warnings = _read(path)
     reg = registry()
-    out = {"path": C.rel(path), "exists": os.path.exists(path), "ok": data is not None, "warnings": warnings,
+    out: dict[str, Any] = {"path": C.rel(path), "exists": os.path.exists(path), "ok": data is not None, "warnings": warnings,
            "old_format": False, "entries": {}, "sign": {}, "memo": _memo(reg)}
     if data and is_old_format(data):
         out["old_format"] = True
@@ -220,12 +221,12 @@ def _from_old(data: dict, reg: dict, out: dict) -> None:
             out["entries"][k] = entry
             if e.get("spec") and not is_open(ans):
                 memo["reviewed"].setdefault(k, {"spec": e["spec"], "answer": _text(ans)})
-    s = data.get("sign") if isinstance(data.get("sign"), dict) else {}
+    s: Any = data.get("sign") if isinstance(data.get("sign"), dict) else {}
     cov = str(s.get("covers") or "").lower().replace(" ", "-")
     scope = "full" if cov in ("full", "full-plan", "all") else ("wave-1" if cov in ("wave-1", "wave1", "1") else None)
     signed = bool(str(s.get("signed_by") or "").strip() and str(s.get("date") or "").strip() and scope)
     stand_in = stand_in or "stand-in" in str(s.get("signed_by") or "").lower()
-    out["sign"] = {"signed_for": SIGN[scope] if signed else ""}
+    out["sign"] = {"signed_for": SIGN[scope] if signed and scope else ""}
     memo["stand_in"] = memo["stand_in"] or stand_in
 
 
@@ -353,14 +354,16 @@ def _entry(k: str, e: dict) -> list[str]:
 def plan(its: list[dict], loaded: dict) -> tuple[list[tuple[str, dict]], list[tuple[str, dict]]]:
     """What goes under open and answered, in order: (id, entry). Open: what a wave waits on, then the rest.
     Answered: in the order asked, then what is no longer asked."""
-    opened, waits, answered = [], [], []
+    opened: list[tuple[str, dict]] = []
+    waits: list[tuple[str, dict]] = []
+    answered: list[tuple[str, dict]] = []
     asked = set()
     for it in its:
         k = it["key"]
         asked.add(k)
         old = loaded["entries"].get(k) or {}
         st = state(k, loaded, it)
-        e = {"question": question_of(it)}
+        e: dict[str, Any] = {"question": question_of(it)}
         if st["state"] == "stale":
             e["question"] = "The spec changed after this answer. Read it again, then change the answer: " + e["question"]
         sug = it.get("suggested")
@@ -507,7 +510,7 @@ def fingerprint() -> str:
 def summary(loaded: dict | None = None) -> dict:
     """Per group: open and done items; per family within a group, the counts (the front page groups by it)."""
     loaded = loaded if loaded is not None else load()
-    out = {g: {"open": [], "done": [], "stale": []} for g in GROUPS[:3]}
+    out: dict[str, Any] = {g: {"open": [], "done": [], "stale": []} for g in GROUPS[:3]}
     for it in items():
         st = state(it["key"], loaded, it)
         bucket = "done" if st["state"] in ("answered", "reviewed") else ("stale" if st["state"] == "stale" else "open")
@@ -557,8 +560,8 @@ def migrate() -> list[str]:
         from . import preflight
         text = open(present["answers.md"]).read()
         parsed = preflight._parse_answers(text)
-        who = re.search(r"^Answered by:[ \t]*(.*)$", text, re.M)
-        who = who.group(1).strip() if who else ""
+        wm = re.search(r"^Answered by:[ \t]*(.*)$", text, re.M)
+        who = wm.group(1).strip() if wm else ""
         n = sum(put(preflight.answer_key(qid), ans, who) for qid, ans in parsed.items() if not is_open(ans))
         done.append(f"answers.md: {n} preflight answer(s)")
     if "decisions.yaml" in present:

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from typing import Any
 
 # Front-end choice (preflight Q9). BRIDGE: vRA is replaced, and until then its subscriptions call Kestra's
 # webhooks, so the converted flows run behind vRA in between.
@@ -77,7 +78,7 @@ SWITCH = re.compile(r"(?i)\bswitch\s*\(\s*" + EVENT_VAR + r"\s*\)\s*\{")
 CASE = re.compile(r"\bcase\s+[\"']([^\"'\n]+)[\"']\s*:")
 
 
-def position(topic: str, condition: str | None) -> tuple[int, str]:
+def position(topic: str | None, condition: str | None) -> tuple[int, str]:
     """(position along a deployment's life, phase key) for an event topic and its condition."""
     t = (topic or "").strip().lower()
     cond = condition or ""
@@ -194,7 +195,7 @@ def lifecycle_groups(wf: dict[str, dict], state: dict[str, dict]) -> list[dict]:
     groups = defaultdict(list)
     for u in cand:
         groups[find(u)].append(u)
-    out = []
+    out: list[dict[str, Any]] = []
     for g in groups.values():
         phases = {ph for u in g for _, ph in cand[u]}
         if len(g) < 2 or len(phases) < 2:
@@ -209,8 +210,8 @@ def lifecycle_groups(wf: dict[str, dict], state: dict[str, dict]) -> list[dict]:
                             f"in {', '.join(shared)}, written by "
                             f"{', '.join((wf.get(u) or {}).get('name') or u for u in writers)}. Converting one without "
                             "the others splits a deployment between vRO and Kestra: what one writes, the next reads")})
-    for i, g in enumerate(sorted(out, key=lambda g: g["members"]), 1):
-        g["id"] = f"L{i}"
+    for i, lg in enumerate(sorted(out, key=lambda g: g["members"]), 1):
+        lg["id"] = f"L{i}"
     return sorted(out, key=lambda g: g["id"])
 
 

@@ -390,7 +390,7 @@ def _sanitize_tree(r: Redactor, src: str, dst: str, rel_label: str, touched: lis
     return n
 
 
-def _sanitize_zip(r: Redactor, src: str, dst: str, rel_label: str, touched: list, skipped: list,
+def _sanitize_zip(r: Redactor, src: str | bytes, dst: str | None, rel_label: str, touched: list, skipped: list,
                   depth: int = 0, vra: bool = False) -> tuple[bytes, int]:
     """Rebuild a ZIP (package, .workflow export, or a nested resource ZIP) entry by entry."""
     import io
@@ -436,7 +436,8 @@ def sanitize_inputs(inputs: dict[str, str], out_dir: str, vra_inputs: dict[str, 
         shutil.rmtree(out_dir)
     os.makedirs(out_dir)
     r = Redactor()
-    touched, skipped = [], []
+    touched: list[str] = []
+    skipped: list[str] = []
     seen = 0
     vra_paths = set((vra_inputs or {}).values())
     for _label, path in {**inputs, **(vra_inputs or {})}.items():

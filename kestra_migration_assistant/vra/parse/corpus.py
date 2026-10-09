@@ -36,8 +36,8 @@ def parse_corpus(out_dir: str, sources: dict[str, str]) -> dict:
     for label, path in sources.items():
         try:
             elements, summary = formats.read_any(path)
-        except Exception as e:
-            failures.append({"source": label, "path": path, "error": str(e)})
+        except Exception as exc:
+            failures.append({"source": label, "path": path, "error": str(exc)})
             continue
         package_summaries[label] = summary
 
@@ -117,7 +117,7 @@ def parse_corpus(out_dir: str, sources: dict[str, str]) -> dict:
 
     # cross-workflow call graph
     by_wfid = {w["id"]: w for w in workflows if w.get("id")}
-    call_graph = {"nodes": [], "edges": [], "unresolved": []}
+    call_graph: dict[str, list[dict]] = {"nodes": [], "edges": [], "unresolved": []}
     for w in workflows:
         if not w.get("wid"):
             continue
@@ -135,12 +135,12 @@ def parse_corpus(out_dir: str, sources: dict[str, str]) -> dict:
                     "mode": c["mode"], "item": c["item"],
                     "display_name": c.get("display_name")})
 
-    indeg = defaultdict(int)
-    for e in call_graph["edges"]:
-        indeg[e["to"]] += 1
+    indeg: defaultdict[str, int] = defaultdict(int)
+    for ed in call_graph["edges"]:
+        indeg[ed["to"]] += 1
     callers = defaultdict(list)
-    for e in call_graph["edges"]:
-        callers[e["to"]].append(e["from"])
+    for ed in call_graph["edges"]:
+        callers[ed["to"]].append(ed["from"])
 
     for w in workflows:
         if w.get("wid"):

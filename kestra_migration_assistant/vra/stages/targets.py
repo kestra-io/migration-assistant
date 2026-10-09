@@ -197,6 +197,7 @@ def extract_ops(script: str, var_types: dict[str, str]) -> list[dict]:
             t = types.get(var)
             tgt = target_for_type(t) if t and ":" in (t or "") else (target_for_ctor(t) if t else None)
             if tgt:
+                assert t is not None
                 tname = t if ":" in t else t
                 op = f"{tname}{path}.{meth}" if path else f"{tname}.{meth}"
                 ops.append({"target": tgt, "op": op, "kind": "sdk"})

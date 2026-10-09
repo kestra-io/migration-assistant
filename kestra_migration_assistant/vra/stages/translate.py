@@ -222,7 +222,7 @@ def table(assess: dict, brief: dict) -> dict:
             eid=f"vra-sub:{s['name']}")
 
     # largest kinds first; a kind's rows together, the mechanical one first
-    size = defaultdict(int)
+    size: defaultdict[str, int] = defaultdict(int)
     for r in rows.values():
         size[r["kind"]] += r["count"]
     out = sorted(rows.values(), key=lambda r: (-size[r["kind"]], r["kind"],
@@ -252,7 +252,7 @@ def number(rows: list[dict]) -> dict:
         out[f"share_{k}_lines"] = round(out[f"lines_{k}"] / ln, 3) if ln else 0.0
     # the recommendation reads the known path
     out["share_elements"], out["share_lines"] = out["share_known_elements"], out["share_known_lines"]
-    by_how = defaultdict(lambda: {"elements": 0, "lines": 0})
+    by_how: defaultdict[str, dict[str, int]] = defaultdict(lambda: {"elements": 0, "lines": 0})
     for r in rows:
         by_how[r["how"]]["elements"] += r["count"]
         by_how[r["how"]]["lines"] += r["lines"] or 0

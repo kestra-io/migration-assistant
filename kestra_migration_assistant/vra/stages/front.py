@@ -21,6 +21,7 @@ from __future__ import annotations
 import datetime as _dt
 import html
 import re
+from typing import Any
 
 from . import common as C
 from . import status as S
@@ -343,7 +344,7 @@ def split(rows: list[dict]) -> dict:
 # ------------------------------------------------------------------ the recommendation
 
 def _wf_counts(brief: dict) -> dict:
-    c = {}
+    c: dict[str, int] = {}
     for t in brief["triage"].values():
         o = t["outcome"]
         k = ("rebuilt" if o in ("Rebuild", "Manual") else "retired" if o == "Retire" else "convert")
@@ -353,12 +354,12 @@ def _wf_counts(brief: dict) -> dict:
 
 def _rebuild_reason(brief: dict) -> str:
     rs = [t["reason"] for t in brief["triage"].values() if t["outcome"] in ("Rebuild", "Manual")]
-    kinds = {}
+    kinds: dict[str, int] = {}
     for r in rs:
         k = ("vra" if ("vRA" in r or "dispatcher" in r) else "state" if "vRO's own state" in r else
              "client" if "client" in r else "hand")
         kinds[k] = kinds.get(k, 0) + 1
-    top = max(kinds, key=kinds.get) if kinds else "hand"
+    top = max(kinds, key=lambda k: kinds[k]) if kinds else "hand"
     return {"vra": "they only make sense inside vRA",
             "state": "they only manage vRO itself",
             "client": "they are hand-written clients that Kestra plugins replace",
@@ -525,8 +526,8 @@ def needs(assess: dict, brief: dict, st: dict) -> list[str]:
     if rest:
         n = len(rest)
         order = list(QUESTION)
-        ex = sorted((i for i in rest if _fam(i["key"]) in QUESTION), key=lambda i: order.index(_fam(i["key"])))
-        ex_p = QUESTION[_fam(ex[1 if len(ex) > 1 and _fam(ex[0]["key"]) == "q1-scope" else 0]["key"])] if ex else ""
+        exs = sorted((i for i in rest if _fam(i["key"]) in QUESTION), key=lambda i: order.index(_fam(i["key"])))
+        ex_p = QUESTION[_fam(exs[1 if len(exs) > 1 and _fam(exs[0]["key"]) == "q1-scope" else 0]["key"])] if exs else ""
         out.append(f"**{cap(word(n))} {_s(n, 'question')} that {_s(n, 'does', 'do')}n't block anything yet**"
                    + (f", such as {ex_p}" if ex_p else "") + ".")
     return out
@@ -539,9 +540,10 @@ def _kp(t: str) -> str:
 
 def _order_targets(assess: dict, brief: dict, ts: list[str]) -> list[str]:
     """Targets, the one with the most client actions first (the order of the table)."""
-    n = {}
+    n: dict[str, int] = {}
     for k, _t in brief["action_triage"].items():
-        for s in (next((a for a in assess["actions"] if a["key"] == k), {}) or {}).get("library_for") or []:
+        act: dict = next((a for a in assess["actions"] if a["key"] == k), {}) or {}
+        for s in act.get("library_for") or []:
             n[s] = n.get(s, 0) + 1
     return sorted(ts, key=lambda t: (-n.get(t, 0), tname(assess["targets"][t])))
 
@@ -679,25 +681,25 @@ def _wave_bullet(w: dict, assess: dict, brief: dict, sn: dict) -> str:
         return s + " " + start + "."
     us = w["workflows"]
     n = len(us)
-    s = [f"**{wave_title(w, assess)}.**"]
+    parts = [f"**{wave_title(w, assess)}.**"]
     groups = [g for g in assess.get("lifecycle_groups") or [] if set(g["members"]) & set(us)]
     if groups and n > 1 and any(g.get("shared_state") for g in groups):
-        s.append("They share state, so they convert together.")
+        parts.append("They share state, so they convert together.")
     if w.get("pilot"):
         first, then = _pair(sn.get(w["pilot"], w["pilot"]), [sn.get(u, u) for u in w.get("pilot_with") or []])
-        s.append(f"{first} is the first of a kind" + (f", then {_and(then)}." if then else "."))
+        parts.append(f"{first} is the first of a kind" + (f", then {_and(then)}." if then else "."))
     wr = _order_targets(assess, brief, [t for t in w.get("writes_to") or [] if t in targets])
     wn = _and([tname(targets[t]) for t in wr])
     fams = [("the answers on " + f if f in ("building machines", "the plan", "reaching your systems") else f)
             for f in fams]
     if fams:
-        s.append((f"The wave writes to {wn}, so it starts" if wn else "It starts")
+        parts.append((f"The wave writes to {wn}, so it starts" if wn else "It starts")
                  + (f" after {_and(after)} and" if after else "") + f" once {_and(fams)} are answered.")
     elif after:
-        s.append(f"It starts after {_and(after)}.")
+        parts.append(f"It starts after {_and(after)}.")
     else:
-        s.append("Its entry criteria are met." if not wn else f"The wave writes to {wn}, and its entry criteria are met.")
-    return " ".join(s)
+        parts.append("Its entry criteria are met." if not wn else f"The wave writes to {wn}, and its entry criteria are met.")
+    return " ".join(parts)
 
 
 # ------------------------------------------------------------------ the document
@@ -759,7 +761,7 @@ def document(assess: dict, brief: dict) -> list[tuple]:
     n_vra = len((assess.get("entry_points") or {}).get("exports") or [])
     pkg = "package" if all(str(p).endswith(".package") for p in ins.values()) else "export"
     src = f"{n_pkg} vRO {_s(n_pkg, pkg)}" + (f" and {n_vra} vRA {_s(n_vra, 'export')}" if n_vra else "")
-    B = [("h1", f"Migration brief: {est}"),
+    B: list[tuple[str, Any]] = [("h1", f"Migration brief: {est}"),
          ("p", f"What vro2k found in the {est} export, what it recommends, and what it needs from you before anything "
                f"is converted. This is Stage 1 of the [vRA migration guide]({GUIDE}), done for you from {src} on "
                f"{_date(brief['generated'])}.")]
@@ -939,7 +941,7 @@ def workflows_index(assess: dict, brief: dict) -> str:
     wf, tri = assess["workflows"], brief["triage"]
     wave_of = {u: w["wave"] for w in brief["plan"]["waves"] for u in w.get("workflows") or []}
     blocked = {b["uid"] for b in brief["plan"]["blocked"]}
-    ndef = {}
+    ndef: dict[Any, int] = {}
     for d in brief.get("suspected_defects") or []:
         ndef[d.get("short")] = ndef.get(d.get("short"), 0) + 1
     rows = "".join(

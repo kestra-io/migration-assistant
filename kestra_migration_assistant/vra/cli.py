@@ -164,9 +164,9 @@ def run_stage(s: str) -> str:
                 f"recommendation {r['recommendation']['verdict']}")
     elif s == "visuals":
         from kestra_migration_assistant.vra.stages import visuals
-        r = visuals.run()
-        print(f"[visuals] wrote {len(r)} pages: open {C.rel(C.INDEX)} (the rest are in {C.rel(C.PAGES)}/)")
-        return f"{len(r)} pages written"
+        pages = visuals.run()
+        print(f"[visuals] wrote {len(pages)} pages: open {C.rel(C.INDEX)} (the rest are in {C.rel(C.PAGES)}/)")
+        return f"{len(pages)} pages written"
     elif s == "status":
         from kestra_migration_assistant.vra.stages import status
         print(status.run())

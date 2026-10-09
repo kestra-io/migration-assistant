@@ -35,6 +35,7 @@ import os
 import posixpath
 import re
 from collections import defaultdict
+from typing import Any
 
 from .. import outdir, safety
 
@@ -165,9 +166,9 @@ def _form_fields(form: dict | None) -> list[dict]:
     """Fields in layout order from a request form ({layout, schema}), with what each one asks for."""
     if not isinstance(form, dict):
         return []
-    schema = form.get("schema") if isinstance(form.get("schema"), dict) else {}
+    schema: Any = form.get("schema") if isinstance(form.get("schema"), dict) else {}
     order, display, page_of = [], {}, {}
-    layout = form.get("layout") if isinstance(form.get("layout"), dict) else {}
+    layout: Any = form.get("layout") if isinstance(form.get("layout"), dict) else {}
     for page in layout.get("pages") or []:
         if not isinstance(page, dict):
             continue
@@ -180,11 +181,11 @@ def _form_fields(form: dict | None) -> list[dict]:
     order += [k for k in schema if k not in order]
     out = []
     for fid in order:
-        sc = schema.get(fid) if isinstance(schema.get(fid), dict) else {}
-        typ = sc.get("type") if isinstance(sc.get("type"), dict) else {}
-        cons = sc.get("constraints") if isinstance(sc.get("constraints"), dict) else {}
+        sc: Any = schema.get(fid) if isinstance(schema.get(fid), dict) else {}
+        typ: Any = sc.get("type") if isinstance(sc.get("type"), dict) else {}
+        cons: Any = sc.get("constraints") if isinstance(sc.get("constraints"), dict) else {}
         vl = sc.get("valueList")
-        values = None
+        values: list[str] | str | None = None
         if isinstance(vl, list):
             values = [_s(x.get("value")) if isinstance(x, dict) else _s(x) for x in vl]
         elif isinstance(vl, dict):
@@ -215,14 +216,14 @@ def _plan_values(props: dict) -> dict:
     """The few property values the replacement plan needs, kept as values (everything else is kept by name):
     a network's `networkType`, each machine network's IP `assignment`, and the placement constraint tags.
     An input reference (`${input.x}`) is kept as written."""
-    out = {}
+    out: dict[str, Any] = {}
     if isinstance(props.get("networkType"), str):
         out["network_type"] = _s(props["networkType"])
-    nets = props.get("networks") if isinstance(props.get("networks"), list) else []
+    nets: Any = props.get("networks") if isinstance(props.get("networks"), list) else []
     assign = sorted({_s(n.get("assignment")) for n in nets if isinstance(n, dict) and isinstance(n.get("assignment"), str)})
     if assign:
         out["ip_assignment"] = assign
-    cons = props.get("constraints") if isinstance(props.get("constraints"), list) else []
+    cons: Any = props.get("constraints") if isinstance(props.get("constraints"), list) else []
     tags = [_s(c.get("tag")) for c in cons if isinstance(c, dict) and isinstance(c.get("tag"), str)]
     if tags:
         out["constraint_tags"] = tags
@@ -234,7 +235,7 @@ def _blueprint(doc: _Doc, name: str, files: list[str]) -> dict:
     det = doc.mapping(base + "details.json") or {}
     body = doc.mapping(base + "content.yaml", "yaml") or {}
     inputs = []
-    raw_in = body.get("inputs") if isinstance(body.get("inputs"), dict) else {}
+    raw_in: Any = body.get("inputs") if isinstance(body.get("inputs"), dict) else {}
     for k, v in raw_in.items():
         v = v if isinstance(v, dict) else {}
         values = v.get("enum")
@@ -244,12 +245,12 @@ def _blueprint(doc: _Doc, name: str, files: list[str]) -> dict:
                        "default": v.get("default") if isinstance(v.get("default"), (str, int, float, bool)) else None,
                        "values": [_s(x) for x in values] if isinstance(values, list) else None})
     resources = []
-    raw_res = body.get("resources") if isinstance(body.get("resources"), dict) else {}
+    raw_res: Any = body.get("resources") if isinstance(body.get("resources"), dict) else {}
     for k, v in raw_res.items():
         v = v if isinstance(v, dict) else {}
-        props = v.get("properties") if isinstance(v.get("properties"), dict) else {}
+        props: Any = v.get("properties") if isinstance(v.get("properties"), dict) else {}
         text = repr(props)
-        cp = props.get("customProperties") if isinstance(props.get("customProperties"), dict) else {}
+        cp: Any = props.get("customProperties") if isinstance(props.get("customProperties"), dict) else {}
         if not cp and v.get("type", "").endswith(".Machine"):
             # vRA passes a machine property its schema does not know as a custom property
             cp = {p: 1 for p in props if _s(p) not in MACHINE_SCHEMA}
@@ -297,7 +298,7 @@ def _catalog_item(doc: _Doc, fname: str) -> dict:
 
 def _subscription(doc: _Doc, fname: str) -> dict:
     d = doc.mapping(fname) or {}
-    cons = d.get("constraints") if isinstance(d.get("constraints"), dict) else {}
+    cons: Any = d.get("constraints") if isinstance(d.get("constraints"), dict) else {}
     projects = cons.get("projectNames") or ([cons["projectId"]] if cons.get("projectId") else [])
     return {"name": _s(d.get("name")) or _stem(fname), "id": _s(d.get("id")),
             "description": _s(d.get("description")), "type": _s(d.get("type")),
@@ -320,7 +321,7 @@ def _runnable(r) -> dict | None:
 def _custom_resource(doc: _Doc, name: str) -> dict:
     d = doc.mapping(f"custom-resources/{name}/details.json") or {}
     actions = []
-    main = d.get("mainActions") if isinstance(d.get("mainActions"), dict) else {}
+    main: Any = d.get("mainActions") if isinstance(d.get("mainActions"), dict) else {}
     for k, v in main.items():
         r = _runnable(v)
         if r:
@@ -391,14 +392,14 @@ def read_vra(path: str) -> dict:
     wfs = []
     for n in by_dir.get("workflows", []):
         d = doc.mapping(n) or {}
-        spec = d.get("spec") if isinstance(d.get("spec"), dict) else {}
+        spec: Any = d.get("spec") if isinstance(d.get("spec"), dict) else {}
         wfs.append({"name": _s(d.get("name")) or _stem(n), "type_id": _s(d.get("typeId")),
                     "workflow_id": _s(spec.get("workflowId")), "description": _s(d.get("description")),
                     "file": n})
-    pgroups = []
+    pgroups: list[dict[str, Any]] = []
     for n in by_dir.get("property-groups", []):
         d = doc.mapping(n) or {}
-        props = d.get("properties") if isinstance(d.get("properties"), dict) else {}
+        props: Any = d.get("properties") if isinstance(d.get("properties"), dict) else {}
         pgroups.append({"name": _s(d.get("name")) or _stem(n), "type": _s(d.get("type")),
                         "properties": sorted(_s(k) for k in props), "file": n})
     policies = []
@@ -415,13 +416,13 @@ def read_vra(path: str) -> dict:
             other_kinds[k] = len(by_dir[k])
 
     unknown = []
-    for d, names in sorted(by_dir.items()):
-        if d == "":
+    for top, names in sorted(by_dir.items()):
+        if top == "":
             for n in names:
                 if n != "content.yaml" and n not in PROJECT_FILES:
                     unknown.append({"path": n, "files": 1})
-        elif d not in KNOWN_DIRS and d not in PROJECT_DIRS:
-            unknown.append({"path": d + "/", "files": len(names)})
+        elif top not in KNOWN_DIRS and top not in PROJECT_DIRS:
+            unknown.append({"path": top + "/", "files": len(names)})
     unread = sorted(n for n in files if n not in doc.used and n != "content.yaml"
                     and n.split("/", 1)[0] in KNOWN_DIRS)
 
@@ -459,7 +460,7 @@ def read_vra(path: str) -> dict:
 
 def _listed(content) -> dict:
     """content.yaml as kind -> list of names (None: the key says 'all existing', or is absent)."""
-    out = {}
+    out: dict[str, list[str] | None] = {}
     if not isinstance(content, dict):
         return out
     for k, v in content.items():
