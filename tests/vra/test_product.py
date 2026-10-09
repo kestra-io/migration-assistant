@@ -10,6 +10,7 @@ same way. The command's help names the product.
 from __future__ import annotations
 
 import html
+import json
 import os
 import re
 import shutil
@@ -54,6 +55,17 @@ def test_no_output_names_the_internal_tool(run):
     assert len(run["files"]) > 30
     named = [p for p, t in run["files"].items() if INTERNAL.search(t)]
     assert named == []
+
+
+def test_no_output_outside_the_caches_names_this_machine(run):
+    """The output folder is zipped and shared: nothing in it says where the tool or the export sat on this machine.
+    (The parse cache, data/1-assess/work/, still records absolute paths of the export.)"""
+    home = os.path.expanduser("~")
+    leaks = [p for p, t in run["files"].items()
+             if not p.startswith(os.path.join("data", "1-assess", "work")) and (home in t or "/Users/" in t or "../../../" in t)]
+    assert leaks == []
+    assess = json.loads(run["files"][os.path.join("data", "1-assess", "assess.json")])
+    assert assess["inputs"]["plugin_map"] == "kestra_migration_assistant/vra/data/plugin-map.yaml"
 
 
 def test_every_page_ends_with_the_call_to_action_and_the_footer(run):
