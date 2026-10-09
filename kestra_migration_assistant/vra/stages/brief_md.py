@@ -15,8 +15,10 @@ from . import front as FR
 def render(r: dict, assess: dict, specs: dict, answers: dict, old_approval: dict) -> str:
     L = FR.markdown(assess, r)
     L += ["## Appendix A. Every element", "",
-          "Each element of the estate, under the row of the table above that holds it. A star marks what is ready "
-          "now.", ""]
+          ("Each element of the estate, grouped by kind, with how it converts where the code can tell (Open where it "
+           "waits on a model or an answer)." if FR.no_model(r) else
+           "Each element of the estate, under the row of the table above that holds it. A star marks what is ready "
+           "now."), ""]
     for x in FR.merged_rows(assess, r):
         its = [(i, row) for row in x["rows"] for i in row["items"]]
         seen = [i["name"] for i, _ in its]
@@ -24,6 +26,8 @@ def render(r: dict, assess: dict, specs: dict, answers: dict, old_approval: dict
                  + ("*" if i.get("ready") else "") for i, row in its]
         L.append(f"- **{x['label']}** ({x['how']}, {x['count']}): " + ", ".join(names) + ".")
     L.append("")
+    if not r["plan"]["waves"]:
+        return "\n".join(L).rstrip() + "\n"
     L += ["## Appendix B. Entry criteria per wave", "",
           "Met or open, and the item in `your-input/answers.yaml` that closes it.", ""]
     for w in r["plan"]["waves"]:

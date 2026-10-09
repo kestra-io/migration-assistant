@@ -129,7 +129,7 @@ def how_of(r: dict) -> str:
     """A translation row's How, in the guide's words."""
     if r["how"] == "retire":
         return "Retire"
-    if r["how"] == "needs an answer":
+    if r["how"] in ("needs an answer", "needs a model"):
         return "Open"
     if r["id"].startswith("vra") and r["how"] == "core task":
         return "Keep"                                     # vRA stays and keeps doing this
@@ -347,6 +347,8 @@ def _wf_counts(brief: dict) -> dict:
     c: dict[str, int] = {}
     for t in brief["triage"].values():
         o = t["outcome"]
+        if o == "Needs a model":
+            continue
         k = ("rebuilt" if o in ("Rebuild", "Manual") else "retired" if o == "Retire" else "convert")
         c[k] = c.get(k, 0) + 1
     return {k: c.get(k, 0) for k in ("convert", "rebuilt", "retired")}
@@ -750,8 +752,209 @@ def stand_in(brief: dict) -> str:
     return "Some answers and the signature here are a stand-in's, not the customer's." if inp.get("stand_in") else ""
 
 
+def no_model(brief: dict) -> bool:
+    """The run had no model for most workflows: the verdicts, the plan and the defects wait on one."""
+    return (brief.get("recommendation") or {}).get("verdict") == "needs a model"
+
+
+def _sources(assess: dict) -> tuple[str, int]:
+    ins = (assess.get("inputs") or {}).get("export_inputs") or {}
+    n_pkg = sum(1 for p in ins.values() if str(p).endswith(".package")) or len(ins)
+    n_vra = len((assess.get("entry_points") or {}).get("exports") or [])
+    pkg = "package" if all(str(p).endswith(".package") for p in ins.values()) else "export"
+    return f"{n_pkg} vRO {_s(n_pkg, pkg)}" + (f" and {n_vra} vRA {_s(n_vra, 'export')}" if n_vra else ""), n_vra
+
+
+def _started_by(w: dict, names: dict) -> str:
+    """What starts one workflow, in plain words, from the vRA export and the call graph."""
+    eps = w.get("entry_points") or []
+    bits = []
+    for e in eps:
+        if e.get("kind") == "subscription":
+            bits.append(f"the event subscription “{e['name']}” on `{e.get('event_topic')}`"
+                        + (" (it waits for the workflow)" if e.get("blocking") else ""))
+        elif e.get("kind") in ("catalog item", "catalog_item"):
+            bits.append(f"the catalog item “{e['name']}”")
+        else:
+            bits.append(f"{(e.get('kind') or 'an entry point').replace('_', ' ')} “{e.get('name')}”")
+    callers = [names.get(u, u) for u in w.get("called_by") or []]
+    if callers:
+        bits.append("called by " + _and(sorted(callers)))
+    return _and(bits) if bits else "nothing in the export starts it or calls it"
+
+
+def _reach_words(t: dict) -> str:
+    r = t.get("reach")
+    if r == "plugin":
+        grp = (t.get("kestra_group") or "").rsplit(".", 1)[-1]
+        return (f"Kestra's {grp.upper() if len(grp) <= 3 else grp.title()} plugin" if grp else "a Kestra plugin") \
+            + (" (Enterprise)" if t.get("enterprise_only") else "")
+    return {"http": "HTTP calls on its REST API (no plugin)", "replace": "nothing to call: Kestra keeps this itself",
+            "none": "no route found yet"}.get(r or "none", r or "")
+
+
+def document_no_model(assess: dict, brief: dict) -> list[tuple]:
+    """The front page of a run with no model: everything the code found, in full, and one plain line where a
+    verdict needs a model. No recommendation and no plan: both follow from verdicts this run could not make."""
+    from kestra_migration_assistant.config import LANDING_PAGE
+    st = S.status_of(brief)
+    est = C.ESTATE or brief.get("estate") or "vRO"
+    wf = assess["workflows"]
+    names = {u: w["name"] for u, w in wf.items()}
+    c = assess["counts"]
+    src, n_vra = _sources(assess)
+    targets = assess["targets"]
+    actions = {a["key"]: a for a in assess["actions"]}
+    atri = brief.get("action_triage") or {}
+    tri = brief["triage"]
+    n_model = sum(1 for t in tri.values() if t["outcome"] == "Needs a model")
+    B: list[tuple[str, Any]] = [
+        ("h1", f"Migration brief: {est}"),
+        ("p", f"What the code found in the {est} export, read on this machine from {src} on "
+              f"{_date(brief['generated'])}. This run used no model, so everything below comes from the code itself. "
+              f"It is Stage 1 of the [vRA migration guide]({GUIDE}), without the verdicts."),
+        ("status", {"head": "Next step: run it again with a model.",
+                    "body": f"What each of the {word(n_model)} {_s(n_model, 'workflow')} does, its possible defects, "
+                            "and whether to convert or rebuild it need a model. Everything else is below.",
+                    "cls": "todo", "stand_in": stand_in(brief)})]
+
+    B += [("h2", "What's in this estate"), ("p", estate_paragraph(assess, brief)),
+          ("p", f"{cap(word(c['workflows']))} {_s(c['workflows'], 'workflow')} and {word(c['actions'])} "
+                f"{_s(c['actions'], 'action')}, with {c['script_lines_workflows'] + c['script_lines_actions']} lines "
+                f"of script; {word(c['config_elements'])} configuration {_s(c['config_elements'], 'element')} and "
+                f"{word(c['resource_elements'])} resource {_s(c['resource_elements'], 'element')}.")]
+
+    order = sorted(wf, key=lambda u: wf[u]["name"].lower())
+    started = [f"**{wf[u]['name']}**: {_started_by(wf[u], names)}." for u in order]
+    B += [("h2", "What starts each workflow"), ("ul", started[:CAPS["rows"]]
+           + ([f"{len(started) - CAPS['rows']} more on the workflows page."] if len(started) > CAPS["rows"] else []))]
+    model = (assess.get("entry_points") or {}).get("model") or {}
+    if n_vra:
+        cats, subs = model.get("catalog_items") or [], model.get("subscriptions") or []
+        B.append(("p", f"The vRA export has {word(len(cats))} catalog {_s(len(cats), 'item')} and {word(len(subs))} "
+                       f"event {_s(len(subs), 'subscription')}. [The vRA flow](vra.html) draws how a request reaches "
+                       "each workflow."))
+    else:
+        B.append(("p", "No vRA export was read, so what starts each workflow comes from the call graph alone. "
+                       "INPUTS.md says how to add the vRA export."))
+
+    called = {k for u in wf for a in wf[u]["called_actions"] if a.get("in_export") for k in a.get("keys") or []}
+    shared = sorted(k for k in called if len({u for u in wf for a in wf[u]["called_actions"]
+                                               if k in (a.get("keys") or [])}) > 1)
+    unused = sorted(k for k, a in actions.items() if not a["called_by_workflows"] and not a["called_by_actions"]
+                    and not a.get("referenced_by_forms"))
+    nested = sum(len(w["nested"]) for w in wf.values())
+    unexp = len(assess.get("unexported_calls") or [])
+    calls = []
+    for u in order:
+        w = wf[u]
+        sysn = sorted({tname(targets[t]) for t in w["targets"] if t in targets and t not in ("vro-platform",)})
+        k = len({x for a in w["called_actions"] for x in (a.get("keys") or [a.get("action")])})
+        calls.append(f"**{w['name']}** calls {word(k)} {_s(k, 'action')}"
+                     + (f" and {word(len(w['nested']))} {_s(len(w['nested']), 'workflow')}" if w["nested"] else "")
+                     + (f", and reaches {_and(sysn)}" if sysn else ", and reaches no external system") + ".")
+    B += [("h2", "What calls what"),
+          ("p", f"The workflows call {word(len(called))} of the {word(c['actions'])} actions directly"
+                + (f"; {word(len(shared))} of them are shared by more than one workflow" if shared else "")
+                + (f"; {word(len(unused))} {_s(len(unused), 'action is', 'actions are')} called by nothing" if unused
+                   else "")
+                + (f". Workflows call other workflows {word(nested)} {_s(nested, 'time')}" if nested else "")
+                + (f", and {word(unexp)} {_s(unexp, 'call goes', 'calls go')} to something not in the export"
+                   if unexp else "") + ". [The call graph](call-graph.html) shows every call."),
+          ("ul", calls[:CAPS["rows"]] + ([f"{len(calls) - CAPS['rows']} more on the call graph."]
+                                         if len(calls) > CAPS["rows"] else []))]
+
+    ext = [k for k in _order_targets(assess, brief, list(targets)) if k != "vro-platform"]
+    rows = [[tname(targets[k]), _reach_words(targets[k]),
+             f"{len(targets[k]['operations'])} ({targets[k]['reads']} read, {targets[k]['writes']} write)",
+             str(len(targets[k]["workflows"]))] for k in ext]
+    snap = ((assess.get("plugin_coverage") or {}).get("snapshot") or {})
+    B.append(("h2", "Systems and the Kestra plugins that cover them"))
+    if rows:
+        B.append(("table", (["System", "How Kestra reaches it", "Operations", "Workflows"], rows)))
+    B.append(("p", (f"{cap(word(len(ext)))} external {_s(len(ext), 'system')}. " if ext else
+                    "The workflows reach no external system. ")
+              + ("vRO's own state, settings and templates move to Kestra's KV store, variables, secrets and "
+                 "namespace files. " if "vro-platform" in targets else "")
+              + (f"Checked against the Kestra plugin catalog of {_date(snap['taken'])}, bundled with this tool. "
+                 if snap.get("taken") else "")
+              + "[Plugin coverage](plugins.html) lists every operation."))
+
+    lib: dict[str, list[str]] = {}
+    for k, t in atri.items():
+        if t["outcome"] == "Plugin-covered library":
+            a = actions.get(k) or {}
+            # a helper of a client goes with the client: the system of the actions that call it
+            sysk = a.get("library_for") or sorted({x for c_ in a.get("called_by_actions") or []
+                                                    for x in (actions.get(c_) or {}).get("library_for") or []})
+            for s_ in sysk[:1] or ["other"]:
+                lib.setdefault(s_, []).append(a.get("name") or k)
+    B.append(("h2", "Libraries a plugin replaces"))
+    if lib:
+        B.append(("ul", [f"{cap(word(len(v)))} {tname(targets[k]) + ' client' if k in targets else 'client'} "
+                         f"{_s(len(v), 'action')} ({_capped(sorted(v), 4, 'more')}): "
+                         f"{_reach_words(targets[k]) if k in targets else 'a Kestra plugin'} does this work, so "
+                         f"{'it is' if len(v) == 1 else 'they are'} not converted." for k, v in sorted(lib.items())]))
+    else:
+        B.append(("p", "None: no action here is a client for a system a Kestra plugin covers. Client code for a system "
+                       "with no plugin is converted to HTTP calls, as the table above says."))
+
+    dup = [u for u in order if tri[u]["outcome"] == "Near-duplicate"]
+    wrap = [u for u in order if tri[u]["outcome"] == "Wrapper"]
+    wrap_a = [k for k, t in atri.items() if t["outcome"] == "Wrapper"]
+    same = [a for a in actions.values() if a.get("same_code_as")]
+    shapes = [cl for cl in assess["clusters"] if cl["size"] > 1]
+    B.append(("h2", "Near-duplicates and wrappers"))
+    items = []
+    if dup:
+        items.append(f"{cap(word(len(dup)))} near-{_s(len(dup), 'duplicate')}: "
+                     + _and([f"{wf[u]['name']} (of {wf.get(tri[u]['evidence'].get('first_of_a_kind'), {}).get('name', '?')})"
+                             for u in dup[:CAPS['rows']]]) + ". Each is made from its first of a kind, not converted.")
+    for cl in shapes[:CAPS["domains"]]:
+        items.append(f"{cap(word(cl['size']))} workflows share one shape: "
+                     + _capped(sorted(wf[u]["name"] for u in cl["members"] if u in wf), 4, "more")
+                     + f". Converting {wf[cl['first_of_a_kind']]['name']} first shows how to do the rest.")
+    if wrap or wrap_a:
+        items.append(_and(([f"{word(len(wrap))} wrapper {_s(len(wrap), 'workflow')} ({_capped([wf[u]['name'] for u in wrap], 4, 'more')})"]
+                           if wrap else [])
+                          + ([f"{word(len(wrap_a))} wrapper {_s(len(wrap_a), 'action')}"] if wrap_a else []))
+                     .capitalize() + ": each only calls something else, and its callers call that directly.")
+    if same:
+        items.append(f"{cap(word(len(same)))} {_s(len(same), 'action has', 'actions have')} the same code as another.")
+    if items:
+        B.append(("ul", items))
+    else:
+        B.append(("p", "None found: every workflow and action has logic of its own, and none only calls another."))
+
+    B += [("h2", "What a model adds"),
+          ("p", "A model reads each workflow's code and writes down what it does. From that come the three things this "
+                "run leaves open: what each workflow does, its possible defects, and whether to convert or rebuild it. "
+                "The recommendation and the migration plan in waves follow from those verdicts."),
+          ("ul", [f"**Run it again with a model.** From the folder that holds {est}: `kestra-migrate vra run {est}`. "
+                  "It uses your Claude Code login if `claude` is installed and logged in, or an Anthropic API key in "
+                  "ANTHROPIC_API_KEY, and `kestra-migrate init` sets up another model. What this run found is kept.",
+                  f"**Get help from Kestra.** [We can help you run it, or run it for you]({LANDING_PAGE})."])]
+
+    nd = needs(assess, brief, st)
+    if nd:
+        B += [("h2", "What we need from you"), ("ul", nd),
+              ("p", "Each one is a question in `your-input/answers.yaml`. Where the code points to an answer, it's "
+                    "under `suggested`: write yes to take it.")]
+
+    B.append(("h2", "Where to check"))
+    where = ([("vra.html", "The vRA flow", "how a request reaches each workflow")] if n_vra else []) + [
+        ("call-graph.html", "The call graph", "which workflow calls which action"),
+        ("plugins.html", "Plugin coverage", "every system, its operations and the Kestra plugin for each"),
+        ("workflows/index.html", "Workflows", "each workflow's flowchart and what it calls"),
+        ("reports/index.html", "All reports", "every other page, the explorer among them")]
+    B.append(("ul", [f"[{t}]({h}): {d}." for h, t, d in where]))
+    return B
+
+
 def document(assess: dict, brief: dict) -> list[tuple]:
     """The front page as blocks: ("h1"|"h2"|"p"|"ul"|"table"|"kpis"|"status"|"sub", content)."""
+    if no_model(brief):
+        return document_no_model(assess, brief)
     st = S.status_of(brief)
     num = (brief.get("translation") or {}).get("number") or {}
     est = C.ESTATE or brief.get("estate") or "vRO"
@@ -871,7 +1074,8 @@ def page(assess: dict, brief: dict, pre: dict) -> str:
             head, rows = x
             parts.append('<div class="scroll"><table><tr>' + "".join(f"<th>{C.esc(h)}</th>" for h in head) + "</tr>"
                          + "".join("<tr>" + "".join(
-                             (f'<td><span class="status {HOW_CLASS.get(c, "todo")}">{C.esc(c)}</span></td>' if j == 2 and c
+                             (f'<td><span class="status {HOW_CLASS.get(c, "todo")}">{C.esc(c)}</span></td>'
+                              if j == 2 and c and head[2] == "How"
                               else f'<td class="num">{C.esc(c)}</td>' if j == 3 else f"<td>{_inline(c)}</td>")
                              for j, c in enumerate(r)) + "</tr>" for r in rows) + "</table></div>")
     parts.append('<p class="sub"><a href="BRIEF.md">Download the brief</a> (Markdown).</p>')
@@ -949,7 +1153,7 @@ def workflows_index(assess: dict, brief: dict) -> str:
         f'<td>{TH.outcome_badge(tri[u]["outcome"])}</td>'
         f'<td>{("Wave " + str(wave_of[u])) if u in wave_of else ("blocked" if u in blocked else "not in a wave")}</td>'
         f'<td class="num">{w["script_lines"]}</td><td class="num">{ndef.get(w.get("short"), 0)}</td>'
-        f'<td>{C.esc(w.get("spec_confidence") or "no spec")}</td></tr>'
+        f'<td>{C.esc(w.get("spec_confidence") or "needs a model")}</td></tr>'
         for u, w in sorted(wf.items(), key=lambda kv: kv[1]["name"]))
     body = (f"<h1>Workflows ({len(wf)})</h1><p>Each workflow's spec, flowchart and possible defects, one page "
             "each.</p>"

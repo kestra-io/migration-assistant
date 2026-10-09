@@ -459,6 +459,11 @@ def waves(assess, brief) -> str:
     by_design = [f"{len(nw[k])} {what}" for k, what in (("Wrapper", "wrappers, whose callers call what they wrap"),
                                                          ("Rebuild", "workflows rebuilt for Kestra"),
                                                          ("Retire", "workflows to retire")) if nw.get(k)]
+    n_un = len(nw.get("Needs a model") or [])
+    unjudged = (f"<p>{n_un} workflow{'s are' if n_un != 1 else ' is'} not in a wave yet: what "
+                f"{'each does' if n_un != 1 else 'it does'} and whether to convert or rebuild "
+                f"{'it' if n_un == 1 else 'each'} need a model, and the wave follows from that. Run "
+                "<code>kestra-migrate vra run</code> again with a model.</p>" if n_un else "")
     met = sum(1 for w in plan["waves"] for e in w["entry_criteria"] if e["status"] == "done")
     total = sum(len(w["entry_criteria"]) for w in plan["waves"])
     body = f"""
@@ -472,6 +477,7 @@ entry criteria are met ({met} of {total} today). Each open one names the key in
 {"".join(rows)}
 {blocked_part}
 {f"<p class='sub'>Not in a wave by design: {C.esc(', '.join(by_design))}.</p>" if by_design else ""}
+{unjudged}
 """
     return TH.page("Waves", body, mermaid=True, active="waves.html")
 
@@ -839,6 +845,19 @@ def workflow_page(u: str, assess: dict, brief: dict) -> str:
         outcome = C.esc(brief['triage'][n['target_uid']]['outcome']) if n.get('target_uid') in brief['triage'] else ''
         return f"<tr><td>{C.esc(n['item'])}</td><td>{called}</td><td>{in_export}</td><td>{outcome}</td></tr>"
     nested_rows = "".join(nested_row(n) for n in w['nested']) or "<tr><td colspan=4>none</td></tr>"
+    if sp.get("purpose"):
+        cov_txt = f", and {len(cov_q)} asked once by a decision" if cov_q else ""
+        purpose_html = (f'<p class="sub">From the spec (<a href="../../data/2-understand/{u}.json">the spec file</a>), '
+                        f"model-written.</p>\n<p>{C.esc(sp['purpose'])}</p>\n"
+                        f'<h3>Decisions</h3><ul>{decisions or "<li>none</li>"}</ul>\n'
+                        f'<h3>Open questions ({len(asked)}{cov_txt})</h3><ul>{qs or "<li>none</li>"}</ul>\n'
+                        f'<h3 id="defects">Possible defects ({len(mine)})</h3><ul>{defects or "<li>none</li>"}</ul>\n'
+                        f'<p class="sub">Review this spec in <code>your-input/answers.yaml</code> → '
+                        f"<code>spec.{C.esc(w.get('short') or u)}</code>.</p>")
+    else:
+        purpose_html = ("<p>What this workflow does, its possible defects, and whether to convert or rebuild it need a "
+                        "model. Run <code>kestra-migrate vra run</code> again with one, and its spec is written "
+                        "here.</p>")
     body = f"""
 <p class="sub"><a href="../index.html">Brief</a> / <a href="index.html">Workflows</a> / {C.esc(dom['name'])} / {C.esc(w['cluster'])}</p>
 <h1>{C.esc(w['name'])}</h1>
@@ -862,12 +881,7 @@ that is not in the export.</p>
 </div>
 <div>
 <h2>Purpose</h2>
-<p class="sub">From the spec (<a href="../../data/2-understand/{u}.json">the spec file</a>), model-written.</p>
-<p>{C.esc(sp.get('purpose') or 'no spec')}</p>
-<h3>Decisions</h3><ul>{decisions or "<li>none</li>"}</ul>
-<h3>Open questions ({len(asked)}{f", and {len(cov_q)} asked once by a decision" if cov_q else ""})</h3><ul>{qs or "<li>none</li>"}</ul>
-<h3 id="defects">Possible defects ({len(mine)})</h3><ul>{defects or "<li>none</li>"}</ul>
-<p class="sub">Review this spec in <code>your-input/answers.yaml</code> → <code>spec.{C.esc(w.get('short') or u)}</code>.</p>
+{purpose_html}
 <h3>Called by</h3><p>{callers}</p>
 <h3>Started from outside vRO by</h3><p>{eps}</p>
 <h3>Source</h3><p class="sub"><code>{C.esc(w['file'])}</code></p>

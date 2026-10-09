@@ -663,7 +663,7 @@ def run_estate() -> dict:
                                     "generated": C.now(), "model": M_.settings().model,
                                     "context": PROMPT_CONTEXT}
     elif missing:
-        errors = {u: ("no spec and --no-model" if u not in stale else f"spec is stale ({stale_why[u]}); kept, "
+        errors = {u: ("needs a model: this run has none" if u not in stale else f"spec is stale ({stale_why[u]}); kept, "
                       "since --no-model") for u in missing}
     generated = 0 if os.environ.get("VRO_NO_MODEL") else \
         sum(1 for u in missing if os.path.exists(os.path.join(C.SPEC_DIR, f"{u}.json")) and u not in errors)

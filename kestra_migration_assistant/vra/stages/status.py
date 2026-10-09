@@ -52,13 +52,18 @@ def status_of(brief: dict) -> dict:
     signed = bool(sign.get("signed"))
     n_open = len(keys_open)
     order = " ".join(f"{w} starts once {_and(ds)} {'is' if len(ds) == 1 else 'are'} done." for w, ds in after.items())
-    if blocking:
+    if (brief.get("recommendation") or {}).get("verdict") == "needs a model":
+        line = ("Next step: run it again with a model. This run had none, so what each workflow does, its possible "
+                "defects, and whether to convert or rebuild it are not judged yet.")
+    elif blocking:
         k = len(blocking)
         line = (f"Next step: answer {k} open item{'s' if k != 1 else ''}, then run vro2k again. "
                 f"{'They hold' if k != 1 else 'It holds'} {_and(blocks)}"
                 + (f"; {n_open - k} more block nothing" if n_open > k else "") + ".")
     elif blocks:
         line = f"Next step: nothing from you yet. {_and(blocks)} cannot start until the earlier waves have run."
+    elif not brief["plan"]["waves"]:
+        line = "Next step: no wave can start yet. The waves page says what each workflow waits on."
     elif not signed:
         line = ("Ready to sign." + (f" Once signed, {_and(start)} can start." if start else "")
                 + (f" {order}" if order else "")
@@ -200,6 +205,9 @@ def collect() -> dict:
         if c.get("Needs owner input"):
             todo.append(f"Answer the questions holding {c['Needs owner input']} Needs owner input workflow(s) "
                         "(their wave's entry criteria, on the waves page)")
+        if c.get("Needs a model"):
+            todo.append(f"Run again with a model: what {c['Needs a model']} workflow(s) do, their possible defects "
+                        "and whether to convert or rebuild them need one")
         if c.get("Manual"):
             todo.append(f"Plan the hand rewrite of {c['Manual']} Manual workflow(s) (the waves page lists them)")
         nb = sum(1 for b in brief["plan"]["blocked"])

@@ -93,7 +93,8 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
     lifecycle_of = {u: g for g in assess.get("lifecycle_groups") or [] for u in g["members"]}
 
     # --- what is blocked, and on what -----------------------------------
-    manual = {u for u, t in triage.items() if t["outcome"] == "Manual"}
+    # held: work no wave can take yet, rewritten by hand or not judged without a model
+    manual = {u for u, t in triage.items() if t["outcome"] in ("Manual", "Needs a model")}
     blocked: dict[str, list[str]] = {}
     changed = True
     while changed:
@@ -105,17 +106,21 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
             if t["outcome"] == "Near-duplicate":
                 f = t["evidence"]["first_of_a_kind"]
                 if f in manual or f in blocked:
-                    why.append(f"its first of a kind {f} is {'Manual' if f in manual else 'blocked'}")
+                    why.append(f"its first of a kind {f} is {triage[f]['outcome'] if f in manual else 'blocked'}")
             bad_m = sorted(v for v in callees(u) if v in manual)
             bad_b = sorted(v for v in callees(u) if v in blocked)
-            if bad_m:
-                why.append(f"calls Manual work, rewritten by hand first: {', '.join(bad_m)}")
+            hand = [v for v in bad_m if triage[v]["outcome"] == "Manual"]
+            if hand:
+                why.append(f"calls Manual work, rewritten by hand first: {', '.join(hand)}")
+            if len(hand) < len(bad_m):
+                why.append("calls work that needs a model to judge: "
+                           + ", ".join(v for v in bad_m if v not in hand))
             if bad_b:
                 why.append(f"calls blocked work: {', '.join(bad_b)}")
             g = lifecycle_of.get(u)
             if g:
                 held = sorted(v for v in g["members"] if v != u and
-                              (triage[v]["outcome"] in ("Manual", "Rebuild") or v in blocked))
+                              (triage[v]["outcome"] in ("Manual", "Needs a model", "Rebuild") or v in blocked))
                 if held:
                     why.append(f"its deployment lifecycle group {g['id']} moves together, and "
                                + ", ".join(f"{v} is {'blocked' if v in blocked else triage[v]['outcome']}" for v in held))
@@ -448,7 +453,7 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
             "grouping": {"waved": len(waved), "budget": budget, "clusters": len(by_cluster),
                          "natural_groups": natural, "merges": merges},
             "not_waved": {o: sorted(u for u, t in triage.items() if t["outcome"] == o)
-                          for o in ("Wrapper", "Manual", "Rebuild", "Retire")},
+                          for o in ("Wrapper", "Manual", "Needs a model", "Rebuild", "Retire")},
             "rules": __doc__.strip()}
 
 
