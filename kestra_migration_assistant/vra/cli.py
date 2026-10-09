@@ -10,8 +10,7 @@ export skip the output folder, so the tool never reads its own output.
     kestra-migrate vra check-intake <path>                                  # reject an export that carries secrets
 
 For development, each stage also runs on its own (hidden from --help): preflight, sanitize, assess,
-understand, brief, visuals, and all (run without understand); and `use-sample <sample folder> <export folder>`
-copies a sample's export and seeds its saved model output.
+understand, brief, visuals, and all (run without understand).
 
 This module never imports an extension; `main(extensions=...)` is handed them by the caller. An extension
 is a module with `register(subparsers) -> {command: handler}`, and a handler takes the parsed arguments
@@ -21,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import sys
 import zipfile
 
@@ -30,53 +28,7 @@ from kestra_migration_assistant.vra.stages import common as C
 
 COMMANDS_SHOWN = ["run", "status", "check-intake"]
 STAGES = ["preflight", "sanitize", "assess", "understand", "brief", "visuals", "status", "all", "run"]
-COMMANDS = frozenset(["use-sample", "check-intake", *STAGES])
-
-
-def use_sample(sample: str, export_dir: str, force: bool) -> int:
-    """Copy a sample's export to `export_dir`, and seed its output folder with the sample's saved model output."""
-    src = os.path.abspath(sample)
-    if not os.path.isdir(src):
-        print(f"use-sample: no such folder: {sample}", file=sys.stderr)
-        return 2
-    dst = os.path.abspath(export_dir)
-    if os.path.exists(dst):
-        if not force:
-            print(f"use-sample: {export_dir} already exists; pass --force to replace it", file=sys.stderr)
-            return 1
-        shutil.rmtree(dst)
-    shutil.copytree(src, dst, symlinks=False, ignore=lambda d, names: [n for n in names if d == src and n in SAMPLE_EXTRAS])
-    seeded = seed_sample(src, os.path.join(dst, outdir.OUTPUT_DIRNAME))
-    print(f"[use-sample] copied {sample} to {export_dir}"
-          + (f"; seeded its output folder with {seeded} saved file(s) (specs, model-written names)" if seeded else "")
-          + f"; run `kestra-migrate vra run {export_dir}`")
-    return 0
-
-
-# What a sample carries besides its export. Neither is copied with the export: the export is the only input.
-# model-output/ is what the model wrote for the sample once (specs, cluster summaries, domain names,
-# walkthrough text), laid out like an output folder's data/, so a run on the sample needs no billed call;
-# WALKTHROUGH.md is a hand-written tour of the sample's results.
-SAMPLE_EXTRAS = ("model-output", "WALKTHROUGH.md")
-
-
-def seed_sample(src: str, stages_dir: str) -> int:
-    """Copy a sample's saved model output and walkthrough into its stage folder, never over a file there."""
-    n = 0
-    pairs = []
-    mo = os.path.join(src, "model-output")
-    for d, _, files in os.walk(mo):
-        for f in files:
-            # model-output/ is laid out like the stage folders (2-understand/ ...), which now sit in data/
-            pairs.append((os.path.join(d, f), os.path.join(stages_dir, "data", os.path.relpath(os.path.join(d, f), mo))))
-    if os.path.exists(os.path.join(src, "WALKTHROUGH.md")):
-        pairs.append((os.path.join(src, "WALKTHROUGH.md"), os.path.join(stages_dir, "WALKTHROUGH.md")))
-    for a, b in pairs:
-        if not os.path.exists(b):
-            os.makedirs(os.path.dirname(b), exist_ok=True)
-            shutil.copy2(a, b)
-            n += 1
-    return n
+COMMANDS = frozenset(["check-intake", *STAGES])
 
 
 def check_intake(path: str) -> int:
@@ -235,15 +187,11 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
     _export_args(sub.add_parser("status", help=HELP["status"], description=HELP["status"]), model=False)
     ci = sub.add_parser("check-intake", help=HELP["check-intake"], description=HELP["check-intake"])
     ci.add_argument("path", help="a .package, .workflow, ZIP or folder as received")
-    # For development: each stage on its own, and the samples. Not listed in --help (a parser added without
+    # For development: each stage on its own. Not listed in --help (a parser added without
     # help= has no line in the command list).
     for s in STAGES:
         if s not in ("run", "status"):
             _export_args(sub.add_parser(s))
-    us = sub.add_parser("use-sample")
-    us.add_argument("sample", help="a sample folder (samples/avi in the repository)")
-    us.add_argument("export", help="the export folder to create")
-    us.add_argument("--force", action="store_true", help="replace an existing export folder")
     handlers = {}
     for ext in extensions:
         for name, run in ext.register(sub).items():
@@ -255,8 +203,6 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
     if args.cmd in handlers:
         return handlers[args.cmd](args)
 
-    if args.cmd == "use-sample":
-        return use_sample(args.sample, args.export, args.force)
     if args.cmd == "check-intake":
         return check_intake(args.path)
 

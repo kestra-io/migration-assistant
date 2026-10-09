@@ -1,0 +1,7 @@
+{
+  "workflow_uid": "triage-Lab---Enable-Override",
+  "purpose": "Enables an override on one lab segment and waits for the task to finish.",
+  "confidence": "high",
+  "open_questions": [],
+  "external_systems": []
+}

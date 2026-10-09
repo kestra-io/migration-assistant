@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="createVRAPoolObj" result-type="Any" api-version="6.0.0" id="a5000000-0000-4000-8000-000000000001" version="1.0.0" allowed-operations="vef"><description/><param n="poolName" t="string"/><param n="members" t="Array/string"/><script encoded="false"><![CDATA[var pool = { name: poolName, members: [] };
+for (var i = 0; i < members.length; i++) {
+    pool.members.push({ ip: members[i], port: 80 });
+}
+return pool;]]></script></dunes-script-module>

@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="listControllers" result-type="Array/string" api-version="6.0.0" id="a5000000-0000-4000-8000-000000000002" version="1.0.0" allowed-operations="vef"><description/><script encoded="false"><![CDATA[return ["lab-ctl-a", "lab-ctl-b"];]]></script></dunes-script-module>

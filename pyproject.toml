@@ -12,6 +12,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Kestra Technologies" }]
 dependencies = ["PyYAML>=6.0"]
+
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
@@ -51,7 +52,7 @@ testpaths = ["tests"]
 [tool.ruff]
 target-version = "py310"
 line-length = 120
-extend-exclude = ["kestra_migration_assistant/vra/assets", "tests/conformance"]
+extend-exclude = ["kestra_migration_assistant/vra/assets", "tests/vra/conformance"]
 
 [tool.ruff.lint]
 # Defects, not style: pyflakes, pycodestyle errors, bugbear, import order, pyupgrade for 3.10, unused noqa.
@@ -66,7 +67,7 @@ ignore = ["E741", "E731", "UP031"]
 "kestra_migration_assistant/vra/stages/triage.py" = ["B023"]
 "kestra_migration_assistant/vra/stages/waves.py" = ["B023"]
 # Tests put the repository on sys.path before importing the package, for a run without an install.
-"tests/*" = ["E402"]
+"tests/**" = ["E402"]
 
 [tool.mypy]
 python_version = "3.10"

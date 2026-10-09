@@ -1,0 +1,7 @@
+{
+  "workflow_uid": "triage-Lab---Create-Tenant",
+  "purpose": "Creates a tenant: a one-line delegating call to Lab - Find or Create Tenant.",
+  "confidence": "high",
+  "open_questions": [],
+  "external_systems": []
+}

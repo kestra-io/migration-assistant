@@ -1,0 +1,7 @@
+{
+  "workflow_uid": "triage-Process-Tenant-Notification",
+  "purpose": "Handles a tenant notification from the lab portal: runs Lab - Create Tenant or Lab - Delete Tenant depending on the action type.",
+  "confidence": "high",
+  "open_questions": [],
+  "external_systems": []
+}

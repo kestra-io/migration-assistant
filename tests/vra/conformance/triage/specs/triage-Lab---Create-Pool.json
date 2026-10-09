@@ -1,0 +1,7 @@
+{
+  "workflow_uid": "triage-Lab---Create-Pool",
+  "purpose": "Builds a load balancer pool object, for consumption by vRealize Automation (vRA) as a day-1 action.",
+  "confidence": "high",
+  "open_questions": [],
+  "external_systems": []
+}

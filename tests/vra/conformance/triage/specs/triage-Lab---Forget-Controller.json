@@ -1,0 +1,7 @@
+{
+  "workflow_uid": "triage-Lab---Forget-Controller",
+  "purpose": "Removes a controller from the registry of controllers vRO keeps in a configuration element.",
+  "confidence": "high",
+  "open_questions": [],
+  "external_systems": []
+}

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workflow xmlns="http://vmware.com/vco/workflow" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://vmware.com/vco/workflow http://vmware.com/vco/workflow/Workflow-v4.xsd" root-name="item6" object-name="workflow:name=generic" id="e5000000-0000-4000-8000-000000000009" version="1.0.0" api-version="6.0.0" allowed-operations="vef" restartMode="1" resumeFromFailedMode="0">
+  <display-name><![CDATA[Lab - Run Remote Command]]></display-name>
+  <position y="50.0" x="100.0"></position>
+  <input>
+    <param name="hostName" type="string"></param>
+    <param name="port" type="number"></param>
+    <param name="cmd" type="string"></param>
+    <param name="username" type="string"></param>
+    <param name="passwordAuthentication" type="boolean"></param>
+    <param name="password" type="SecureString"></param>
+    <param name="path" type="Path"></param>
+    <param name="passphrase" type="SecureString"></param>
+  </input>
+  <output>
+    <param name="result" type="number"></param>
+    <param name="errorText" type="string"></param>
+    <param name="outputText" type="string"></param>
+  </output>
+  <attrib name="output" type="string" read-only="false"></attrib>
+  <attrib name="error" type="string" read-only="false"></attrib>
+  <attrib name="exitCode" type="number" read-only="false"></attrib>
+  <attrib name="logText" type="string" read-only="false"></attrib>
+  <attrib name="defaultKeyPairPath" type="Path" read-only="false"></attrib>
+  <workflow-item name="item2" out-name="item5" type="task">
+    <display-name><![CDATA[item2]]></display-name>
+    <script encoded="false"><![CDATA[var session = new SSHSession(hostName, username, port);
+session.connectWithPassword(password);
+session.executeCommand(cmd, true);
+output = session.getOutput();
+error = session.getError();
+exitCode = session.exitCode;
+session.disconnect();]]></script>
+    <in-binding><bind name="hostName" type="string" export-name="hostName"></bind><bind name="username" type="string" export-name="username"></bind><bind name="port" type="number" export-name="port"></bind><bind name="password" type="SecureString" export-name="password"></bind><bind name="cmd" type="string" export-name="cmd"></bind></in-binding>
+    <out-binding><bind name="output" type="string" export-name="output"></bind><bind name="error" type="string" export-name="error"></bind><bind name="exitCode" type="number" export-name="exitCode"></bind></out-binding>
+    <position y="55.0" x="204.5"></position>
+  </workflow-item>
+  <workflow-item name="item3" out-name="item2" alt-out-name="item4" type="condition" comparator="0">
+    <display-name><![CDATA[Password authentication?]]></display-name>
+    <in-binding><bind name="passwordAuthentication" type="boolean" export-name="passwordAuthentication"></bind></in-binding>
+    <condition name="passwordAuthentication" type="boolean" comparator="0">true</condition>
+    <position y="55.0" x="304.5"></position>
+  </workflow-item>
+  <workflow-item name="item4" out-name="item5" type="task">
+    <display-name><![CDATA[item4]]></display-name>
+    <script encoded="false"><![CDATA[var keyPath = path ? path : defaultKeyPairPath;
+var session = new SSHSession(hostName, username, port);
+session.connectWithPasswordOrIdentity(false, passphrase, keyPath);
+session.executeCommand(cmd, true);
+output = session.getOutput();
+error = session.getError();
+exitCode = session.exitCode;
+session.disconnect();]]></script>
+    <in-binding><bind name="hostName" type="string" export-name="hostName"></bind><bind name="username" type="string" export-name="username"></bind><bind name="port" type="number" export-name="port"></bind><bind name="passphrase" type="SecureString" export-name="passphrase"></bind><bind name="path" type="Path" export-name="path"></bind><bind name="defaultKeyPairPath" type="Path" export-name="defaultKeyPairPath"></bind><bind name="cmd" type="string" export-name="cmd"></bind></in-binding>
+    <out-binding><bind name="output" type="string" export-name="output"></bind><bind name="error" type="string" export-name="error"></bind><bind name="exitCode" type="number" export-name="exitCode"></bind></out-binding>
+    <position y="55.0" x="204.5"></position>
+  </workflow-item>
+  <workflow-item name="item5" out-name="item8" type="task">
+    <display-name><![CDATA[item5]]></display-name>
+    <script encoded="false"><![CDATA[result = exitCode;
+errorText = error;
+outputText = output;]]></script>
+    <in-binding><bind name="output" type="string" export-name="output"></bind><bind name="error" type="string" export-name="error"></bind><bind name="exitCode" type="number" export-name="exitCode"></bind></in-binding>
+    <out-binding><bind name="result" type="number" export-name="result"></bind><bind name="errorText" type="string" export-name="errorText"></bind><bind name="outputText" type="string" export-name="outputText"></bind></out-binding>
+    <position y="55.0" x="204.5"></position>
+  </workflow-item>
+  <workflow-item name="item6" out-name="item9" type="task">
+    <display-name><![CDATA[item6]]></display-name>
+    <script encoded="false"><![CDATA[if (!hostName) {
+    throw "no host name";
+}]]></script>
+    <in-binding><bind name="hostName" type="string" export-name="hostName"></bind></in-binding>
+    <out-binding></out-binding>
+    <position y="55.0" x="204.5"></position>
+  </workflow-item>
+  <workflow-item name="item8" type="end" end-mode="0">
+    <position y="45.0" x="384.5"></position>
+  </workflow-item>
+  <workflow-item name="item9" out-name="item3" type="task">
+    <display-name><![CDATA[item9]]></display-name>
+    <script encoded="false"><![CDATA[logText = "running on " + hostName + ": " + cmd;
+System.log(logText);]]></script>
+    <in-binding><bind name="hostName" type="string" export-name="hostName"></bind><bind name="cmd" type="string" export-name="cmd"></bind></in-binding>
+    <out-binding><bind name="logText" type="string" export-name="logText"></bind></out-binding>
+    <position y="55.0" x="204.5"></position>
+  </workflow-item>
+  <presentation>
+  </presentation>
+</workflow>
