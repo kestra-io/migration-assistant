@@ -51,12 +51,18 @@ def status_of(brief: dict) -> dict:
     sign = (inp.get("sign") or brief.get("approval") or {})
     signed = bool(sign.get("signed"))
     n_open = len(keys_open)
+    # a person counts the entries of answers.yaml, where a group of items is one entry
+    entries = inp.get("shown")
+    n_hold = len(blocking)
+    if entries is not None:
+        n_open = len(entries)
+        n_hold = sum(1 for x in entries if set(x["members"]) & blocking)
     order = " ".join(f"{w} starts once {_and(ds)} {'is' if len(ds) == 1 else 'are'} done." for w, ds in after.items())
     if (brief.get("recommendation") or {}).get("verdict") == "needs a model":
         line = ("Next step: run it again with a model. This run had none, so what each workflow does, its possible "
                 "defects, and whether to convert or rebuild it are not judged yet.")
     elif blocking:
-        k = len(blocking)
+        k = n_hold
         line = (f"Next step: answer {k} open item{'s' if k != 1 else ''}, then run `{C.run_command()}` again. "
                 f"{'They hold' if k != 1 else 'It holds'} {_and(blocks)}"
                 + (f"; {n_open - k} more block nothing" if n_open > k else "") + ".")
@@ -73,7 +79,7 @@ def status_of(brief: dict) -> dict:
         line = (f"Ready: {_and(start)} can start." if start else f"Signed for {scope}. Ready to convert.") \
             + (f" {order}" if order else "") + (" The signature covers Wave 1 only." if start and scope == "Wave 1"
                                                 and len(brief["plan"]["waves"]) > 1 else "")
-    return {"line": line, "blocking": sorted(blocking), "open": n_open, "blocks": blocks, "after": after,
+    return {"line": line, "blocking": sorted(blocking), "open": n_open, "holding": n_hold, "blocks": blocks, "after": after,
             "start": start, "order": order, "signed": signed}
 
 

@@ -111,7 +111,7 @@ def test_answers_yaml_lists_every_decision_with_options(estate):
     for k in asked:
         rec = G.entries(b["plan"])[k].get("recommended")
         e = Y.entry_of(d, k)
-        assert set(e) <= {"question", "suggested", "answer"} and e["question"] and e["answer"] is None, k
+        assert set(e) <= {"question", "suggested", "answer"} and e["question"] and e.get("answer") is None, k
         if rec:
             assert e["suggested"] == rec, k
         elif G.suggestion(G.entries(b["plan"])[k]) is None:
@@ -158,14 +158,15 @@ def test_a_rewrite_never_changes_an_answer(estate):
     first = sorted(G.entries(b["plan"]))[0]
     Y.set_answer(first, "my answer, said in the meeting:\n  two lines")
     d = _doc()
-    next(e for e in d["open"] + d["answered"] if e["id"] == first)["mine"] = "a field of my own"
+    next(e for _s, e in Y._walk(d) if e["id"] == first)["mine"] = "a field of my own"
     d["open"].append({"id": "gone.key", "question": "something", "answer": "an answer to something no longer asked"})
     open(C.ANSWERS, "w").write(yaml.safe_dump(d, sort_keys=False))
     estate()
     flat = _flat()
     assert flat[first]["answer"] == "my answer, said in the meeting:\n  two lines"
     assert flat[first]["mine"] == "a field of my own"
-    assert Y.section_of(_doc(), first) == "answered"
+    in_group = first in Y.load()["group_of"]                     # a member stays under its group, open or not
+    assert Y.section_of(_doc(), first) == ("open" if in_group else "answered")
     assert flat["gone.key"]["answer"] == "an answer to something no longer asked"
     assert flat["gone.key"]["question"] == "something"
     assert Y.section_of(_doc(), "gone.key") == "no_longer_asked"
@@ -239,6 +240,19 @@ def test_a_delete_path_step_does_not_run_the_create_cleanup():
     assert "15 min" in c["recommended"] and "cleanup" in c["recommended"]
 
 
+def _answer_everything():
+    """Answer every open entry as a person would: yes to the suggestions and the specs, keep all to each workflow's
+    defects, and a stand-in answer to everything asked one by one."""
+    for e in _doc()["open"] or []:
+        k = e["id"]
+        if "each" in e and "answer" not in e:
+            for m in e["each"]:
+                Y.set_answer(m["id"], "yes" if m.get("suggested") else "a stand-in answer")
+        else:
+            Y.set_answer(k, "keep all" if k.startswith("defects.") else
+                         "yes" if e.get("suggested") or k in ("suggested", "specs") else "a stand-in answer")
+
+
 def test_a_wave_exit_is_a_gate_the_migration_closes_not_an_open_item(estate):
     """Wave 2 (replacing vRA) runs Wave 1's flows. Wave 1's exit is not asked in answers.yaml and is not an open
     item; once every question is answered, the status line gives the order the waves run in instead."""
@@ -252,8 +266,7 @@ def test_a_wave_exit_is_a_gate_the_migration_closes_not_an_open_item(estate):
     st = S.status_of(b)
     assert st["blocking"] and not any("wave-exit" in k for k in st["blocking"])
     for _ in range(2):                                  # answering one item can ask another (Q3 names the systems)
-        for e in _doc()["open"] or []:
-            Y.set_answer(e["id"], "yes" if e.get("suggested") else "a stand-in answer")
+        _answer_everything()
         b, md = estate()
     assert _doc()["open"] == []
     st = S.status_of(b)

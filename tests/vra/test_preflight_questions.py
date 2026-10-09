@@ -147,6 +147,6 @@ def test_your_input_holds_only_what_the_customer_needs(with_vra, without_vra):
     # without one: entry-points.yaml too, and exactly one open question points to it (Q2)
     assert sorted(os.listdir(os.path.join(without_vra["tmp"], "your-input"))) == ["answers.yaml", "entry-points.yaml"]
     doc = yaml.safe_load(without_vra["file"])
-    pointing = [e["id"] for e in doc["open"] if "entry-points.yaml" in e["question"]]
+    pointing = [k for k, e in Y.flat({"open": doc["open"]}).items() if "entry-points.yaml" in e["question"]]
     assert pointing == [P.answer_key("Q2")]
     assert "No vRA export was found" in Y.entry_of(doc, P.answer_key("Q2"))["question"]

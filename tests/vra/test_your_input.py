@@ -131,7 +131,7 @@ def test_a_file_in_the_old_format_is_carried_over(tmp_path):
     d = _doc()
     f = Y.flat(d)
     assert f["b"]["answer"] == "one" and f["c"]["answer"] == "two" and f["gone"]["answer"] == "kept anyway"
-    assert f["d"]["answer"] is None and f["d"]["suggested"] == "one"      # the tool's pre-fill, never confirmed
+    assert f["d"].get("answer") is None and f["d"]["suggested"] == "one"  # the tool's pre-fill, never confirmed
     assert f["a"]["answer"] is None and set(f["a"]) == {"question", "answer"}
     assert d["signed_for"] == "wave 1"
     assert open(os.path.join(C.DATA, "answers.yaml.before-2g")).read() == before

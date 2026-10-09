@@ -33,7 +33,7 @@ QUESTIONS: list[dict[str, Any]] = [
      "why": "Every count in Assess and Brief is only as complete as the export. A partial export hides callers and callees.",
      "read_by": ["assess: unexported calls", "brief: retire candidates, waves"]},
     {"id": "Q2", "topic": "external callers",
-     "question": "What starts these workflows from outside vRO? Two ways to answer, and they can be combined: put the vRA content export (a .vra-ng from Build Tools) in sources/<estate>/, and the tool reads its catalog items, cloud templates and event broker subscriptions; and list in your-input/entry-points.yaml whatever that export does not hold, or everything if there is no export: vRO scheduled tasks and policies, the ITSM (for example ServiceNow), and scripts calling the vRO REST API. Set complete: true there once the list is whole.",
+     "question": "What starts these workflows from outside vRO? Two ways to answer, and they can be combined: put the vRA content export (a .vra-ng from Build Tools) in the export folder, and the tool reads its catalog items, cloud templates and event broker subscriptions; and list in your-input/entry-points.yaml whatever that export does not hold, or everything if there is no export: vRO scheduled tasks and policies, the ITSM (for example ServiceNow), and scripts calling the vRO REST API. Set complete: true there once the list is whole.",
      "why": "None of these are in a vRO package. Without them every workflow nobody calls in the export looks like an entry point or dead code, and the two cannot be told apart.",
      "read_by": ["brief: retire pass, entry points, rebuild outcome"]},
     {"id": "Q3", "topic": "non-production targets",
@@ -43,19 +43,23 @@ QUESTIONS: list[dict[str, Any]] = [
     {"id": "Q4", "topic": "off limits",
      "question": "Is anything in this export off limits for this migration (owned by another team, frozen, vendor supplied, or due to be replaced)?",
      "why": "Off-limits workflows are dropped from the waves, and whatever calls them keeps a dependency on vRO.",
-     "read_by": ["brief: waves, blocked list"]},
+     "read_by": ["brief: waves, blocked list"],
+     "plain": "Is any of it off limits (another team's, frozen, vendor supplied, or being replaced)?"},
     {"id": "Q5", "topic": "prior attempts",
      "question": "Has anyone tried to migrate or rewrite any of this before? What happened?",
      "why": "A previous attempt usually found the hard part already. It belongs in the brief's risks.",
-     "read_by": ["brief: risks"]},
+     "read_by": ["brief: risks"],
+     "plain": "Has anyone tried to migrate or rewrite any of it before? What happened?"},
     {"id": "Q6", "topic": "owners",
      "question": "Who owns each functional area (for example load balancing, network provisioning, tenant onboarding)? Name a person or team per area.",
      "why": "Open questions, retire candidates and wave approvals need someone to answer them. The brief lists open questions by area.",
-     "read_by": ["brief: open questions, approval"]},
+     "read_by": ["brief: open questions, approval"],
+     "plain": "Who owns each functional area? A person or team for each."},
     {"id": "Q7", "topic": "execution history",
      "question": "Can you export twelve months of workflow run history (vRO workflow tokens, or the vRA deployment history), with workflow ID, start time and result?",
      "why": "The retire rule is 'no executions in twelve months'. Without history it cannot be tested, only guessed from the call graph.",
-     "read_by": ["brief: retire pass"]},
+     "read_by": ["brief: retire pass"],
+     "plain": "Can you export twelve months of run history: workflow, start time and result?"},
     {"id": "Q8", "topic": "plugin inventory",
      "question": "Which vRO plugins and versions are installed on each node, and are any custom or in-house plugins in use?",
      "why": "A plugin object type Kestra cannot reach blocks every workflow that uses it. The export only records plugins by name where dunes-meta-inf lists them.",
@@ -153,8 +157,8 @@ def questions_for(f: dict) -> list[dict]:
         q = dict(q)
         if q["id"] == "Q2" and not f.get("vra"):
             q["plain"] = ("No vRA export was found. What starts these workflows from outside vRO? List it in "
-                          "entry-points.yaml next to this file, or add the vRA export to the estate's folder in "
-                          "sources/ and run again.")
+                          "entry-points.yaml next to this file, or put the vRA export in the export folder and run "
+                          "again.")
         if q["id"] == "Q2" and f.get("vra"):
             v = f["vra"]
             got = ", ".join(x for x in (_n(v["catalog_items"], "catalog item"), _n(v["cloud_templates"], "cloud template"),
@@ -163,8 +167,8 @@ def questions_for(f: dict) -> list[dict]:
             q["question"] = ("What else starts these workflows from outside vRO, that a vRA export cannot hold: vRO "
                              "scheduled tasks and policies, the ITSM (for example ServiceNow), scripts or systems "
                              "calling the vRO REST API? Name them in the answer, or answer none.")
-            q["plain"] = ("Besides vRA, does anything start these workflows (vRO scheduled tasks or policies, an ITSM "
-                          "such as ServiceNow, scripts calling the vRO REST API)? Name them, or answer none.")
+            q["plain"] = ("Besides vRA, what starts these workflows (vRO schedules or policies, an ITSM, scripts on the "
+                          "vRO REST API)? Or none.")
             q["found"] = (f"the vRA export ({', '.join(v['exports'])}) was read: {got}. Its catalog items and "
                           "subscriptions are on record.")
         if q["id"] == "Q3" and f.get("systems"):

@@ -43,6 +43,7 @@ def input_items(specs: dict[str, dict | None], wf: dict) -> list[dict]:
                     question=f"Is the spec of {wf[u]['name']} right? (see its workflow page; answer yes, or say "
                              "what is wrong)")
         it["family_title"] = "Specs"
+        it["workflow"] = wf[u]["name"]
         out.append(it)
     return out
 
@@ -57,7 +58,7 @@ def load(specs: dict[str, dict | None], wf: dict, loaded: dict | None = None) ->
     out = {"path": loaded["path"], "exists": loaded["exists"], "by_uid": {}, "warnings": []}
     for u, s in specs.items():
         key = G.review_key(wf[u]["short"])
-        if key not in loaded["entries"]:
+        if key not in loaded["entries"] and Y.via_group(key, loaded) is None:
             continue
         st = Y.state(key, loaded, {"group": "review", "fixed": {"spec": fingerprint(s)}})
         if not s and st["state"] != "open":

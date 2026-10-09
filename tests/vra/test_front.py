@@ -88,15 +88,15 @@ def test_the_front_page_follows_the_guides_order(which, request):
     page = r["page"]
     main = page.split("<main>", 1)[1]
     assert main.lstrip().startswith("<h1>Migration brief: large</h1>")
-    assert "This is Stage 1 of the" in r["text"] and 'href="https://kestra.io/resources/migration/vra"' in page
+    assert "Stage 1 of the" in r["text"] and 'href="https://kestra.io/resources/migration/vra"' in page
     assert re.search(r'class="panel statusbox"><p class="headline"><span class="status [a-z]+">(Next step: |Ready: |Ready to '
                      r'sign|Signed, ready)', main)
     secs = _sections(page)
     assert secs[0] == "What's in this estate" and secs[1].startswith("The recommendation: ")
     assert secs[1].split(": ", 1)[1] in ("convert", "a mix", "rebuild")
-    assert secs[2:] == ["What we need from you", "The plan", "Where to check"]
+    assert secs[2:] == ["What we need from you", "The plan"]           # the navigation is where to check
     assert "have a path to Kestra" in r["text"] and "are ready now" in r["text"]
-    assert "**Direct**" not in page and "<strong>Direct</strong> means" in page
+    assert "**Direct**" not in page and "<strong>Direct</strong> converts one for one" in page
 
 
 @pytest.mark.parametrize("which", ["big", "small"])
@@ -149,19 +149,19 @@ def test_the_status_box_and_the_list_agree_on_what_blocks(which, request):
     st = S.status_of(r["brief"])
     m = re.search(r"Next step: answer (\d+) open items?", r["text"])
     if st["blocking"]:
-        assert m and int(m.group(1)) == len(st["blocking"])
+        # the status box counts the entries of answers.yaml that hold a wave (a group is one entry) ...
+        held = [x for x in r["brief"]["input"]["shown"] if set(x["members"]) & set(st["blocking"])]
+        assert m and int(m.group(1)) == len(held) == st["holding"]
+        # ... and the list says the same: one line per entry, the possible defects one line for every workflow
         needs = r["page"].split("<h2>What we need from you</h2>", 1)[1].split("</ul>", 1)[0]
-        items = re.findall(r"<li>(.*?)</li>", needs, re.S)
-        nums = []
+        items = [it for it in re.findall(r"<li>(.*?)</li>", needs, re.S) if "Nothing waits on these" not in it]
+        from kestra_migration_assistant.vra.stages.front import WORDS
+        back = {v: k for k, v in WORDS.items()}
+        n = 0
         for it in items:
-            if "block anything yet" in it:
-                continue
-            m2 = re.search(r"<strong>(?:The )?(\w+)", it)
-            w = m2.group(1).lower()
-            from kestra_migration_assistant.vra.stages.front import WORDS
-            back = {v: k for k, v in WORDS.items()}
-            nums.append(int(w) if w.isdigit() else back.get(w, 1))
-        assert sum(nums) == len(st["blocking"]), (nums, items)
+            d = re.search(r"in (\w+) workflows?, one entry per workflow", it)
+            n += (int(d.group(1)) if d.group(1).isdigit() else back[d.group(1)]) if d else 1
+        assert n == len(held), (n, items)
     else:
         assert not m
 

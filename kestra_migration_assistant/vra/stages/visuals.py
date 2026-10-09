@@ -820,7 +820,10 @@ def workflow_page(u: str, assess: dict, brief: dict) -> str:
     mine = [x for x in brief.get("suspected_defects") or [] if x["workflow"] == u]
     defects = "".join(f"<li>{C.esc(x['what'])} <span class='muted'>Evidence: {C.esc(x.get('evidence') or '')}</span>"
                       + (f"<br>{C.esc(x['question'])}" if x.get("question") else "")
-                      + f" <span class='muted'>Keep or fix: <code>{C.esc(x['decision'])}</code></span></li>"
+                      + (" <span class='muted'>Asked once, in the certificate decisions: "
+                         + ", ".join(f"<code>{C.esc(k)}</code>" for k in x["covered_by"]) + "</span></li>"
+                         if x.get("covered_by") else
+                         f" <span class='muted'>Keep or fix: <code>{C.esc(x['decision'])}</code></span></li>")
                       for x in mine)
     decisions = "".join(f"<li><b>{C.esc(d['item'])}</b>: {C.esc(d['condition'])}</li>" for d in sp.get("decisions", []))
     callers = ", ".join(f'<a href="{href(x, "")}">{C.esc(nm(x))}</a>' if x in assess["workflows"] else C.esc(x)
