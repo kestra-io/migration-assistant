@@ -469,70 +469,64 @@ def _short_defect(brief: dict) -> str:
 
 
 def needs(assess: dict, brief: dict, st: dict) -> list[str]:
-    """What we need from you, grouped by kind, blocking first: a short list of Markdown lines."""
+    """What we need from you: one line per open entry of answers.yaml (a group is one entry), those that hold a
+    wave first. Possible defects are one line for every workflow that has them."""
     inp = brief.get("input") or {}
-    items = [it for g in ("confirm", "answer", "review") for f in ((inp.get(g) or {}).get("families") or {}).values()
-             for it in f["open"]]
+    shown = inp.get("shown") or []
     blocking = set(st.get("blocking") or [])
-    blk = [it for it in items if it["key"] in blocking]
-    rest = [it for it in items if it["key"] not in blocking]
-    by: dict[str, list] = {}
-    for it in blk:
-        f = _fam(it["key"])
-        kind = ("defect" if f == "defect" else "endpoint" if f == "endpoint" else "reach" if f in REACH else
-                "build" if f in VRA_BUILD else "plan" if f in PLAN else
-                "review" if f == "spec" else "question")
-        by.setdefault(kind, []).append(it)
     targets = assess["targets"]
-    out = []
-    if by.get("defect"):
-        n = len(by["defect"])
-        ex = _short_defect(brief)
-        out.append(f"**{cap(word(n)) if n <= 10 else n} possible {_s(n, 'defect')}** to confirm or fix. "
-                   f"{'These are behaviors' if n != 1 else 'This is a behavior'} in the code that "
-                   f"{'look' if n != 1 else 'looks'} unintended." + (f" For example, {ex}." if ex else "")
-                   + f" The conversion either keeps or fixes {'each one' if n != 1 else 'it'}, so it needs your call. "
-                   f"{'Each is' if n != 1 else 'It is'} on [its workflow's page](workflows/index.html).")
-    if by.get("endpoint"):
-        ts = [k.split(".", 1)[1] for k in (i["key"] for i in by["endpoint"])]
-        names = [tname(targets[t]) for t in _order_targets(assess, brief, [t for t in targets if _kp(t) in ts])]
-        n = len(ts)
-        out.append(f"**The {word(n) + ' ' if n > 1 else ''}{_s(n, 'endpoint')}:** the non-production "
-                   f"{_and(names) or 'instances'} {_s(n, 'instance')}, and the secrets the flows will use.")
-    for kind, table, title in (("reach", REACH, "how the flows reach your systems"),
-                               ("build", VRA_BUILD, "building machines without vRA"),
-                               ("plan", PLAN, "the plan")):
-        xs = by.get(kind) or []
-        if not xs:
+    by_kp = {_kp(t): tname(x) for t, x in targets.items()}
+    phrase = {**REACH, **PLAN, **QUESTION, **VRA_BUILD}
+
+    def holds(x: dict) -> bool:
+        return bool(set(x["members"]) & blocking)
+
+    out: list[tuple[bool, str]] = []
+    defects = [x for x in shown if x["id"].startswith(("defects.", "defect."))]
+    for x in shown:
+        k, ms = x["id"], x["members"]
+        n = len(ms)
+        if x in defects:
+            if x is not defects[0]:
+                continue
+            total = sum(len(d["members"]) for d in defects)
+            nw = len({d["id"].split(".")[1] for d in defects})
+            out.append((any(holds(d) for d in defects),
+                        f"**{cap(word(total)) if total <= 10 else total} possible {_s(total, 'defect')}** in "
+                        f"{word(nw)} {_s(nw, 'workflow')}, one entry per workflow: keep them, fix them, or decide "
+                        "each. They are on [each workflow's page](workflows/index.html)."))
             continue
-        seen, says = set(), []
-        for it in xs:
-            f = _fam(it["key"])
-            p = table.get(f, f.replace("-", " "))
-            if p not in seen:
-                seen.add(p)
-                says.append(p)
-        n = len(xs)
-        t = title if kind != "build" or all(_fam(i["key"]) in ("mappings", "ip-allocation", "day2-scale", "gap")
-                                            for i in xs) else "replacing vRA"
-        out.append(f"**{cap(word(n))} {_s(n, 'answer')} on {t}:** "
-                   + _clauses(says if len(says) <= 4 else says[:3] + [f"{len(says) - 3} more"]) + ".")
-    if by.get("review"):
-        n = len(by["review"])
-        out.append(f"**{cap(word(n))} spec {_s(n, 'review')}:** read each workflow's spec and say whether it is right.")
-    if by.get("question"):
-        n = len(by["question"])
-        qs = [QUESTION.get(_fam(i["key"])) for i in by["question"] if QUESTION.get(_fam(i["key"]))]
-        out.append(f"**{cap(word(n))} {_s(n, 'question')} on how the workflows behave**"
-                   + (f", such as {qs[0]}" if qs else "") + ".")
-    if rest:
-        n = len(rest)
-        order = list(QUESTION)
-        exs = sorted((i for i in rest if _fam(i["key"]) in QUESTION), key=lambda i: order.index(_fam(i["key"])))
-        ex_p = QUESTION[_fam(exs[1 if len(exs) > 1 and _fam(exs[0]["key"]) == "q1-scope" else 0]["key"])] if exs else ""
-        out.append(f"**{cap(word(n))} {_s(n, 'question')} that {_s(n, 'does', 'do')}n't block anything yet**"
-                   + (f", such as {ex_p}" if ex_p else "") + ".")
-    return out
+        if k == "suggested":
+            says: list[str] = []
+            for m in ms:
+                p = phrase.get(_fam(m), _fam(m).replace("-", " "))
+                if p not in says:
+                    says.append(p)
+            line = (f"**{cap(word(n)) if n <= 10 else n} suggested answers**, on "
+                    + _clauses(says if len(says) <= 3 else says[:3] + [f"{len(says) - 3} more"])
+                    + ": one yes takes them all.")
+        elif k == "endpoints":
+            names = [by_kp.get(m.split(".", 1)[1], m) for m in ms if m.startswith("endpoint.")]
+            line = "**The non-production systems** the flows run against" + (f": {_and(names)}." if names else ".")
+        elif k == "specs":
+            line = f"**One look at the {word(n)} specs**: are they right?"
+        elif k == "questions":
+            line = f"**{cap(word(n)) if n <= 10 else n} questions from reading the workflows.**"
+        elif k == "about-the-estate":
+            ex = next((QUESTION[m] for m in ms if m in QUESTION and m != "q1-scope"), "")
+            line = (f"**{cap(word(n))} questions about the estate** the export cannot answer"
+                    + (f", such as {ex}." if ex else "."))
+        elif k == "edition":
+            line = "**Your Kestra edition**: is Enterprise Edition available?"
+        elif k.startswith("q9-"):
+            line = "**Whether vRA stays** as the front end, or Kestra replaces it."
+        elif k.startswith("spec."):
+            line = f"**A spec to read again**: {k.split('.', 1)[1]} changed since it was reviewed."
+        else:
+            f = _fam(k)
+            line = f"**{cap(phrase.get(f, f.replace('-', ' ')))}.**"
+        out.append((holds(x), line))
+    return [line for h, line in out if h] + [line + " Nothing waits on these yet." for h, line in out if not h]
 
 
 def _kp(t: str) -> str:
@@ -651,6 +645,12 @@ def wave_title(w: dict, assess: dict) -> str:
     return f"Wave {w['wave']}, {name}"
 
 
+def _entries_holding(w: dict, brief: dict) -> int:
+    """How many open entries of answers.yaml hold this wave."""
+    fields = {(e.get("closes") or {}).get("field") for e in w["entry_criteria"] if e.get("status") != "done"}
+    return sum(1 for x in (brief.get("input") or {}).get("shown") or [] if set(x["members"]) & fields)
+
+
 def _wave_bullet(w: dict, assess: dict, brief: dict, sn: dict) -> str:
     crit = [e for e in w["entry_criteria"] if e.get("status") != "done"
             and (e.get("closes") or {}).get("kind") not in ("approval", "gate")]
@@ -692,11 +692,12 @@ def _wave_bullet(w: dict, assess: dict, brief: dict, sn: dict) -> str:
         parts.append(f"{first} is the first of a kind" + (f", then {_and(then)}." if then else "."))
     wr = _order_targets(assess, brief, [t for t in w.get("writes_to") or [] if t in targets])
     wn = _and([tname(targets[t]) for t in wr])
-    fams = [("the answers on " + f if f in ("building machines", "the plan", "reaching your systems") else f)
-            for f in fams]
+    k = _entries_holding(w, brief)
     if fams:
-        parts.append((f"The wave writes to {wn}, so it starts" if wn else "It starts")
-                 + (f" after {_and(after)} and" if after else "") + f" once {_and(fams)} are answered.")
+        parts.append((f"It writes to {wn}, and starts" if wn else "It starts")
+                 + (f" after {_and(after)} and" if after else "")
+                 + (f" once the {word(k)} {_s(k, 'item')} above {_s(k, 'is', 'are')} answered." if k else
+                    " once its entry criteria are met."))
     elif after:
         parts.append(f"It starts after {_and(after)}.")
     else:
@@ -707,17 +708,12 @@ def _wave_bullet(w: dict, assess: dict, brief: dict, sn: dict) -> str:
 # ------------------------------------------------------------------ the document
 
 def _status(brief: dict, st: dict, num: dict) -> dict:
-    n = num.get("elements", 0)
-    r = num.get("elements_ready", 0)
     sign = ((brief.get("input") or {}).get("sign") or brief.get("approval") or {})
     if st["blocking"]:
-        k = len(st["blocking"])
+        k = st.get("holding") or len(st["blocking"])
         head = f"Next step: answer {k} open {_s(k, 'item')}, then run `{C.run_command()}` again."
-        body = ((f"{r} of the estate's {n} elements are ready to convert today." if r else
-                 f"None of the estate's {n} elements is ready to convert yet.")
-                + f" {'The rest wait' if r else 'They wait'} on "
-                  f"{'those answers, which are all' if k != 1 else 'that answer, which is'} in "
-                  "`your-input/answers.yaml`.")
+        body = (f"{'They are' if k != 1 else 'It is'} in `your-input/answers.yaml`, with what the code suggests "
+                "where it can.")
         cls = "wait"
     elif not brief["plan"]["waves"]:
         nb = len(brief["plan"]["blocked"]) + len(brief["plan"].get("not_waved") or [])
@@ -963,9 +959,8 @@ def document(assess: dict, brief: dict) -> list[tuple]:
     pkg = "package" if all(str(p).endswith(".package") for p in ins.values()) else "export"
     src = f"{n_pkg} vRO {_s(n_pkg, pkg)}" + (f" and {n_vra} vRA {_s(n_vra, 'export')}" if n_vra else "")
     B: list[tuple[str, Any]] = [("h1", f"Migration brief: {est}"),
-         ("p", f"What the {C.PRODUCT} found in the {est} export, what it recommends, and what it needs from you before anything "
-               f"is converted. This is Stage 1 of the [vRA migration guide]({GUIDE}), done for you from {src} on "
-               f"{_date(brief['generated'])}.")]
+         ("p", f"Stage 1 of the [vRA migration guide]({GUIDE}), done for you from {src}: what the export holds, what "
+               "we recommend, and what we need from you before anything is converted.")]
     B.append(("status", dict(_status(brief, st, num), stand_in=stand_in(brief))))
     stale = brief.get("stale_specs") or {}
     if stale:
@@ -975,9 +970,6 @@ def document(assess: dict, brief: dict) -> list[tuple]:
                          f"{_s(len(stale), 'it', 'them')} again, and that is billed."))
 
     B += [("h2", "What's in this estate"), ("p", estate_paragraph(assess, brief))]
-    checks = ([("the vRA flow", "vra.html")] if n_vra else []) + [("the call graph", "call-graph.html"),
-                                                                    ("each workflow's spec", "workflows/index.html")]
-    B.append(("p", "You can check this against " + _and([f"[{t}]({h})" for t, h in checks]) + "."))
 
     rows = merged_rows(assess, brief)
     head, sents = recommendation(assess, brief, rows)
@@ -991,24 +983,15 @@ def document(assess: dict, brief: dict) -> list[tuple]:
         rest = rows[len(shown):]
         tbl.append([f"{len(rest)} more kinds", "on the translation page", "", str(sum(x["count"] for x in rest))])
     B.append(("table", (["In vRA and vRO" if n_vra else "In vRO", "In Kestra", "How", "Count"], tbl)))
-    B.append(("p", "**Direct** means the element converts one for one into its Kestra equivalent, such as an action "
-                   "calling F5 becoming an F5 plugin task. **Redesign** means the same job is done a different way in "
-                   "Kestra, such as a catalog item becoming a Kestra App. The guide explains how to classify the "
-                   f"conversion effort in [section 3.2.3]({GUIDE_323})."
-              if any(x["key"][0] == "client" and "F5" in x["label"] for x in rows) else
-              "**Direct** means the element converts one for one into its Kestra equivalent, such as a client action "
-              "becoming a plugin task. **Redesign** means the same job is done a different way in Kestra, such as a "
-              "catalog item becoming a Kestra App. The guide explains how to classify the conversion effort in "
-              f"[section 3.2.3]({GUIDE_323})."))
-    B.append(("p", "These counts come from reading the export. Nothing has been converted yet, so they show what has a "
-                   "path, not what has been proven. [Every element, and why](translation.html)."))
+    B.append(("p", "**Direct** converts one for one; **Redesign** does the same job another way "
+                   f"([section 3.2.3]({GUIDE_323}) of the guide). The counts come from reading the export, so they "
+                   "show a path, not a proven conversion. [Every element, and why](translation.html)."))
 
     nd = needs(assess, brief, st)
     B.append(("h2", "What we need from you"))
     if nd:
         B.append(("ul", nd))
-        B.append(("p", "Each one is a question in `your-input/answers.yaml`. Where the code points to an answer, "
-                       "it's under `suggested`: write yes to take it."))
+        B.append(("p", "Each is one entry in `your-input/answers.yaml`."))
     else:
         B.append(("p", "Nothing is open. " + ("Sign in `your-input/answers.yaml` when the plan reads right."
                                               if not st["signed"] else "The plan is signed.")))
@@ -1028,15 +1011,7 @@ def document(assess: dict, brief: dict) -> list[tuple]:
         B.append(("p", "No wave yet: nothing can convert until the open items are answered. "
                        "[What each workflow waits on](waves.html)."))
 
-    B.append(("h2", "Where to check"))
-    where = ([("vra.html", "The vRA flow", "how a request becomes machines and load balancer objects"
-               if any((t.get("category") or "") == "load balancer" for t in assess["targets"].values())
-               else "how a request becomes machines and what the workflows do with them")] if n_vra else []) + [
-        ("call-graph.html", "The call graph", "which workflow calls which action"),
-        ("translation.html", "Translation", "every element, what it becomes, and the evidence"),
-        ("workflows/index.html", "Workflows", "each workflow's spec, flowchart and possible defects"),
-        ("reports/index.html", "All reports", "every other page, the explorer among them")]
-    B.append(("ul", [f"[{t}]({h}): {d}." for h, t, d in where]))
+    B.append(("sub", "Every other page, the explorer among them, is under [All reports](reports/index.html)."))
     return B
 
 

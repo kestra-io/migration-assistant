@@ -4,8 +4,15 @@ your-input/answers.yaml: the one file a person fills in.
     # Answer what's open, then run: kestra-migrate vra run lb-usecase
 
     open:
-      - id: endpoint.f5-bigip
-        question: What is the URL of the non-production F5 BIG-IP, and which Kestra secrets hold its credentials?
+      - id: suggested
+        question: 'Accept every suggested answer below? (yes; to change one, add answer: under it)'
+        answer:
+        each:
+          - id: tls.f5-bigip
+            question: Do the calls to F5 BIG-IP check its certificate? (vRO's do not)
+            suggested: check it (the CA goes in the Kestra setup)
+      - id: defects.lb-create-load-balancer
+        question: '3 possible defects in LB - Create Load Balancer: keep them all, fix them all, or decide each? ...'
         answer:
     answered:
       - id: q1-scope
@@ -14,10 +21,12 @@ your-input/answers.yaml: the one file a person fills in.
 
     signed_for: full plan
 
-Two lists, `open` (what a wave waits on first) and `answered`, then `signed_for` (`wave 1` or `full plan`, empty
-until signed). Each item is an `id`, one plain `question`, a `suggested` value when the code points to one, and
-the `answer`. Writing `yes` takes the suggested value; any other answer is the answer. One comment line at the
-top, nothing else: the page with an item's context is named in its question only where it is needed.
+Two lists, `open` (what a wave waits on first) and `answered`, a third (`no_longer_asked`) when an answered item is
+no longer asked, then `signed_for` (`wave 1` or `full plan`, empty until signed). Each entry is an `id`, one plain
+`question`, a `suggested` value when the code points to one, and the `answer`; a group's items are under its
+`each:` (see "groups" below). Writing `yes` takes the suggested value; any other answer is the answer. One
+comment line at the top, nothing else: the page with an item's context is named in its question only where it
+is needed.
 
 The stages register what they ask (`register(section, items)`): Preflight its questions, the Brief its
 decisions, the specs' open questions, the reviews. The registry is kept in data/input-items.json, so each stage
@@ -60,7 +69,7 @@ def header() -> str:
     return HEADER + C.run_command()
 GROUPS = ("confirm", "answer", "review", "sign")
 YES = ("yes", "y", "true", "confirmed", "confirm", "ok", "x")
-TOOL_FIELDS = ("id", "question", "suggested", "answer")
+TOOL_FIELDS = ("id", "question", "suggested", "answer", "each")
 OLD_SECTIONS = ("blocking", "open", "done", "confirm", "answer", "review", "no_longer_asked")
 OLD_FIELDS = ("answer", "confirmed", "by", "date", "note", "spec")    # the old format's own fields
 GONE = "No longer asked: "
@@ -105,7 +114,7 @@ def items() -> list[dict]:
             if it["key"] not in seen:
                 seen.add(it["key"])
                 ub = list(it.get("unblocks") or []) + [x for x in extra.get(it["key"]) or [] if x not in (it.get("unblocks") or [])]
-                out.append({**it, "unblocks": ub})
+                out.append({**it, "unblocks": ub, "section": section})
     return out
 
 
@@ -151,7 +160,7 @@ def _renames(old: list[dict], new: list[dict]) -> dict[str, str]:
 def _memo(reg: dict | None = None) -> dict:
     m = (reg if reg is not None else registry()).get("_memo") or {}
     return {"confirmed": dict(m.get("confirmed") or {}), "reviewed": dict(m.get("reviewed") or {}),
-            "stand_in": bool(m.get("stand_in"))}
+            "groups": dict(m.get("groups") or {}), "stand_in": bool(m.get("stand_in"))}
 
 
 # ------------------------------------------------------------------ reading
@@ -198,14 +207,24 @@ def load(path: str | None = None) -> dict:
                 if not isinstance(e, dict) or not str(e.get("id") or "").strip():
                     out["warnings"].append(f"an item under `{sec}:` has no `id:`, so it is not read")
                     continue
-                k = str(e["id"]).strip()
-                if k in out["entries"]:
-                    out["warnings"].append(f"{k} appears twice; the first is read")
-                    continue
-                out["entries"][k] = {f: v for f, v in e.items() if f != "id"}
+                each = e.get("each")
+                subs: list = each if isinstance(each, list) else []
+                for sub in [e, *subs]:
+                    if not isinstance(sub, dict) or not str(sub.get("id") or "").strip():
+                        out["warnings"].append(f"an item under `{sec}:` has no `id:`, so it is not read")
+                        continue
+                    k = str(sub["id"]).strip()
+                    if k in out["entries"]:
+                        out["warnings"].append(f"{k} appears twice; the first is read")
+                        continue
+                    out["entries"][k] = {f: v for f, v in sub.items() if f not in ("id", "each")}
         out["sign"] = {"signed_for": _text(data.get("signed_for"))}
     texts = " ".join(_text(e.get("answer")) for e in out["entries"].values()).lower()
     out["stand_in"] = out["memo"]["stand_in"] or "stand-in" in texts
+    its = items()
+    out["items"] = {it["key"]: it for it in its}
+    out["groups"] = groups(its, out)
+    out["group_of"] = {k: g for g, ks in out["groups"].items() for k in ks}
     return out
 
 
@@ -259,6 +278,8 @@ def state(key: str, loaded: dict | None = None, it: dict | None = None) -> dict:
     it = it or next((x for x in items() if x["key"] == key), None) or {"group": "answer", "suggested": None, "fixed": {}}
     e = loaded["entries"].get(key) or {}
     ans = _text(e.get("answer"))
+    if is_open(ans):
+        ans = via_group(key, loaded) or ans
     memo = loaded.get("memo") or {}
     rec = {"state": "open", "answer": ans or None, "by": None, "date": None, "note": None, "why": "not answered"}
     if is_open(ans):
@@ -359,7 +380,7 @@ def _field(name: str, v, first: bool) -> list[str]:
     return [f"{pre}{name}:{_scalar(v)}"]
 
 
-def _entry(k: str, e: dict) -> list[str]:
+def _entry(k: str, e: dict, each: list[tuple[str, dict]] | None = None) -> list[str]:
     L = _field("id", k, True)
     for f in ("question", "suggested", "answer"):
         if f in e and (f == "answer" or e[f] not in (None, "")):
@@ -367,23 +388,165 @@ def _entry(k: str, e: dict) -> list[str]:
     for f, v in e.items():                           # a field of the person's own
         if f not in TOOL_FIELDS:
             L += _field(f, v, False)
+    if each:
+        L.append("    each:")
+        for sk, se in each:
+            L += ["    " + ln for ln in _entry(sk, se)]
     return L
 
 
-def plan(its: list[dict], loaded: dict) -> tuple[list[tuple[str, dict]], list[tuple[str, dict]], list[tuple[str, dict]]]:
-    """What goes under open, answered and no_longer_asked, in order: (id, entry). Open: what a wave waits on, then
-    the rest. Answered: in the order asked. No longer asked: an answer whose item a run no longer finds, with the
-    question as it was last asked, so the answer never lands on another item."""
-    opened: list[tuple[str, dict]] = []
-    waits: list[tuple[str, dict]] = []
-    answered: list[tuple[str, dict]] = []
-    asked = set()
+# ------------------------------------------------------------------ groups
+#
+# Items a person settles together are one entry in the file, with the members under `each:`. Three groups take one
+# answer for all their members: `suggested` (every value the code suggests: `yes` takes them all, and any one can
+# still be given its own answer), `defects.<workflow>` (keep them all, fix them all, or decide each; the defects
+# are listed only after `decide each`) and `specs` (yes, or name the workflow that is wrong). Three only gather
+# what one person answers in one sitting, one answer each: `endpoints` (the non-production systems), `questions`
+# (the specs' questions) and `about-the-estate` (what the export cannot say). A group of one is its item.
+#
+# A group's answer counts for the members the file showed when it was given (the memo keeps them), never for an
+# item that appears later: that one is asked on its own. Every stage still reads each item by its own id (state).
+
+SETTLED_BY_ONE = ("suggested", "defects", "specs")
+DEFECT_ANSWERS = {"keep all": "keep", "keep them all": "keep", "keep": "keep", "keep each": "keep",
+                  "fix all": "fix", "fix them all": "fix", "fix": "fix", "fix each": "fix"}
+
+
+def group_of(it: dict) -> str | None:
+    k, fam = it["key"], it.get("family")
+    if it.get("group") == "confirm" and it.get("suggested"):
+        return "suggested"
+    if fam == "defect" and k.count(".") >= 2:
+        return "defects." + k.split(".")[1]
+    if it.get("group") == "review":
+        return "specs"
+    if fam == "endpoint" or k.startswith("q3-"):
+        return "endpoints"
+    if fam == "question":
+        return "questions"
+    if it.get("family") == "preflight" and not k.startswith("q9-"):      # Q9 (keep or replace vRA) stays alone
+        return "about-the-estate"
+    return None
+
+
+def groups(its: list[dict], loaded: dict | None = None) -> dict[str, list[str]]:
+    """Group id -> member keys, in the order asked: groups of two or more, and a group already answered."""
+    out: dict[str, list[str]] = {}
     for it in its:
+        g = group_of(it)
+        if g:
+            out.setdefault(g, []).append(it["key"])
+    answered = {g for g in out if loaded and not is_open((loaded["entries"].get(g) or {}).get("answer"))}
+    return {g: ks for g, ks in out.items() if len(ks) > 1 or g in answered}
+
+
+def _kind(gid: str) -> str:
+    return gid.split(".", 1)[0]
+
+
+def covered(gid: str, loaded: dict) -> list[str]:
+    """The members a group's answer counts for: those the file showed when it was answered."""
+    rec = ((loaded.get("memo") or {}).get("groups") or {}).get(gid) or {}
+    return list(rec["members"]) if rec.get("members") is not None else list(loaded["groups"].get(gid) or [])
+
+
+def via_group(key: str, loaded: dict) -> str | None:
+    """The answer an item takes from its group's answer, or None."""
+    gid = (loaded.get("group_of") or {}).get(key)
+    if not gid or _kind(gid) not in SETTLED_BY_ONE:
+        return None
+    ga = _text((loaded["entries"].get(gid) or {}).get("answer"))
+    if is_open(ga) or key not in covered(gid, loaded):
+        return None
+    kind = _kind(gid)
+    if kind == "suggested":
+        return "yes" if _yes(ga) else None
+    if kind == "defects":
+        return DEFECT_ANSWERS.get(ga.lower().rstrip("."))
+    # specs: yes, or a remark for the workflows it names (all of them when it names none)
+    if _yes(ga):
+        return "yes"
+    its = loaded.get("items") or {}
+    named = [k for k in covered(gid, loaded) if _names_workflow(ga, str((its.get(k) or {}).get("workflow") or ""))]
+    return ga if not named or key in named else "yes"
+
+
+def _names_workflow(text: str, name: str) -> bool:
+    if not name:
+        return False
+    t = text.lower()
+    bare = re.sub(r"^[^-]{1,12} - ", "", name).lower()           # "LB - Create Load Balancer" -> "create load balancer"
+    return name.lower() in t or bare in t
+
+
+def _expands(gid: str, loaded: dict) -> bool:
+    """A group answered with something other than what settles it: its members are answered one by one."""
+    if _kind(gid) not in SETTLED_BY_ONE:
+        return True
+    ga = _text((loaded["entries"].get(gid) or {}).get("answer"))
+    if is_open(ga) or _kind(gid) == "specs":
+        return False
+    return (_kind(gid) == "suggested" and not _yes(ga)) or (_kind(gid) == "defects" and
+                                                            ga.lower().rstrip(".") not in DEFECT_ANSWERS)
+
+
+def group_question(gid: str, its: list[dict]) -> str:
+    n = len(its)
+    kind = _kind(gid)
+    if kind == "suggested":
+        return "Accept every suggested answer below? (yes; to change one, add answer: under it)"
+    if kind == "defects":
+        name = _workflow_of(its[0]) or gid.split(".", 1)[1]
+        page = (its[0].get("link") or f"report/workflows/{gid.split('.', 1)[1]}.html")
+        return (f"{n} possible defects in {name}: keep them all, fix them all, or decide each? (they are listed on "
+                f"{page})")
+    if kind == "specs":
+        names = [str(it.get("workflow") or it["key"]) for it in its]
+        which = ", ".join(names) if n <= 6 else f"the {n} workflows"
+        return f"Are the specs of {which} right? Yes, or name the workflow that is wrong and say what."
+    if kind == "endpoints":
+        return "Where can a converted flow run before production?"
+    if kind == "questions":
+        return f"{n} questions from reading the workflows: answer those you can."
+    return "What the export cannot say about the estate:"
+
+
+def _member_question(it: dict, siblings: list[dict] | None = None) -> str:
+    if it["key"].startswith("q3-") and it.get("found"):
+        # Q3 asks for a non-production instance of each system; an endpoint item already asks for each one it names
+        asked = " ".join(str(s.get("question") or s.get("ask")) for s in siblings or [] if s is not it)
+        rest = [x for x in (re.sub(r" \(from [^;]*\)\.?$", "", p.strip()) for p in str(it["found"]).split("; "))
+                if x and x not in asked]
+        return (f"{_and(rest)}: is there a non-production instance? And name any other system the workflows reach."
+                if rest else "Do the workflows reach any other system? Name it, or answer none.")
+    q = question_of(it)
+    if it.get("family") == "defect":
+        q = re.sub(r"^Possible defect in [^:]+: ", "", q)
+        q = q[:1].upper() + q[1:]
+    return q
+
+
+# ------------------------------------------------------------------ the file
+
+
+def _and(xs: list[str]) -> str:
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " or " + xs[-1]
+
+
+def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[tuple]]:
+    """What goes under open, answered and no_longer_asked, in order: (id, entry, each). Open: what a wave waits
+    on, then the rest. Answered: in the order asked. No longer asked: an answer whose item a run no longer finds,
+    with the question as it was last asked, so the answer never lands on another item."""
+    by_key = {it["key"]: it for it in its}
+    gs = groups(its, loaded)
+    gof = {k: g for g, ks in gs.items() for k in ks}
+    states = {it["key"]: state(it["key"], loaded, it) for it in its}
+
+    def single(it: dict, qtext: str | None = None) -> dict:
         k = it["key"]
-        asked.add(k)
         old = loaded["entries"].get(k) or {}
-        st = state(k, loaded, it)
-        e: dict[str, Any] = {"question": question_of(it)}
+        st = states[k]
+        e: dict[str, Any] = {"question": qtext or question_of(it)}
         if st["state"] == "stale":
             e["question"] = "The spec changed after this answer. Read it again, then change the answer: " + e["question"]
         sug = it.get("suggested")
@@ -391,13 +554,66 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple[str, dict]], list[tu
             e["suggested"] = st["answer"] if st["state"] == "answered" and _yes(old.get("answer")) else sug
         e["answer"] = old.get("answer")
         e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
-        if st["state"] in ("answered", "reviewed"):
-            answered.append((k, e))
+        return e
+
+    def done(k: str) -> bool:
+        return states[k]["state"] in ("answered", "reviewed")
+
+    units: list[tuple[str, dict, list, bool, bool]] = []          # id, entry, each, open, blocks a wave
+    seen: set[str] = set()
+    for it in its:
+        k = it["key"]
+        if k in seen:
+            continue
+        gid = gof.get(k)
+        if not gid:
+            seen.add(k)
+            units.append((k, single(it), [], not done(k), blocks_a_wave(it)))
+            continue
+        members = [by_key[m] for m in gs[gid]]
+        seen |= set(gs[gid])
+        kind = _kind(gid)
+        gold = loaded["entries"].get(gid) or {}
+        ga = _text(gold.get("answer"))
+        cov = set(covered(gid, loaded))
+        expand = _expands(gid, loaded)
+        alone, inside = [], []
+        for m in members:
+            mk = m["key"]
+            own = not is_open((loaded["entries"].get(mk) or {}).get("answer"))
+            if kind in SETTLED_BY_ONE and not is_open(ga) and not expand and not own and (not done(mk) or mk not in cov):
+                alone.append(m)           # not covered by the group's answer, or reviewed before its spec changed
+            else:
+                inside.append(m)
+        e: dict[str, Any] = {"question": group_question(gid, members)}
+        if kind in SETTLED_BY_ONE or not is_open(gold.get("answer")):      # a line of the person's own is kept
+            e["answer"] = gold.get("answer")
+        e.update({f: v for f, v in gold.items() if f not in TOOL_FIELDS})
+        each = []
+        for m in inside:
+            mk = m["key"]
+            own = not is_open((loaded["entries"].get(mk) or {}).get("answer"))
+            show = (kind == "suggested" or kind not in SETTLED_BY_ONE or own
+                    or (expand and kind == "defects"))
+            if not show:
+                continue
+            me = single(m, _member_question(m, members))
+            if kind in SETTLED_BY_ONE and not own and not expand:
+                me.pop("answer", None)    # a member the group's answer settles: no line to fill in
+            each.append((mk, me))
+        if kind in SETTLED_BY_ONE:
+            is_open_ = is_open(ga) or (expand and any(not done(m["key"]) for m in inside))
         else:
-            (waits if blocks_a_wave(it) else opened).append((k, e))
-    gone = []
+            is_open_ = any(not done(m["key"]) for m in inside)
+        units.append((gid, e, each, is_open_, any(blocks_a_wave(m) and not done(m["key"]) for m in members)))
+        for m in alone:
+            units.append((m["key"], single(m), [], True, blocks_a_wave(m)))
+    opened = [(k, e, ea) for k, e, ea, o, b in units if o and b] + [(k, e, ea) for k, e, ea, o, b in units if o and not b]
+    answered = [(k, e, ea) for k, e, ea, o, _b in units if not o]
+    shown = {k for k, _e, _ea, _o, _b in units} | {sk for _k, _e, ea, _o, _b in units for sk, _ in ea}
+    gone: list[tuple] = []
     for k, old in loaded["entries"].items():
-        if k in asked or is_open(old.get("answer")) and not any(f not in TOOL_FIELDS for f in old):
+        if k in shown or k in by_key or k in gs or is_open(old.get("answer")) and not any(f not in TOOL_FIELDS for f in old):
             continue
         q = str(old.get("question") or "").strip()
         q = q[len(GONE):].strip() if q.startswith(GONE) else "" if q == GONE.strip() else q
@@ -406,8 +622,19 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple[str, dict]], list[tu
             e["suggested"] = old["suggested"]
         e["answer"] = old.get("answer")
         e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
-        gone.append((k, e))
-    return waits + opened, answered, sorted(gone)
+        gone.append((k, e, []))
+    return opened, answered, sorted(gone, key=lambda x: x[0])
+
+
+def shown(loaded: dict | None = None) -> list[dict]:
+    """The open entries of the file as a person sees them: {"id", "members", "blocks"}; a group counts once."""
+    loaded = loaded if loaded is not None else load()
+    its = items()
+    by_key = {it["key"]: it for it in its}
+    gs = groups(its, loaded)
+    opened, _a, _g = plan(its, loaded)
+    return [{"id": k, "members": gs.get(k) or [k],
+             "blocks": any(blocks_a_wave(by_key[m]) for m in (gs.get(k) or [k]) if m in by_key)} for k, _e, _ea in opened]
 
 
 def render(its: list[dict], loaded: dict) -> str:
@@ -420,8 +647,8 @@ def render(its: list[dict], loaded: dict) -> str:
             L += [f"{sec}: []", ""]
             continue
         L.append(f"{sec}:")
-        for k, e in rows:
-            L += _entry(k, e)
+        for k, e, each in rows:
+            L += _entry(k, e, each)
         L.append("")
     L.append("signed_for:" + _scalar((loaded.get("sign") or {}).get("signed_for") or ""))
     return "\n".join(L) + "\n"
@@ -429,16 +656,29 @@ def render(its: list[dict], loaded: dict) -> str:
 
 def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
     """Record in the memo what the file will no longer show: the value each `yes` took, the spec each review
-    was written for. True when the memo changed."""
+    was written for, and the members each group's answer counts for (those the file showed when it was given).
+    True when the memo changed."""
     memo = _memo(reg)
     before = json.dumps(memo, sort_keys=True)
     memo["stand_in"] = bool(loaded.get("memo", {}).get("stand_in") or memo["stand_in"])
     for k, v in (loaded.get("memo", {}).get("reviewed") or {}).items():
         memo["reviewed"].setdefault(k, v)
+    for gid, members in groups(its, loaded).items():
+        ga = _text((loaded["entries"].get(gid) or {}).get("answer"))
+        rec = memo["groups"].get(gid)
+        if is_open(ga):
+            memo["groups"][gid] = {"members": members, "answer": None}      # what the file shows now
+        elif not rec:
+            memo["groups"][gid] = {"members": members, "answer": ga}
+        elif rec.get("answer") != ga:
+            memo["groups"][gid] = {**rec, "answer": ga}
+    loaded["memo"] = {**(loaded.get("memo") or {}), "groups": memo["groups"]}
     for it in its:
         k = it["key"]
         e = loaded["entries"].get(k) or {}
         ans = _text(e.get("answer"))
+        if is_open(ans):
+            ans = via_group(k, loaded) or ans
         if it.get("group") == "confirm" and it.get("suggested"):
             if _yes(ans):
                 # the value the person saw next to their yes, else today's suggestion
@@ -666,24 +906,35 @@ def set_renames(m: dict[str, str]) -> None:
 
 # ------------------------------------------------------------------ helpers for tests and scripts
 
+def _walk(data: dict):
+    """(section, entry) for every entry of a parsed answers.yaml, a group's members (under `each:`) included."""
+    for sec in SECTIONS:
+        for e in data.get(sec) or []:
+            if not isinstance(e, dict):
+                continue
+            yield sec, e
+            for sub in e.get("each") or [] if isinstance(e.get("each"), list) else []:
+                if isinstance(sub, dict):
+                    yield sec, sub
+
+
 def flat(data: dict) -> dict[str, dict]:
-    """id -> entry (without the id) of a parsed answers.yaml, from both lists (tests use it)."""
-    return {str(e["id"]): {f: v for f, v in e.items() if f != "id"}
-            for sec in SECTIONS for e in (data.get(sec) or []) if isinstance(e, dict) and "id" in e}
+    """id -> entry (without the id) of a parsed answers.yaml, from every list and group (tests use it)."""
+    return {str(e["id"]): {f: v for f, v in e.items() if f not in ("id", "each")}
+            for _sec, e in _walk(data) if "id" in e}
 
 
 def entry_of(data: dict, key: str) -> dict | None:
-    """One entry of a parsed answers.yaml, whichever list it sits in (tests use it)."""
-    for sec in SECTIONS:
-        for e in data.get(sec) or []:
-            if isinstance(e, dict) and str(e.get("id")) == key:
-                return {f: v for f, v in e.items() if f != "id"}
+    """One entry of a parsed answers.yaml, whichever list or group it sits in (tests use it)."""
+    for _sec, e in _walk(data):
+        if str(e.get("id")) == key:
+            return {f: v for f, v in e.items() if f not in ("id", "each")}
     return None
 
 
 def section_of(data: dict, key: str) -> str | None:
-    for sec in SECTIONS:
-        if any(isinstance(e, dict) and str(e.get("id")) == key for e in data.get(sec) or []):
+    for sec, e in _walk(data):
+        if str(e.get("id")) == key:
             return sec
     return None
 
@@ -702,11 +953,10 @@ def set_signature(covers: str, path: str | None = None) -> None:
 
 
 def _set(d: dict, key: str, field: str, value) -> None:
-    for sec in SECTIONS:
-        for e in d.get(sec) or []:
-            if isinstance(e, dict) and str(e.get("id")) == key:
-                e[field] = value
-                return
+    for _sec, e in _walk(d):
+        if str(e.get("id")) == key:
+            e[field] = value
+            return
     d.setdefault("open", [])
     d["open"] = d["open"] or []
     d["open"].append({"id": key, field: value})
@@ -722,9 +972,12 @@ def _edit(path: str, change) -> str:
     change(d)
     ld = {"entries": {}, "sign": {"signed_for": _text(d.get("signed_for"))}, "memo": loaded["memo"]}
     order = []
+    each: dict[str, list] = {}
     for sec in SECTIONS:
         for e in d.get(sec) or []:
-            ld["entries"][str(e["id"])] = {f: v for f, v in e.items() if f != "id"}
+            ld["entries"][str(e["id"])] = {f: v for f, v in e.items() if f not in ("id", "each")}
+            each[str(e["id"])] = [(str(x["id"]), {f: v for f, v in x.items() if f != "id"})
+                                  for x in e.get("each") or [] if isinstance(x, dict) and "id" in x]
             order.append((sec, str(e["id"])))
     L = [header(), ""]
     for sec in SECTIONS:
@@ -736,7 +989,7 @@ def _edit(path: str, change) -> str:
             continue
         L.append(f"{sec}:")
         for k in rows:
-            L += _entry(k, ld["entries"][k])
+            L += _entry(k, ld["entries"][k], each.get(k))
         L.append("")
     L.append("signed_for:" + _scalar(ld["sign"]["signed_for"]))
     return "\n".join(L) + "\n"

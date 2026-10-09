@@ -206,7 +206,8 @@ def test_3_a_question_asked_for_several_workflows_of_one_group_is_listed_once(es
 def test_3_suspected_defects_are_their_own_list_and_a_decision_each(estate):
     d = estate["brief"]["suspected_defects"]
     assert [(x["workflow"], x["n"]) for x in d] == [(CREATE, 1), (DELETE, 1), (DELETE, 2)]
-    assert "possible defects** to confirm or fix" in estate["md"] and "## Suspected defects" in estate["oq"]
+    assert "possible defects** in two workflows, one entry per workflow" in estate["md"]
+    assert "## Suspected defects" in estate["oq"]
     dec = _decisions(estate)
     k = d[1]["decision"]
     assert k in dec and dec[k]["closes"]["options"] == ["keep", "fix"]
@@ -411,8 +412,8 @@ def test_13_rewriting_the_questions_keeps_the_answers_file_time(estate):
     from kestra_migration_assistant.vra.stages import preflight as P
     path = C.ANSWERS
     txt = open(path).read()
-    assert "    question: For each system" in txt
-    open(path, "w").write(txt.replace("    question: For each system", "    question: (old wording) For each system", 1))
+    assert "    question: Is this export the whole" in txt
+    open(path, "w").write(txt.replace("    question: Is this export the whole", "    question: (old wording) Is this export the whole", 1))
     os.utime(path, (1_000_000_000, 1_000_000_000))
     P.refresh_questions()
     assert "(old wording)" not in open(path).read() and os.path.getmtime(path) == 1_000_000_000

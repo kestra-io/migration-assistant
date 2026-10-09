@@ -209,11 +209,15 @@ COVER_RULES = [
 ]
 
 
+FAILURE_THEMES = ("error semantics", "error handling", "failure handling", "failure")
+
+
 def cover_questions(assess, specs) -> dict[str, list[dict]]:
     """uid -> [{question, key, family}] for each open spec question a decision of the plan covers, from the code:
     TLS where the client turns checks off, authentication where it differs from the API's, the endpoint of each
     system the workflow reaches, shared state its lifecycle group writes, the timeout of a blocking subscription
-    that runs it. A question naming one system is covered by that system's decision only."""
+    that runs it, and what a failure does there. A question naming one system is covered by that system's decision
+    only."""
     wf, targets = assess["workflows"], assess["targets"]
     groups = {g["id"]: g for g in assess.get("lifecycle_groups") or []}
     out: dict[str, list[dict]] = {}
@@ -249,6 +253,10 @@ def cover_questions(assess, specs) -> dict[str, list[dict]]:
                     keys += [f"state-store.{G.key_part(p)}" for p in paths]
                 elif fam == "timeout":
                     keys += [f"timeout.{G.key_part(e['name'])}" for e in subs]
+            if (q.get("theme") or "").lower() in FAILURE_THEMES:
+                # what a failure does in a workflow a blocking subscription runs: that subscription's timeout and
+                # failure decision asks it
+                keys += [f"timeout.{G.key_part(e['name'])}" for e in subs]
             keys = list(dict.fromkeys(keys))
             if keys:
                 out.setdefault(u, []).append({"question": text, "theme": q.get("theme"), "keys": keys,
@@ -282,7 +290,8 @@ def attach_covers(plan: dict, cover: dict, wf: dict) -> None:
         for e in w["entry_criteria"]:
             c = e.get("closes") or {}
             if c.get("kind") == "decision" and c["key"] in by_key:
-                c["also_answers"] = by_key[c["key"]]
+                c["also_answers"] = list(c.get("also_answers") or []) + [
+                    q for q in by_key[c["key"]] if q not in (c.get("also_answers") or [])]
 
 
 def question_keys(qgroups: list[dict], wf: dict, names: list[str] | None = None) -> dict[tuple, str]:
@@ -334,7 +343,7 @@ def input_summary(loaded: dict) -> dict:
     from . import your_input as Y
     sm = Y.summary(loaded)
     out = {"path": C.rel(C.ANSWERS), "warnings": loaded["warnings"], "sign": sm["sign"],
-           "stand_in": bool(loaded.get("stand_in"))}
+           "stand_in": bool(loaded.get("stand_in")), "shown": Y.shown(loaded)}
     for g in ("confirm", "answer", "review"):
         fam: dict[str, dict] = {}
         for bucket in ("open", "stale", "done"):

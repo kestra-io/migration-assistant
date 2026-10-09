@@ -112,8 +112,18 @@ the only file in `your-input/`. It looks like this:
 # Answer what's open, then run: kestra-migrate vra run acme
 
 open:
-  - id: endpoint.f5-bigip
-    question: What is the URL of the non-production F5 BIG-IP, and which Kestra secrets hold its credentials?
+  - id: suggested
+    question: 'Accept every suggested answer below? (yes; to change one, add answer: under it)'
+    answer:
+    each:
+      - id: tls.f5-bigip
+        question: Do the calls to F5 BIG-IP check its certificate? (vRO's do not)
+        suggested: check it (the CA goes in the Kestra setup)
+      - id: lifecycle.l1
+        question: Do the 4 workflows of lifecycle group L1 convert and switch over together?
+        suggested: together
+  - id: defects.lb-create-load-balancer
+    question: '3 possible defects in LB - Create Load Balancer: keep them all, fix them all, or decide each? (they are listed on report/workflows/lb-create-load-balancer.html)'
     answer:
 
 answered:
@@ -124,15 +134,28 @@ answered:
 signed_for: full plan
 ```
 
-`open` lists what a wave waits on, first; `answered` lists the rest. Each item has an `id`, one plain
+`open` lists what a wave waits on, first; `answered` lists the rest. Each entry has an `id`, one plain
 `question`, a `suggested` value when the code points to one, and an `answer`. Write `yes` to take the
 suggested value; any other answer is the answer itself. A remark goes in the answer too. `signed_for` is
-`wave 1` or `full plan`, and stays empty until you sign. The tool rewrites the file on every run: it moves an
-item to `answered` once it has an answer, keeps every answer exactly as written, and never drops an id. An
-answered item that is no longer asked stays under `answered`, its question starting "No longer asked:". A
-file that does not parse is never rewritten; the version before it is kept in `data/answers.yaml.previous`.
-An `answers.yaml` in an older format is moved to this one on the next run, every answer and the signature
-carried over, and the old file kept as `data/answers.yaml.before-2g`.
+`wave 1` or `full plan`, and stays empty until you sign.
+
+What is settled together is one entry, with its items under `each:`. `suggested` holds every value the code
+suggests: `yes` takes them all, and any one can still be given its own `answer:`. `defects.<workflow>` takes
+`keep all`, `fix all` or `decide each`; after `decide each` the next run lists that workflow's possible defects
+under it, each to answer `keep` or `fix`. `specs` takes `yes`, or names the workflow whose spec is wrong and
+says what. `endpoints` (where a converted flow can run before production), `questions` (the specs' open
+questions) and `about-the-estate` (what the export cannot say) gather items answered one by one. A group's
+answer counts for the items it showed when it was given; an item found later is asked on its own entry.
+
+Every item's `id` says what it is about, never its place in a list: a possible defect's is its workflow, the
+action it concerns and its kind (`defect.lb-add-machine-to-pool.add-avi-pool-server.ip-version`), so a run
+that words or orders its findings differently keeps each answer on its item. The tool rewrites the file on
+every run: it moves an entry to `answered` once it has an answer, keeps every answer exactly as written, and
+never drops an id. An answer whose item a run no longer finds moves to a third list, `no_longer_asked`, with
+the question it was given for, and lands on nothing else. A file that does not parse is never rewritten; the
+version before it is kept in `data/answers.yaml.previous`. An `answers.yaml` in an older format is moved to
+this one on the next run, every answer and the signature carried over, and the old file kept as
+`data/answers.yaml.before-2g`.
 
 The questions are asked from what is on record, and asked again after Assess: with a vRA export read, Q2
 asks only for what an export cannot hold (vRO scheduled tasks and policies, the ITSM, REST callers); Q3
@@ -145,11 +168,12 @@ Later, the brief asks for the decisions its waves wait for (a client route for a
 plugin, whether Enterprise Edition is available, a timeout policy for each blocking step, how to get a
 resource no Kestra task creates, keep or fix each suspected defect) in the same `answers.yaml`, each a plain
 question with the choices in it, and with a suggested value where the tool has a recommendation. A
-suspected defect reads like this: "Possible defect in Delete Load Balancer: the Deployment Registry is read
-before the teardown gate, so an event that should be ignored can still fail the run. Keep the current
-behavior, or fix it?" (answer `keep` or `fix`). The specs' open questions and one review per spec are there
-too, and the signature. A question a decision already asks is asked once. Every wave entry criterion names
-the id that closes it.
+suspected defect, after `decide each`, reads like this: "The Deployment Registry is read before the teardown
+gate, so an event that should be ignored can still fail the run. Keep the current behavior, or fix it?"
+(answer `keep` or `fix`). The specs' open questions and the spec review are there too, and the signature. A
+question a decision already asks is asked once, there: a spec question about certificate checks in the
+certificate decision, one about what a failure does in the timeout and failure decision of the blocking
+subscription that runs the workflow. Every wave entry criterion names the id that closes it.
 
 ### Optional: correct what the tool found (`corrections.yaml`)
 

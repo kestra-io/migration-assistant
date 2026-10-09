@@ -279,6 +279,7 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                                      f"offers {targets[t]['api_auth']}. Which do the Kestra flows use?",
                                      [f"{auth}, as today", "the other (say which)"],
                                      recommended=f"{auth}, as today",
+                                     plain=f"How do the flows sign in to {targets[t].get('short_name') or targets[t]['name']}?",
                                      why="the client's own code; the plugin map's note on the API")})
             if targets[t].get("tls_off"):
                 crit.append({"criterion": f"{targets[t]['name']}: certificate checking is decided (the vRO client turns "
@@ -289,6 +290,8 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                                  f"({targets[t]['tls_off']}). Do the Kestra calls check it?",
                                  ["check it (the CA goes in the Kestra setup)", "do not check, as today"],
                                  recommended="check it (the CA goes in the Kestra setup)",
+                                 plain=f"Do the calls to {targets[t].get('short_name') or targets[t]['name']} check its "
+                                       "certificate? (vRO's do not)",
                                  why="carrying the check across off would keep a man-in-the-middle risk vRO had")})
             if targets[t].get("enterprise_only"):
                 crit.append({"criterion": f"Kestra Enterprise Edition available ({targets[t]['kestra_tasks'][0].rsplit('.', 1)[0]} is EE)",
@@ -314,8 +317,7 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                              "Is the read and write classification of each operation right for " + ", ".join(names)
                              + "? (per operation on the target inventory page, judged from operation names)",
                              ["confirmed", "corrected"], blocks=["corrected"],
-                             plain="Is each operation's read or write label right for " + ", ".join(names)
-                                   + "? (see the target inventory page)",
+                             plain="Are the read and write labels on the target inventory page right?",
                              why="'corrected' holds the wave until the correction is in your-input/corrections.yaml "
                                  "and the brief is re-run; then set it to confirmed")})
         for u in owner:
@@ -362,6 +364,8 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                                                  + ", ".join(wf[v].get("name") or v for v in g["members"])
                                                  + ") convert and switch over together?",
                                                  ["together", "split"], recommended="together", blocks=["split"],
+                                                 plain=f"Do the {len(g['members'])} workflows of lifecycle group {gid} "
+                                                       "convert and switch over together?",
                                                  why=(f"{g['why']}. " if g.get("why") else "")
                                                      + "Split, a deployment made in one system is changed or "
                                                        "deleted by the other")})
@@ -379,6 +383,7 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                              "Kestra, and what moves the records vRO holds today?",
                              ["the KV store", "an external database (say which)", "other (say how)"],
                              recommended="the KV store",
+                             plain=f"Where does the state kept in {path} live in Kestra?",
                              why="a configuration element written at run time is state; Kestra's KV store keeps it "
                                  "per namespace, and the records already in vRO move once, before the switch")})
         if replacing:
@@ -399,9 +404,15 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                                  why="the replacement flow calls these flows with values, not with an event payload"
                                      + ("; until then the bridge maps the payload to them" if front == TG.BRIDGE else ""))})
         names = I.action_names(assess)
+        tls = [c for e in crit if isinstance(c := e.get("closes"), dict) and str(c.get("key") or "").startswith("tls.")]
         for u in members:
             ds = ((specs or {}).get(u) or {}).get("suspected_defects") or []
             for key, d in zip(I.defect_ids(_sh(wf, u), ds, names), ds, strict=True):
+                if tls and key.rsplit(".", 1)[-1] == "tls":
+                    # certificate checks are already a decision of this wave: asked once, there
+                    for c in tls:
+                        c.setdefault("also_answers", []).append(f"{wf[u].get('name') or u}: {d['what']}")
+                    continue
                 crit.append({"criterion": f"Suspected defect in {wf[u].get('name') or u}: {d['what']}. Preserve it or "
                                           "fix it in the conversion", "source": "spec",
                              "closes": G.by_decision(
@@ -544,8 +555,8 @@ def _endpoint(key: str, t: dict) -> dict:
     return G.by_decision(f"endpoint.{G.key_part(key)}",
                          f"Which {t['name']} do the flows call: its base URL or host, and the names of the Kestra "
                          "secrets that hold its credentials? Write them in the answer.",
-                         plain=f"What is the URL of the non-production {t['name']}, and which Kestra secrets hold "
-                               "its credentials?",
+                         plain=f"{t.get('short_name') or t['name']}: the URL of a non-production instance, and the "
+                               "Kestra secrets that hold its credentials?",
                          why="the vRO side kept them in its own settings; a Kestra flow names them"
                              + (" (the plugin's tasks take host, username and password)" if t.get("reach") == "plugin"
                                 else ""))
@@ -582,16 +593,16 @@ def timeout_policy(key: str, name: str, minutes, *, webhook: bool = False, path:
     wait = f"{minutes} min" if minutes else "for it"
     keep = f"keep vRA's timeout ({minutes} min)" if minutes else "keep vRA's timeout"
     if webhook:
-        then = "a failure answers vRA as a failure, so vRA stops the deployment as it does today"
+        then = "a failure stops the deployment, as today"
     elif path == "delete":
-        then = ("a failure stops the deletion before anything more is removed, as vRA does, and the deployment "
-                "stays for a retry")
+        then = "a failure stops the deletion and the deployment stays for a retry, as today"
     else:
-        then = "a failure stops the deployment and runs the create path's cleanup (its errors branch)"
+        then = "a failure stops the deployment and runs the create path's cleanup"
     return G.by_decision(key, f"'{name}' is blocking: vRA waited {wait} and a failure stopped the "
                               + ("deletion" if path == "delete" else "deployment")
                               + ". What timeout does the Kestra step get, and what does a failure do?",
-                         recommended=f"{keep}; {then}", why="the behaviour vRA has today, carried across unchanged")
+                         recommended=f"{keep}; {then}", why="the behaviour vRA has today, carried across unchanged",
+                         plain=f"Timeout and failure handling for blocking step '{name}'?")
 
 
 def failure_policy(key: str, name: str, path: str | None = None) -> dict:
@@ -626,7 +637,9 @@ def _client_route(key: str, t: dict, assess: dict) -> dict:
     return G.by_decision(f"client-route.{G.key_part(key)}",
                          f"How do flows call {t['name']}: HTTP tasks, the vendor SDK in a script task, or a new "
                          "plugin? (The instance and its secrets are the endpoint decision.)",
-                         ["http", "sdk", "new plugin"], recommended=rec, why=why)
+                         ["http", "sdk", "new plugin"], recommended=rec, why=why,
+                         plain=f"How do flows call {t.get('short_name') or t['name']}: http tasks, sdk in a script, "
+                               "or a new plugin?")
 
 
 def _scc(nodes, deps):
