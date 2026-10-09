@@ -79,7 +79,11 @@ you only. A command-line flag overrides an environment variable (`KESTRA_MIGRATE
 `KESTRA_MIGRATE_MODEL`, `KESTRA_MIGRATE_BASE_URL`), which overrides the file, which overrides the defaults.
 Keys go in an environment variable the file names; nothing about the model is written to the export folder.
 
-Tested models: MODELS_TESTED_PLACEHOLDER
+Tested models, through `claude-code` on a load-balancer estate: `claude-opus-5-5` (the default),
+`claude-fable-5-1` and `claude-sonnet-5-5`. Opus gave the best brief. Fable gave a brief of the same quality,
+but cost about three times as much and took twice as long; to use it, set `model: claude-fable-5-1` in the
+config file, or pass `--model claude-fable-5-1`. Sonnet is the cheapest, but it missed a real defect that the
+other two found.
 
 Every reply is checked against the structure the tool expects. A reply that does not match is asked for once
 more, with what was wrong; a second miss stops that call with an error that names the model. Other models
