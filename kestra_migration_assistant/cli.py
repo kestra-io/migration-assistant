@@ -37,8 +37,9 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else list(argv)
     ap = argparse.ArgumentParser(
         prog="kestra-migrate",
-        description="Kestra Migration Assistant: assess an automation estate for migration to Kestra. "
-                    "Everything runs on this machine; only the configured model is called.")
+        description="Kestra Migration Assistant for vRA: assess a VMware vRA / vRO estate for migration to Kestra, "
+                    "from its export. Everything runs on this machine; only the configured model is called.",
+        epilog="Start with: kestra-migrate vra run <export folder>")
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="tool", required=True, metavar="{" + ",".join([*TOOLS, "init"]) + "}")
     ip = sub.add_parser("init", help=INIT_HELP, description=INIT_HELP)

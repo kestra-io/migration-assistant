@@ -1,7 +1,7 @@
 """
 Intake check: refuse an export that still carries secrets, before it is stored or read by any stage.
 
-    vro.py check-intake <path>     # a .package, a .workflow, a ZIP, a BTVA tree or any folder
+    kestra-migrate vra check-intake <path>     # a .package, a .workflow, a ZIP, a BTVA tree or any folder
       exit 0   nothing secret-shaped found: accepted
       exit 1   something secret-shaped found: rejected, with a masked report
       exit 2   the path is missing or unsafe to open (ZIP bomb, traversal, symlink, over the size limits)
@@ -10,7 +10,7 @@ It runs the sanitizer's own detectors, read-only: private keys, JWTs, cloud and 
 and basic tokens, password/token/key assignments with a literal value, long mixed-case-and-digit
 literals, and any SecureString attribute or parameter whose value is not vRO's null sentinel
 `__NULL__`. Hostnames, IPs, emails and user names are not grounds for rejection: they are what
-`vro.py sanitize` redacts, and an export without them is not required.
+sanitize (the first step of `kestra-migrate vra run`) redacts, and an export without them is not required.
 
 A sanitized copy passes, because every value the sanitizer finds is a placeholder (`<SECRET-01>`) or
 `__NULL__` afterwards. The report prints the file, line, kind and a masked preview, never the value.
@@ -133,7 +133,7 @@ def report(r: dict) -> str:
     if r["findings"]:
         L += ["", "Values are masked; none is printed in full."]
         L += [f"  {f['file']}:{f['line']}: {f['kind']}: {f['preview']}" for f in r["findings"]]
-        L += ["", "Ask the sender to remove these values, or run `vro.py sanitize` on the export and send the "
+        L += ["", "Ask the sender to remove these values, or run `kestra-migrate vra run` on the export (it sanitizes first) and send the "
               "sanitized copy (it replaces every one with a placeholder or __NULL__)."]
     if r["skipped"]:
         L += ["", "Not read (check these by hand):"] + [f"  {s}" for s in r["skipped"]]

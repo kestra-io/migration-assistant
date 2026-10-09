@@ -34,6 +34,41 @@ ASSETS = os.path.join(PACKAGE, "assets")
 # Bundled assets (the plugin map, the plugin snapshot, the page assets) come from inside the installed
 # package; nothing is resolved against a repository.
 
+PRODUCT = "Kestra Migration Assistant for vRA"           # the name everywhere a customer sees it
+
+
+def run_facts(date: str | None = None) -> dict:
+    """What every page's footer says about the run: the tool's version, the model that wrote the specs, the date of
+    the brief, and the date of the plugin catalog snapshot the coverage was checked against."""
+    from kestra_migration_assistant import __version__
+    models: set[str] = set()
+    prov = os.path.join(SPEC_DIR, "PROVENANCE.json") if SPEC_DIR else ""
+    if prov and os.path.exists(prov):
+        for part in ("specs", "cluster_summaries"):
+            models |= {str(x["model"]) for x in (read_json(prov).get(part) or {}).values() if x.get("model")}
+    brief = os.path.join(BRIEF, "brief.json") if BRIEF else ""
+    date = date or (read_json(brief).get("generated") if brief and os.path.exists(brief) else None) or now()
+    from .coverage import latest_snapshot
+    snap = latest_snapshot()
+    return {"version": __version__, "model": ", ".join(sorted(models)) or "no model", "date": str(date)[:10],
+            "snapshot": str((snap or {}).get("taken") or "")[:10] or "none bundled"}
+
+
+def run_command() -> str:
+    """The command that runs this estate again, as typed from the folder the export folder sits in."""
+    if not SOURCE_DIR:
+        return "kestra-migrate vra run <export folder>"
+    cmd = f"kestra-migrate vra run {_arg(rel(SOURCE_DIR))}"
+    if STAGES and os.path.abspath(STAGES) != os.path.join(SOURCE_DIR, outdir.OUTPUT_DIRNAME):
+        cmd += f" --out {_arg(rel(STAGES))}"
+    return cmd
+
+
+def _arg(s: str) -> str:
+    """A path as one shell argument: quoted when it has a space or a character a shell reads."""
+    return f'"{s}"' if re.search(r"[^A-Za-z0-9._/:@%+=,~-]", s) else s
+
+
 ESTATE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 INPUT_SUFFIXES = (".package", ".workflow", ".zip", ".xml")
 TREE_MARKERS = ("Workflow", "workflows", "ScriptModule", "actions", "ConfigurationElement",
@@ -245,7 +280,7 @@ def configure(estate: str, *, source_dir: str | None = None, stages_dir: str | N
     outdir.skip(STAGES)
     PRE = os.path.join(STAGES, LAYOUT["preflight"])
     ASSESS = os.path.join(STAGES, LAYOUT["assess"])
-    UNDERSTAND = os.path.join(STAGES, LAYOUT["understand"])  # written by `vro.py understand`
+    UNDERSTAND = os.path.join(STAGES, LAYOUT["understand"])  # written by Understand
     BRIEF = os.path.join(STAGES, LAYOUT["brief"])
     PAGES = os.path.join(STAGES, LAYOUT["pages"])            # the detail pages; INDEX (the brief) is the way in
     INDEX = os.path.join(STAGES, "index.html")
@@ -390,7 +425,7 @@ def short_names(names: dict[str, str]) -> dict[str, str]:
     return out
 
 
-# A long stage reports what it is doing while it runs (`vro.py run` sets the reporter; nothing else does).
+# A long stage reports what it is doing while it runs (`run` sets the reporter; nothing else does).
 _PROGRESS = None
 
 

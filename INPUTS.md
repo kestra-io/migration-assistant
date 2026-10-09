@@ -109,7 +109,7 @@ Answers go in `<export folder>/kestra-assessment/your-input/answers.yaml`, the o
 the only file in `your-input/`. It looks like this:
 
 ```yaml
-# Answer what's open, then run vro2k again.
+# Answer what's open, then run: kestra-migrate vra run acme
 
 open:
   - id: endpoint.f5-bigip
@@ -159,7 +159,7 @@ add `<export folder>/kestra-assessment/your-input/corrections.yaml`. The tool ne
 is there. Leave a section empty to change nothing:
 
 ```yaml
-# vro2k: corrections (optional). Read on every run; leave a section empty to change nothing.
+# Kestra Migration Assistant for vRA: corrections (optional). Read on every run; leave a section empty to change nothing.
 #
 # Only for what the tool found wrong. Answers to its questions go in answers.yaml, next to this file.
 # Keys are the short names the pages show (or the workflow IDs in data/3-brief/triage.csv).

@@ -144,7 +144,7 @@ def clusters(r: dict) -> str:
     L += [f"Method: {m['method']}, threshold {m['threshold']}. Weights: "
           + ", ".join(f"{k} {v}" for k, v in m["weights"].items()) + ".", "",
           "Clustered by a fingerprint of each workflow's item types, graph shape, plugin types, SDK calls, signature and normalised scripts.", "",
-          "Names and summaries come from `2-understand/cluster-summaries.json` (model-written by `vro.py understand`), "
+          "Names and summaries come from `2-understand/cluster-summaries.json` (model-written by Understand), "
           "matched to clusters by member set; a cluster without one has no name here.", ""]
     L += [T(["Cluster", "Size", "Domain", "Name (cached summary)", "First of a kind", "Colour mix"],
             [[c["cluster_id"], c["size"], c["domain"], c["summary_name"] or "", _n(r, c['first_of_a_kind']),

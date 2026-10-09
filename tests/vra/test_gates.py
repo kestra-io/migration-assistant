@@ -116,7 +116,7 @@ def test_answers_yaml_lists_every_decision_with_options(estate):
             assert e["suggested"] == rec, k
         elif G.suggestion(G.entries(b["plan"])[k]) is None:
             assert "suggested" not in e, k
-    assert text.startswith("# Answer what's open, then run vro2k again.\n\nopen:\n")
+    assert text.startswith("# Answer what's open, then run: kestra-migrate vra run ") and "\n\nopen:\n" in text
     assert sum(1 for ln in text.splitlines() if ln.lstrip().startswith("#")) == 1
 
 

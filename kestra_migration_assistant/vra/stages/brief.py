@@ -171,7 +171,7 @@ def _triage(assess, specs, fok, overrides, coverage, reaching, vra_replaced, sta
         if u in tri:
             tri[u]["spec_stale"] = why
             tri[u]["notes"].append(f"its spec was written from different code or input than the estate's now "
-                                   f"({why}); run `vro.py understand` (billed) before relying on this outcome")
+                                   f"({why}); run `{C.run_command()}` with a model (billed) before relying on this outcome")
     # a near-duplicate follows its first of a kind
     for t in tri.values():
         if t["outcome"] == "Near-duplicate":
@@ -734,6 +734,6 @@ def open_questions_md(assess, specs, tri, answers, cover=None) -> str:
                      f"[its page](../../report/workflows/{w.get('short') or u}.html)")
     else:
         L.append("None found" + ("" if any(s and "suspected_defects" in s for s in specs.values()) else
-                                  " (the specs predate the field: regenerate them with `vro.py understand`)") + ".")
+                                  " (the specs predate the field: regenerate them by running `{C.run_command()}` with a model)") + ".")
     L.append("")
     return "\n".join(L)

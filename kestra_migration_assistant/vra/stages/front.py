@@ -712,7 +712,7 @@ def _status(brief: dict, st: dict, num: dict) -> dict:
     sign = ((brief.get("input") or {}).get("sign") or brief.get("approval") or {})
     if st["blocking"]:
         k = len(st["blocking"])
-        head = f"Next step: answer {k} open {_s(k, 'item')}, then run vro2k again."
+        head = f"Next step: answer {k} open {_s(k, 'item')}, then run `{C.run_command()}` again."
         body = ((f"{r} of the estate's {n} elements are ready to convert today." if r else
                  f"None of the estate's {n} elements is ready to convert yet.")
                 + f" {'The rest wait' if r else 'They wait'} on "
@@ -796,7 +796,6 @@ def _reach_words(t: dict) -> str:
 def document_no_model(assess: dict, brief: dict) -> list[tuple]:
     """The front page of a run with no model: everything the code found, in full, and one plain line where a
     verdict needs a model. No recommendation and no plan: both follow from verdicts this run could not make."""
-    from kestra_migration_assistant.config import LANDING_PAGE
     st = S.status_of(brief)
     est = C.ESTATE or brief.get("estate") or "vRO"
     wf = assess["workflows"]
@@ -930,10 +929,9 @@ def document_no_model(assess: dict, brief: dict) -> list[tuple]:
           ("p", "A model reads each workflow's code and writes down what it does. From that come the three things this "
                 "run leaves open: what each workflow does, its possible defects, and whether to convert or rebuild it. "
                 "The recommendation and the migration plan in waves follow from those verdicts."),
-          ("ul", [f"**Run it again with a model.** From the folder that holds {est}: `kestra-migrate vra run {est}`. "
-                  "It uses your Claude Code login if `claude` is installed and logged in, or an Anthropic API key in "
-                  "ANTHROPIC_API_KEY, and `kestra-migrate init` sets up another model. What this run found is kept.",
-                  f"**Get help from Kestra.** [We can help you run it, or run it for you]({LANDING_PAGE})."])]
+          ("p", f"**Run it again with a model:** `{C.run_command()}`, from the folder that holds {est}. "
+                "It uses your Claude Code login if `claude` is installed and logged in, or an Anthropic API key in "
+                "ANTHROPIC_API_KEY, and `kestra-migrate init` sets up another model. What this run found is kept.")]
 
     nd = needs(assess, brief, st)
     if nd:
@@ -965,7 +963,7 @@ def document(assess: dict, brief: dict) -> list[tuple]:
     pkg = "package" if all(str(p).endswith(".package") for p in ins.values()) else "export"
     src = f"{n_pkg} vRO {_s(n_pkg, pkg)}" + (f" and {n_vra} vRA {_s(n_vra, 'export')}" if n_vra else "")
     B: list[tuple[str, Any]] = [("h1", f"Migration brief: {est}"),
-         ("p", f"What vro2k found in the {est} export, what it recommends, and what it needs from you before anything "
+         ("p", f"What the {C.PRODUCT} found in the {est} export, what it recommends, and what it needs from you before anything "
                f"is converted. This is Stage 1 of the [vRA migration guide]({GUIDE}), done for you from {src} on "
                f"{_date(brief['generated'])}.")]
     B.append(("status", dict(_status(brief, st, num), stand_in=stand_in(brief))))
@@ -973,7 +971,7 @@ def document(assess: dict, brief: dict) -> list[tuple]:
     if stale:
         names = [assess["workflows"][u]["name"] if u in assess["workflows"] else u for u in sorted(stale)]
         B.append(("sub", f"{len(stale)} {_s(len(stale), 'spec describes', 'specs describe')} other code or another "
-                         f"prompt than today's ({_capped(names, 3, 'more')}). Running `vro.py understand` writes "
+                         f"prompt than today's ({_capped(names, 3, 'more')}). Running `{C.run_command()}` with a model writes "
                          f"{_s(len(stale), 'it', 'them')} again, and that is billed."))
 
     B += [("h2", "What's in this estate"), ("p", estate_paragraph(assess, brief))]
