@@ -63,7 +63,7 @@ def _fill(updates: dict):
 
 
 def _doc():
-    return yaml.safe_load(open(C.ANSWERS))
+    return yaml.load(open(C.ANSWERS), Loader=Y.TextLoader)      # as the tool reads it: answers are text
 
 
 def _flat():
@@ -79,20 +79,22 @@ def test_every_criterion_names_the_file_and_field_that_close_it(estate):
     for n, e in crit:
         c = e.get("closes")
         if c and c["kind"] == "gate":           # an earlier wave's exit: the migration closes it, nobody answers it
-            assert c["field"] not in keys and c["when"] == f"closes when Wave {c['wave']} is migrated and verified"
+            assert c["field"] not in keys and c["when"] == f"Starts once Wave {c['wave']} is migrated and verified"
             continue
         assert c and c["file"] in files and c["field"], (n, e["criterion"])
         assert e["status"] in ("open", "done", "blocked")
         if c["file"] == G.ANSWERS_FILE:
             assert c["field"] in keys, (c["field"], "is not an item of answers.yaml")
-    # BRIEF.md's appendix gives every criterion the key that closes it (a workflow's defects share one line)
+    # BRIEF.md's appendix gives every criterion the key that closes it (possible defects and spec questions are
+    # counted instead)
     appendix = md.split("## Appendix B", 1)[1]
     for _, e in crit:
         if e["closes"]["kind"] == "gate":
-            assert f"({e['closes']['when']})" in appendix
+            assert f": {e['closes']['when']}" in appendix
             continue
         k = e["closes"]["field"]
-        k = "defect." + k.split(".")[1] + ".*" if k.startswith("defect.") else k
+        if k.startswith(("defect.", "question.")):           # counted, one line per wave (test_wave_page.py)
+            continue
         assert f"(`{k}`)" in appendix, k
 
 
@@ -272,11 +274,12 @@ def test_a_wave_exit_is_a_gate_the_migration_closes_not_an_open_item(estate):
     st = S.status_of(b)
     assert st["open"] == 0 and not st["blocking"] and not st["blocks"]
     assert st["line"] == "Ready to sign. Once signed, Wave 1 can start. Wave 2 starts once Wave 1 is done."
-    # the gate stays on the waves page and in BRIEF.md's appendix, saying what closes it
-    assert "(closes when Wave 1 is migrated and verified)" in md.split("## Appendix B", 1)[1]
+    # the gate stays on the waves page and in BRIEF.md's appendix, in one plain sentence
+    assert "- open: Starts once Wave 1 is migrated and verified" in md.split("## Appendix B", 1)[1]
     V.run()
     waves = open(os.path.join(C.PAGES, "waves.html")).read()
-    assert re.search(r"Wave 1 is done first\s+closes when Wave 1 is migrated and verified</li>", waves)
+    assert re.search(r"</span> Starts once Wave 1 is migrated and verified\s*</li>", waves)
+    assert "is done first" not in waves and "closes when" not in waves
     assert "<code>wave-exit.1</code>" not in waves
     page = open(C.INDEX).read()
     text = F.text_of(page)

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from . import ids as I
 from . import triggers as TG
 
 MECHANICAL = ("plugin", "HTTP", "plugin and HTTP", "core task", "direct conversion", "wrapper", "duplicate", "retire")
@@ -335,7 +336,7 @@ def ready(assess: dict, brief: dict, table_: dict) -> dict:
                 continue
             c = e.get("closes") or {}
             for x in concerns(w, c):
-                blocked.setdefault(x, []).append(str(c.get("field") or c.get("key") or e["criterion"]))
+                blocked.setdefault(x, []).append(I.entry_key(str(c.get("field") or c.get("key") or e["criterion"])))
     n_el = n_ln = 0
     for r in table_["rows"]:
         for i in r["items"]:

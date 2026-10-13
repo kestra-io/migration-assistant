@@ -157,3 +157,28 @@ def defect_words(key: str) -> str:
         return key
     kind = kind_part(key).replace("-", " ")
     return kind + (f" ({parts[2]})" if len(parts) > 3 else "")
+
+
+# A page never lists these IDs to a customer: answers.yaml asks possible defects per workflow
+# (`defects.<workflow>`) and spec questions in one group (`questions`), each with its own words.
+COUNTED = {"defect": ("possible defect", "possible defects", "decided", "to decide"),
+           "question": ("question from reading the workflows", "questions from reading the workflows", "answered",
+                        "to answer")}
+
+
+def counted(family: str, n: int, done: int) -> str:
+    """A wave's possible defects or spec questions in one line: '15 possible defects, decided', '4 of 15 possible
+    defects still to decide'."""
+    one, many, ok, todo = COUNTED[family]
+    return f"{n} {one if n == 1 else many}, {ok}" if done == n else f"{n - done} of {n} {one if n == 1 else many} still {todo}"
+
+
+def entry_key(key: str) -> str:
+    """The answers.yaml entry a customer answers an item under: `defect.<workflow>.…` -> `defects.<workflow>`,
+    `question.…` -> `questions`; any other key is its own entry."""
+    fam, _, rest = key.partition(".")
+    if fam == "defect" and rest:
+        return "defects." + rest.split(".")[0]
+    if fam == "question" and rest:
+        return "questions"
+    return key

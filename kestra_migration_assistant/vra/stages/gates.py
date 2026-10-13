@@ -72,7 +72,7 @@ def by_gate(wave: int) -> dict:
 
 
 def gate_when(wave: int) -> str:
-    return f"closes when Wave {wave} is migrated and verified"
+    return f"Starts once Wave {wave} is migrated and verified"
 
 
 def is_gate(e: dict) -> bool:

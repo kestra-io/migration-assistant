@@ -24,6 +24,7 @@ from collections import Counter, defaultdict
 from typing import Any, cast
 
 from . import common as C
+from . import ids as I
 from . import pages as PG
 from . import theme as TH
 
@@ -524,8 +525,9 @@ def _and_html(xs: list[str]) -> str:
 
 
 def criteria_lines(w: dict, assess: dict) -> list[tuple[str, str, str, str]]:
-    """A wave's entry criteria as short lines: (css class, met or open, what, the key that closes it). Criteria
-    of one family about one workflow (its possible defects, its spec questions) share a line."""
+    """A wave's entry criteria as short lines: (css class, met or open, what, the key that closes it, as HTML).
+    Criteria of one family about one workflow (its spec reviews) share a line; possible defects and spec
+    questions are one counted line each, for the whole wave."""
     targets = assess["targets"]
     from .gates import key_part
     by_part = {key_part(t): (x.get("short_name") or x["name"]) for t, x in targets.items()}
@@ -536,16 +538,31 @@ def criteria_lines(w: dict, assess: dict) -> list[tuple[str, str, str, str]]:
         c = e.get("closes") or {}
         key = str(c.get("field") or c.get("key") or "")
         label, gkey = _criterion_label(e, key, by_part, by_name, wf_by_short)
-        g = groups.setdefault(gkey, {"label": label, "keys": [], "done": 0, "n": 0, "when": ""})
+        fam, _, rest = key.partition(".")
+        if fam in I.COUNTED and rest:
+            gkey = fam
+        g = groups.setdefault(gkey, {"label": label, "keys": [], "done": 0, "n": 0, "when": "", "fam": fam,
+                                     "per": {}})
         g["n"] += 1
         g["done"] += e["status"] == "done"
-        if c.get("kind") == "gate":
-            g["when"] = c["when"]
+        if gkey in I.COUNTED:
+            short = rest.split(".")[0]
+            g["per"][short] = g["per"].get(short, 0) + 1
+        elif c.get("kind") == "gate":
+            pass                                     # its label says it all
         elif key and key not in g["keys"]:
             g["keys"].append(key)
     out = []
-    for g in groups.values():
+    for gk, g in groups.items():
         ok = g["done"] == g["n"]
+        if gk in I.COUNTED:
+            label = I.counted(gk, g["n"], g["done"])
+            u_of = {x["short"]: u for u, x in assess["workflows"].items()}
+            pages = [f'<a href="{href(u_of[sh]) if sh in u_of else sh + ".html"}">'
+                     f'{C.esc(nm(u_of.get(sh)) or sh)}</a> ({k})' for sh, k in sorted(g["per"].items())]
+            out.append(("done" if ok else "wait", "met" if ok else "open", label,
+                        "<span class='muted'>on the pages of " + _and_html(pages) + "</span>"))
+            continue
         label = g["label"] + (f" ({g['n'] - g['done']} open)" if g["n"] > 1 and not ok else "")
         ks = g["keys"]
         if len(ks) > 1 and len({k.rsplit(".", 1)[0] for k in ks}) == 1:
@@ -585,7 +602,7 @@ def _criterion_label(e: dict, key: str, by_part: dict, by_name: dict, wf_by_shor
         m = re.search(r"element (\S+)", e["criterion"])
         return f"Where {m.group(1) if m else 'the state'} lives in Kestra", key
     if fam == "wave-exit":
-        return f"Wave {rest} is done first", key
+        return f"Starts once Wave {rest} is migrated and verified", key
     if fam == "gap":
         return f"No Kestra task for {step or rest}", key
     if fam in fixed:
@@ -812,7 +829,7 @@ def workflow_page(u: str, assess: dict, brief: dict) -> str:
     keys = {x["question"]: g.get("key") for g in oq.get("groups") or [] for x in g["wordings"] if x["workflow"] == u}
     asked = [q for q in sp.get("open_questions", []) if q["question"] not in cov_q]
     qs = "".join(f"<li><i>{C.esc(q.get('theme') or '')}</i>: {C.esc(q['question'])}"
-                 + (f" <span class='muted'>answer in <code>your-input/answers.yaml</code> → <code>{C.esc(keys[q['question']])}</code></span>"
+                 + (f" <span class='muted'>answer in <code>your-input/answers.yaml</code> → <code>{C.esc(I.entry_key(keys[q['question']]))}</code></span>"
                     if keys.get(q["question"]) else "") + "</li>" for q in asked)
     qs += "".join(f"<li class='muted'>Asked once, by a decision: {C.esc(q)} → "
                   + ", ".join(f"<code>{C.esc(c['key'])}</code>" for c in covered if c["question"] == q) + "</li>"
@@ -823,7 +840,8 @@ def workflow_page(u: str, assess: dict, brief: dict) -> str:
                       + (" <span class='muted'>Asked once, in the certificate decisions: "
                          + ", ".join(f"<code>{C.esc(k)}</code>" for k in x["covered_by"]) + "</span></li>"
                          if x.get("covered_by") else
-                         f" <span class='muted'>Keep or fix: <code>{C.esc(x['decision'])}</code></span></li>")
+                         f" <span class='muted'>Keep or fix: <code>your-input/answers.yaml</code> → "
+                         f"<code>{C.esc(I.entry_key(x['decision']))}</code></span></li>")
                       for x in mine)
     decisions = "".join(f"<li><b>{C.esc(d['item'])}</b>: {C.esc(d['condition'])}</li>" for d in sp.get("decisions", []))
     callers = ", ".join(f'<a href="{href(x, "")}">{C.esc(nm(x))}</a>' if x in assess["workflows"] else C.esc(x)
