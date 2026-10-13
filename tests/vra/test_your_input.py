@@ -30,7 +30,7 @@ def _setup(tmp):
 
 
 def _doc():
-    return yaml.safe_load(open(C.ANSWERS))
+    return yaml.load(open(C.ANSWERS), Loader=Y.TextLoader)      # as the tool reads it: answers are text
 
 
 def test_the_file_has_one_comment_two_lists_and_the_signature(tmp_path):

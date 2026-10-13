@@ -11,6 +11,7 @@ from typing import cast
 
 from . import common as C
 from . import front as FR
+from . import ids as I
 
 
 def render(r: dict, assess: dict, specs: dict, answers: dict, old_approval: dict) -> str:
@@ -45,20 +46,21 @@ def _body(r: dict, assess: dict) -> str:
         crit = w["entry_criteria"]
         met = sum(1 for e in crit if e.get("status") == "done")
         L += [f"### Wave {w['wave']} ({met} of {len(crit)} met)", ""]
-        defects: dict[tuple[str, str], list] = {}
+        counted: dict[str, list[int]] = {}                 # possible defects, spec questions: [n, done]
         for e in crit:
             k = closes_key(e)
             st = "met" if e.get("status") == "done" else e.get("status") or "open"
-            if k.startswith("defect.") and k.count(".") >= 2:
-                defects.setdefault((st, k.split(".")[1]), []).append(k)
+            fam = k.partition(".")[0]
+            if fam in I.COUNTED and k.count(".") >= 2:
+                c2 = counted.setdefault(fam, [0, 0])
+                c2[0] += 1
+                c2[1] += e.get("status") == "done"
                 continue
             c = e.get("closes") or {}
-            L.append(f"- {st}: {criterion_label(e, assess)}"
-                     + (f" ({c['when']})" if c.get("kind") == "gate" else f" (`{k}`)" if k else ""))
-        wf = {w["short"]: w["name"] for w in assess["workflows"].values()}
-        for (st, short), ks in defects.items():
-            L.append(f"- {st}: {len(ks)} possible {'defect' if len(ks) == 1 else 'defects'} in {wf.get(short, short)} "
-                     f"(`defect.{short}.*`)")
+            L.append(f"- {st}: {c['when']}" if c.get("kind") == "gate" else
+                     f"- {st}: {criterion_label(e, assess)}" + (f" (`{k}`)" if k else ""))
+        for fam, (n, done) in counted.items():
+            L.append(f"- {'met' if done == n else 'open'}: {I.counted(fam, n, done)} (each workflow's page lists them)")
         L.append("")
     return "\n".join(L).rstrip() + "\n"
 

@@ -695,8 +695,9 @@ def open_questions_md(assess, specs, tri, answers, cover=None) -> str:
     wf = assess["workflows"]
     doms = {d["id"]: d for d in assess["domains"]["domains"]}
     L = ["# Open questions for owners", "",
-         "Every question below is an item in `your-input/answers.yaml`, under the key shown: answer it there and "
-         "re-run. This page only lists them.", "",
+         "Every question below is an item in `your-input/answers.yaml`: a preflight one under the key shown, one "
+         "from reading the workflows in the `questions` group. Answer it there and re-run. This page only lists "
+         "them.", "",
          "## Preflight (the export cannot answer these)", ""]
     for q in answers["items"]:
         L.append(f"- [{' ' if q['open'] else 'x'}] **{q['id']}** {q['question']} (`{q['key']}`)")
@@ -717,7 +718,7 @@ def open_questions_md(assess, specs, tri, answers, cover=None) -> str:
         for g in mine:
             flag = " (blocking)" if g["blocking"] else ""
             who = ", ".join(f"{wf[u]['name']} ({tri[u]['outcome']})" for u in g["workflows"])
-            L.append(f"- [ ] *{g['theme']}{flag}*: {g['question']} Applies to: {who}. (`{g['key']}`)")
+            L.append(f"- [ ] *{g['theme']}{flag}*: {g['question']} Applies to: {who}.")
             for w in g["wordings"][1:]:
                 if w["question"] != g["question"]:
                     L.append(f"  - also asked for {wf[w['workflow']]['name']}: {w['question']}")

@@ -229,3 +229,36 @@ def test_a_second_run_reuses_the_model_cache_and_keeps_every_answer(tmp_path, mo
     flat = Y.flat(yaml.safe_load(open(path)))
     assert flat[item["id"]]["answer"] == "kept as written, 42"
     assert C.STAGE_CACHE == os.path.join(out, "data", "model-cache")
+
+
+def test_a_persons_words_survive_two_runs_byte_for_byte(tmp_path):
+    """`yes`, `no`, `on`, `off`, `y` and `42` are what the person typed, not YAML 1.1 booleans or a number: the tool
+    reads them as text and writes them back exactly, unquoted."""
+    import re
+
+    import yaml
+    export = _export(tmp_path / "estate")
+    assert _main("run", export, "--no-model") == 0
+    path = os.path.join(export, "kestra-assessment", "your-input", "answers.yaml")
+    text = open(path, encoding="utf-8").read()
+    words = ["yes", "no", "on", "off", "y", "42"]
+    typed: dict[str, str] = {}
+    lines, cur = text.split("\n"), None
+    for i, ln in enumerate(lines):
+        m = re.match(r"^\s*- id: (\S+)", ln)
+        cur = m.group(1) if m else cur
+        m = re.match(r"^(\s*)answer:\s*$", ln)
+        if m and cur and len(typed) < len(words):
+            typed[cur] = words[len(typed)]
+            lines[i] = f"{m.group(1)}answer: {typed[cur]}"
+    assert len(typed) == len(words)
+    open(path, "w", encoding="utf-8").write("\n".join(lines))
+    for _ in range(2):
+        assert _main("run", export, "--no-model") == 0
+    after = open(path, encoding="utf-8").read()
+    entries = re.split(r"\n(?=\s*- id: )", after)
+    for k, w in typed.items():
+        e = next(x for x in entries if re.match(rf"\s*- id: {re.escape(k)}\n", x))
+        assert re.search(rf"\n\s*answer: {re.escape(w)}(\n|$)", e), (k, w, e)
+    assert not re.search(r"answer: (true|false|'yes'|'no'|'on'|'off'|'y'|'42')\s*$", after, re.M)
+    assert yaml.safe_load(after)                       # still YAML any reader parses

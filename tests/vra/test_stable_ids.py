@@ -48,7 +48,7 @@ def _brief() -> dict:
 
 
 def _doc() -> dict:
-    return yaml.safe_load(open(C.ANSWERS))
+    return yaml.load(open(C.ANSWERS), Loader=Y.TextLoader)      # as the tool reads it: answers are text
 
 
 def _rewrite(specs, u, change) -> None:

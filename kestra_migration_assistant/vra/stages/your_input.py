@@ -166,12 +166,30 @@ def _memo(reg: dict | None = None) -> dict:
 
 # ------------------------------------------------------------------ reading
 
+# A person's words, as typed: every plain scalar is text (YAML 1.1 would read `yes`, `no`, `on`, `off` and `y` as
+# booleans and `42` as a number, and write them back as `true` or `false`); only an empty value is empty. The
+# dumper resolves the same way, so it writes `yes` back plain, not quoted.
+_TEXT_RESOLVERS = {"": [("tag:yaml.org,2002:null", re.compile(r"^$"))]}
+
+
+class TextLoader(yaml.SafeLoader):
+    yaml_implicit_resolvers = _TEXT_RESOLVERS
+
+
+class TextDumper(yaml.SafeDumper):
+    yaml_implicit_resolvers = _TEXT_RESOLVERS
+
+
+def _yaml(text: str):
+    return yaml.load(text, Loader=TextLoader)
+
+
 def _read(path: str) -> tuple[dict | None, list[str]]:
     """The parsed file, or None and why when it cannot be read."""
     if not os.path.exists(path):
         return {}, []
     try:
-        data = safety.load_yaml(open(path, "rb").read(), os.path.basename(path)) or {}
+        data = safety.load_yaml(open(path, "rb").read(), os.path.basename(path), loader=TextLoader) or {}
     except (OSError, ValueError, yaml.YAMLError) as e:
         return None, [f"{C.rel(path)} could not be read, so nothing in it counts and the tool did not rewrite it: {e}"]
     if not isinstance(data, dict):
@@ -366,7 +384,7 @@ def _scalar(v) -> str:
         return ""
     if isinstance(v, str) and ("\n" in v or "\t" in v):
         return " " + json.dumps(v, ensure_ascii=False)       # one line, read back exactly
-    s = yaml.safe_dump(v, allow_unicode=True, width=float("inf"), default_flow_style=None)
+    s = yaml.dump(v, Dumper=TextDumper, allow_unicode=True, width=float("inf"), default_flow_style=None)
     s = s.removesuffix("\n").removesuffix("\n...").rstrip("\n")
     if isinstance(v, str) and s.startswith("'") and "'" in v:
         return " " + json.dumps(v, ensure_ascii=False)       # "it's", not 'it''s'
@@ -376,7 +394,7 @@ def _scalar(v) -> str:
 def _field(name: str, v, first: bool) -> list[str]:
     pre = "  - " if first else "    "
     if isinstance(v, (dict, list)) and v:
-        body = yaml.safe_dump(v, allow_unicode=True, width=100, default_flow_style=False, sort_keys=False)
+        body = yaml.dump(v, Dumper=TextDumper, allow_unicode=True, width=100, default_flow_style=False, sort_keys=False)
         return [f"{pre}{name}:"] + ["      " + ln for ln in body.rstrip("\n").split("\n")]
     return [f"{pre}{name}:{_scalar(v)}"]
 
@@ -779,12 +797,12 @@ def _same(a, b) -> bool:
 
 def load_text(text: str) -> dict[str, dict]:
     """id -> entry of a file's text in today's format (the read-back check)."""
-    return flat(yaml.safe_load(text) or {})
+    return flat(_yaml(text) or {})
 
 
 def _answers_of(text: str | None) -> str:
     try:
-        d = yaml.safe_load(text or "") or {}
+        d = _yaml(text or "") or {}
     except yaml.YAMLError:
         return text or ""
     if not isinstance(d, dict) or is_old_format(d):
@@ -977,9 +995,9 @@ def _edit(path: str, change) -> str:
     """The file after one change, keeping today's shape (an old-format file is rendered in today's first)."""
     loaded = load(path)
     text = open(path, encoding="utf-8").read() if os.path.exists(path) else render(items(), loaded)
-    d = yaml.safe_load(text) or {}
+    d = _yaml(text) or {}
     if is_old_format(d):
-        d = yaml.safe_load(render(items(), loaded)) or {}
+        d = _yaml(render(items(), loaded)) or {}
     change(d)
     ld = {"entries": {}, "sign": {"signed_for": _text(d.get("signed_for"))}, "memo": loaded["memo"]}
     order = []
