@@ -561,7 +561,7 @@ def criteria_lines(w: dict, assess: dict) -> list[tuple[str, str, str, str]]:
             pages = [f'<a href="{href(u_of[sh]) if sh in u_of else sh + ".html"}">'
                      f'{C.esc(nm(u_of.get(sh)) or sh)}</a> ({k})' for sh, k in sorted(g["per"].items())]
             out.append(("done" if ok else "wait", "met" if ok else "open", label,
-                        "<span class='muted'>on the pages of " + _and_html(pages) + "</span>"))
+                        "<span class='muted'>(listed on the pages of " + _and_html(pages) + ")</span>"))
             continue
         label = g["label"] + (f" ({g['n'] - g['done']} open)" if g["n"] > 1 and not ok else "")
         ks = g["keys"]
