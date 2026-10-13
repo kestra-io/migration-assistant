@@ -247,3 +247,12 @@ def test_the_front_page_names_a_stand_in_only_when_there_is_one():
     from kestra_migration_assistant.vra.stages import front as F
     assert F.stand_in({"input": {"stand_in": True, "sign": {}}})
     assert not F.stand_in({"input": {"stand_in": False, "sign": {"signed": True}}})
+
+
+def test_the_second_figure_says_what_to_do_until_something_is_ready():
+    from kestra_migration_assistant.vra.stages import front as F
+    sp = {"total": 59}
+    st = {"blocking": ["a"] * 9, "blocks": ["Wave 1"], "holding": 9}
+    assert F._second_kpi({}, st, {"elements_ready": 0}, sp) == ("Answer 9 items", "to start Wave 1")
+    assert F._second_kpi({}, dict(st, holding=1), {}, sp) == ("Answer 1 item", "to start Wave 1")
+    assert F._second_kpi({}, st, {"elements_ready": 50}, sp) == ("50 of 59", "are ready now")

@@ -15,9 +15,12 @@ must find each answer under the same ID. An ID is built from three things the co
   cleanup that removes what the run did not create, one value for every item, ...), matched in the `what`, then
   the evidence, then the question. A spec question that matches none takes its theme.
 
-Two items of one workflow that come out the same are told apart by their text, in sorted order (`-2`, `-3`), so
-the order the model listed them in never changes an ID. An item that changes kind or element between runs gets a
-new ID: its old answer is then listed as no longer asked, never attached to something else.
+Two items of one workflow that come out the same are told apart by what each one cites and the others don't
+(`_<what>`): another action of the export, else a name from the code (`state.memberPort`, `receive_timeout`), else
+the words that gave it its kind, else a short hash of its text. Never its place in the list or in a sorted order, so
+neither the order the model listed them in nor its wording of the others moves an answer. An item that changes kind,
+element or what it cites between runs gets a new ID: its old answer is then listed as no longer asked, never
+attached to something else.
 """
 from __future__ import annotations
 
@@ -86,23 +89,58 @@ def _id(family: str, short: str, element: str | None, kind: str) -> str:
     return ".".join([family, short] + ([slug(element)] if element else []) + [kind])
 
 
-def unique(ids: list[str], texts: list[str]) -> list[str]:
-    """Tell apart IDs that came out the same, by the sorted order of their texts, not their position."""
+# A name from the code: dotted (state.memberPort), snake case (receive_timeout), camel case (memberPort), a call
+# (track()), or anything in backquotes.
+CODE = re.compile(r"`([^`\s]{2,60})`|(?<![\w.])([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+|[a-z][a-z0-9]*_[a-z0-9_]+|"
+                  r"[a-z][a-z0-9]*[A-Z][\w$]*|[A-Za-z_$][\w$]*(?=\())")
+
+
+def cited(texts: tuple[str, ...], names: list[str]) -> list[list[str]]:
+    """What one item cites, as slugs in tiers (actions of the export, names from the code, the words that gave it its
+    kind), each in the order it appears in the texts."""
+    tiers: list[list[str]] = [[], [], []]
+    for t in texts:
+        hits = sorted((m.start(), n) for n in names
+                      for m in re.finditer(r"(?<![A-Za-z0-9_])" + re.escape(n) + r"(?![A-Za-z0-9_])", t))
+        tiers[0] += [slug(n) for _, n in hits]
+        tiers[1] += [slug(m.group(1) or m.group(2)) for m in CODE.finditer(t)]
+        low = t.lower()
+        tiers[2] += [slug(m.group(0)) for _, rx in KINDS for m in re.finditer(rx, low)]
+    return [list(dict.fromkeys(x for x in tier if x)) for tier in tiers]
+
+
+def unique(ids: list[str], texts: list, names: list[str] | None = None) -> list[str]:
+    """Tell apart IDs that came out the same by what each item cites and the others in its set don't, never by its
+    position. `texts[i]` is the item's text, or a tuple of its texts in the order they are searched."""
     out = list(ids)
     for k in set(ids):
         same = [i for i, x in enumerate(ids) if x == k]
-        if len(same) > 1:
-            for n, i in enumerate(sorted(same, key=lambda i: texts[i]), 1):
-                if n > 1:
-                    out[i] = f"{k}-{n}"
+        if len(same) < 2:
+            continue
+        own = {i: cited(texts[i] if isinstance(texts[i], tuple) else (texts[i],), names or []) for i in same}
+        for i in same:
+            others = {c for j in same if j != i for tier in own[j] for c in tier}
+            mark = next((c for tier in own[i] for c in tier if c not in others and c not in k.split(".")), None)
+            out[i] = f"{k}_{mark or _short_hash(texts[i])}"
     return out
+
+
+def _short_hash(text) -> str:
+    import hashlib
+    words = " ".join(text if isinstance(text, tuple) else (text,))
+    return "h" + hashlib.sha256(" ".join(words.lower().split()).encode()).hexdigest()[:6]
+
+
+def kind_part(key: str) -> str:
+    """The kind an ID ends with, without what tells it apart: `defect.x.y.tls_state-ref` -> `tls`."""
+    return re.sub(r"-\d+$", "", key.rsplit(".", 1)[-1].split("_", 1)[0])
 
 
 def defect_ids(short: str, defects: list[dict], names: list[str]) -> list[str]:
     """One ID per suspected defect of one workflow, in the order given."""
     ids = [_id("defect", short, element_of(names, d.get("what"), d.get("evidence")),
                kind_of(d.get("what"), d.get("evidence"), d.get("question")) or "other") for d in defects]
-    return unique(ids, [str(d.get("what") or "") for d in defects])
+    return unique(ids, [(str(d.get("what") or ""), str(d.get("evidence") or "")) for d in defects], names)
 
 
 def question_id(short: str, question: str, why: str | None, theme: str | None, names: list[str]) -> str:
@@ -117,5 +155,5 @@ def defect_words(key: str) -> str:
     parts = key.split(".")
     if len(parts) < 3:
         return key
-    kind = re.sub(r"-\d+$", "", parts[-1]).replace("-", " ")
+    kind = kind_part(key).replace("-", " ")
     return kind + (f" ({parts[2]})" if len(parts) > 3 else "")

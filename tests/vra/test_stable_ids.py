@@ -76,10 +76,15 @@ def test_ids_name_the_workflow_the_element_and_the_kind():
     assert I.defect_ids("dns-delete-zone", ds[::-1], names) == ids[::-1]      # the order changes nothing
     # an element the export does not have is never part of an ID
     assert I.defect_ids("w", [{"what": "madeUpHelper ignores the status", "evidence": ""}], names) == ["defect.w.masked-error"]
-    # two of one kind on one element are told apart by their text, not by their order
+    # two of one kind are told apart by what each cites and the other doesn't, never by their order: a name from the
+    # code, else the words that gave them their kind
+    two = [{"what": "the monitor's receive_timeout is not under its send_interval", "evidence": ""},
+           {"what": "the retry wait is shorter than the controller's apply_delay", "evidence": ""}]
+    assert I.defect_ids("w", two, []) == ["defect.w.timing_receive-timeout", "defect.w.timing_apply-delay"]
+    assert I.defect_ids("w", two[::-1], []) == ["defect.w.timing_apply-delay", "defect.w.timing_receive-timeout"]
     two = [{"what": "b: the timeout is too short", "evidence": ""}, {"what": "a: the interval is too long", "evidence": ""}]
-    assert I.defect_ids("w", two, []) == ["defect.w.timing-2", "defect.w.timing"]
-    assert I.defect_ids("w", two[::-1], []) == ["defect.w.timing", "defect.w.timing-2"]
+    assert I.defect_ids("w", two, []) == ["defect.w.timing_timeout", "defect.w.timing_interval"]
+    assert I.kind_part("defect.w.x.timing_interval") == "timing" and I.defect_words("defect.w.x.tls_y") == "tls (x)"
 
 
 def test_an_answer_survives_a_reworded_rerun_in_another_order(estate):
@@ -130,6 +135,43 @@ def test_an_answer_survives_a_reworded_rerun_in_another_order(estate):
     # and it is on nothing else: every other answer is the one given for that item
     answers = {k: e.get("answer") for k, e in Y.flat(d).items() if e.get("answer")}
     assert sorted(k for k, a in answers.items() if a == "fix") == sorted([placeholder, cleanup])
+
+
+def test_two_defects_of_one_kind_on_one_action_keep_their_answers_when_reworded_and_reversed(estate):
+    # two masked errors in removeHostRecord: one swallows a 404, the other ignores the DNS restart's result
+    def two(s):
+        s["suspected_defects"] = [
+            {"what": "removeHostRecord swallows a 404 on the record, so a record already gone is reported as removed",
+             "evidence": "catch (e) { if (e.status == 404) return; }", "question": "Fail on a 404?"},
+            {"what": "removeHostRecord ignores the result of the DNS restart, so a failed restart passes silently",
+             "evidence": "ib.restartServices() is called and its result dropped", "question": "Check the restart?"}]
+    _rewrite(estate, DELETE, two)
+    by_what = _ids_by_what(_brief())
+    swallow, restart = (by_what[w] for w in sorted(by_what) if w.startswith("removeHostRecord"))
+    if "swallows" not in next(w for w, k in by_what.items() if k == swallow):
+        swallow, restart = restart, swallow
+    assert swallow != restart and {swallow.split("_")[0], restart.split("_")[0]} == {
+        "defect.dns-delete-zone.remove-host-record.masked-error"}
+    assert restart.endswith("_ib-restart-services") and swallow.endswith("_e-status")   # what each one cites
+    Y.set_answer(swallow, "keep: a record already gone is fine")
+    Y.set_answer(restart, "fix")
+
+    # the model words both differently and lists them the other way round
+    def reworded(s):
+        s["suspected_defects"] = [
+            {"what": "A failed DNS restart is silently missed: removeHostRecord never looks at what ib.restartServices() "
+                     "returned", "evidence": "the restart's reply is dropped", "question": "Check it?"},
+            {"what": "A 404 from removeHostRecord is tolerated, and the record counts as removed",
+             "evidence": "returns when e.status == 404", "question": "Fail on it?"}]
+    _rewrite(estate, DELETE, reworded)
+    after = _ids_by_what(_brief())
+    assert after["A failed DNS restart is silently missed: removeHostRecord never looks at what ib.restartServices() "
+                 "returned"] == restart
+    assert after["A 404 from removeHostRecord is tolerated, and the record counts as removed"] == swallow
+    d = _doc()
+    assert Y.entry_of(d, swallow)["answer"] == "keep: a record already gone is fine"
+    assert Y.entry_of(d, restart)["answer"] == "fix"
+    assert Y.section_of(d, swallow) != "no_longer_asked" and Y.section_of(d, restart) != "no_longer_asked"
 
 
 def test_an_answer_under_a_positional_id_carries_over_only_when_the_text_is_the_same(estate):

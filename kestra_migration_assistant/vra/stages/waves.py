@@ -408,7 +408,7 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
         for u in members:
             ds = ((specs or {}).get(u) or {}).get("suspected_defects") or []
             for key, d in zip(I.defect_ids(_sh(wf, u), ds, names), ds, strict=True):
-                if tls and key.rsplit(".", 1)[-1] == "tls":
+                if tls and I.kind_part(key) == "tls":
                     # certificate checks are already a decision of this wave: asked once, there
                     for c in tls:
                         c.setdefault("also_answers", []).append(f"{wf[u].get('name') or u}: {d['what']}")
