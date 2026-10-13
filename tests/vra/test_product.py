@@ -107,11 +107,11 @@ def test_the_help_names_the_product(capsys):
 
 
 def test_the_call_to_action_is_one_constant():
-    """The landing page is a placeholder: its address is in config.HELP_URL and nowhere else in the package."""
+    """The landing page's address is in config.HELP_URL and nowhere else in the package."""
     pkg = os.path.join(ROOT, "kestra_migration_assistant")
     found = []
     for dp, _d, fs in os.walk(pkg):
         for f in fs:
-            if f.endswith(".py") and "vra-migration" in open(os.path.join(dp, f), encoding="utf-8").read():
+            if f.endswith(".py") and "migration/vra/assistant" in open(os.path.join(dp, f), encoding="utf-8").read():
                 found.append(f)
     assert found == ["config.py"]

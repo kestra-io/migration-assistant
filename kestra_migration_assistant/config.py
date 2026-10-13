@@ -34,8 +34,8 @@ ENV = {"provider": "KESTRA_MIGRATE_PROVIDER", "model": "KESTRA_MIGRATE_MODEL", "
 FILE_KEYS = ("provider", "model", "base_url", "api_key_env", "api_key", "timeout_s", "max_cost_usd")
 # Above this estimate (USD) a run asks before its first billed call; max_cost_usd in the config file changes it
 DEFAULT_MAX_COST_USD = 20.0
-# The call to action at the end of every report. A placeholder until the landing page is final: change it here only.
-HELP_URL = "https://kestra.io/vra-migration-assistant?utm_source=migration-assistant&utm_medium=report"
+# The call to action at the end of every report, to the landing page's form. Written here only.
+HELP_URL = "https://kestra.io/resources/migration/vra/assistant?utm_source=migration-assistant&utm_medium=report"
 HELP_ASK = "Need help running it, or want us to run it for you?"
 
 

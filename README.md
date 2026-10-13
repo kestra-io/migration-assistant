@@ -130,6 +130,10 @@ write the answer itself. The tool moves an item to `answered` once it has an ans
 written, and never drops an id. Corrections to what the tool found (domains, clusters, reach, wrappers,
 outcomes) go in a `your-input/corrections.yaml` you add yourself; [INPUTS.md](INPUTS.md) shows its shape.
 
+## Help
+
+Need help running it, or want us to run it for you? [Ask us here](https://kestra.io/resources/migration/vra/assistant?utm_source=migration-assistant&utm_medium=readme).
+
 ## Development
 
 ```bash
