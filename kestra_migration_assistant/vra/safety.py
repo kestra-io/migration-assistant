@@ -246,7 +246,7 @@ def load_json(raw: bytes | str, where: str = "JSON"):
     return obj
 
 
-def load_yaml(raw: bytes | str, where: str = "YAML"):
+def load_yaml(raw: bytes | str, where: str = "YAML", loader=None):
     """
     Parse untrusted YAML with the safe loader, one document only. Aliases are refused (they are
     how a small file expands into a huge structure), and so is anything past the depth and node
@@ -255,7 +255,8 @@ def load_yaml(raw: bytes | str, where: str = "YAML"):
     import yaml
     text = _text_of(raw, where)
     events = depth = 0
-    for ev in yaml.parse(text, Loader=yaml.SafeLoader):
+    loader = loader or yaml.SafeLoader
+    for ev in yaml.parse(text, Loader=loader):
         events += 1
         if isinstance(ev, yaml.AliasEvent):
             raise UnsafeInput(f"{where}: YAML aliases are refused")
@@ -267,7 +268,7 @@ def load_yaml(raw: bytes | str, where: str = "YAML"):
             depth -= 1
         if events > MAX_DOC_NODES:
             raise UnsafeInput(f"{where}: more than {MAX_DOC_NODES} nodes")
-    obj = yaml.safe_load(text)
+    obj = yaml.load(text, Loader=loader)
     _check_shape(obj, where)
     return obj
 
