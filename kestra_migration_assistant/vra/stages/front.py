@@ -1099,7 +1099,7 @@ def _second_kpi(brief: dict, st: dict, num: dict, sp: dict) -> tuple[str, str]:
     """What is ready, once answers have made something ready; until then, what the open answers unlock."""
     if not num.get("elements_ready") and st["blocking"] and st["blocks"]:
         k = st.get("holding") or len(st["blocking"])
-        return f"{k} {_s(k, 'answer')}", f"{_s(k, 'starts', 'start')} {_and(st['blocks'])}"
+        return f"Answer {k} {_s(k, 'item')}", f"to start {_and(st['blocks'])}"
     return f"{num.get('elements_ready', 0)} of {sp['total']}", "are ready now"
 
 
