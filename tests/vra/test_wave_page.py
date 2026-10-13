@@ -71,7 +71,8 @@ def test_the_waves_page_counts_defects_and_questions_and_shows_no_ids(estate):
     assert not re.search(r"\b(defect|question)\.[a-z0-9-]+\.", appendix)
     estate("defects.web-provision-host", "keep them all")
     page, text = _waves()
-    assert "2 possible defects, decided" in text and "still to decide" not in text
+    assert "2 possible defects, decided (listed on the pages of Web - Provision Host (2))" in text
+    assert "still to decide" not in text
 
 
 def test_an_earlier_wave_is_said_plainly(estate):
