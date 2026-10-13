@@ -99,7 +99,7 @@ def run() -> dict:
     asked_now = G.entries(plan)
     tls_keys = sorted(k for k in asked_now if k.startswith("tls."))
     for d in defects:
-        if d["decision"] not in asked_now and d["decision"].rsplit(".", 1)[-1] == "tls" and tls_keys:
+        if d["decision"] not in asked_now and I.kind_part(d["decision"]) == "tls" and tls_keys:
             d["covered_by"] = tls_keys                  # asked once, in the certificate decisions (waves.py)
     from . import translate
     translation = translate.table(assess, {"triage": tri, "action_triage": act_tri, "plan": plan,
@@ -304,7 +304,7 @@ def question_keys(qgroups: list[dict], wf: dict, names: list[str] | None = None)
     never its position or its exact words."""
     keys = I.unique([I.question_id(wf[g["workflows"][0]]["short"], g["question"], g.get("why_it_matters"),
                                    g.get("theme"), names or []) for g in qgroups],
-                    [g["question"] for g in qgroups])
+                    [(g["question"], str(g.get("why_it_matters") or "")) for g in qgroups], names)
     out = {}
     for g, k in zip(qgroups, keys, strict=True):
         g["key"] = k
