@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security issue
+    url: https://github.com/kestra-io/migration-assistant/security/advisories/new
+    about: Privately, never in a public issue. See SECURITY.md.
+  - name: Help running it, or have us run it for you
+    url: https://kestra.io/resources/migration/vra/assistant?utm_source=migration-assistant&utm_medium=github
+    about: Talk to the team behind it.
