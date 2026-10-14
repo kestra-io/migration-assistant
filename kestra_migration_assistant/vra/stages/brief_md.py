@@ -41,27 +41,35 @@ def _body(r: dict, assess: dict) -> str:
     if not r["plan"]["waves"]:
         return "\n".join(L).rstrip() + "\n"
     L += ["## Appendix B. Entry criteria per wave", "",
-          "Met or open, and the item in `your-input/answers.yaml` that closes it.", ""]
+          "The criteria still open, each with the item in `your-input/answers.yaml` that closes it, then how many "
+          "are met. The waves page lists the met ones too.", ""]
     for w in r["plan"]["waves"]:
         crit = w["entry_criteria"]
         met = sum(1 for e in crit if e.get("status") == "done")
-        L += [f"### Wave {w['wave']} ({met} of {len(crit)} met)", ""]
-        counted: dict[str, list[int]] = {}                 # possible defects, spec questions: [n, done]
+        L += [f"### Wave {w['wave']}", ""]
+        counted: dict[str, list] = {}                      # possible defects, spec questions: [n, done, entries]
         for e in crit:
             k = closes_key(e)
-            st = "met" if e.get("status") == "done" else e.get("status") or "open"
+            done = e.get("status") == "done"
             fam = k.partition(".")[0]
             if fam in I.COUNTED and k.count(".") >= 2:
-                c2 = counted.setdefault(fam, [0, 0])
+                c2 = counted.setdefault(fam, [0, 0, {}])
                 c2[0] += 1
-                c2[1] += e.get("status") == "done"
+                c2[1] += done
+                if not done:
+                    c2[2][I.entry_key(k)] = 1
                 continue
+            if done:
+                continue
+            st = e.get("status") or "open"
             c = e.get("closes") or {}
             L.append(f"- {st}: {c['when']}" if c.get("kind") == "gate" else
                      f"- {st}: {criterion_label(e, assess)}" + (f" (`{k}`)" if k else ""))
-        for fam, (n, done) in counted.items():
-            L.append(f"- {'met' if done == n else 'open'}: {I.counted(fam, n, done)} (each workflow's page lists them)")
-        L.append("")
+        for fam, (n, done, entries) in counted.items():
+            if done < n:
+                L.append(f"- open: {I.counted(fam, n, done)} (each workflow's page lists them; "
+                         + ", ".join(f"`{x}`" for x in entries) + ")")
+        L += [f"{met} of {len(crit)} met.", ""]
     return "\n".join(L).rstrip() + "\n"
 
 

@@ -248,7 +248,8 @@ def test_every_spec_is_a_review_item_and_an_answer_closes_its_gate(estate):
                 if e["criterion"].startswith("Owner reviews the spec")]
         assert crit[0]["status"] == "done" and "the purpose is right" in crit[0]["note"]
         md = open(C.BRIEF_MD).read()
-        assert re.search(r"- met: Owner reviews the spec for " + re.escape(estate["assess"]["workflows"][PROV]["name"]), md)
+        assert not re.search(r"- open: Owner reviews the spec for " + re.escape(estate["assess"]["workflows"][PROV]["name"]),
+                             md)                                                 # met: counted, no longer listed
         assert b["reviews"]["reviewed"] == [PROV]
     finally:
         open(C.ANSWERS, "w").write(before)
@@ -325,7 +326,7 @@ def test_the_replacement_wave_has_entry_criteria_and_takes_the_blocking_policy(e
     w1 = next(x for x in plan["waves"] if PROV in x["workflows"])
     assert not any("timeout and failure policy is decided" in e["criterion"] for e in w1["entry_criteria"])
     md = estate["md"]
-    assert "**Wave 2, replacing vRA.**" in md and "### Wave 2 (" in md
+    assert "**Wave 2, replacing vRA.**" in md and "### Wave 2\n" in md
 
 
 def test_a_signed_approval_closes_the_approval_gate_of_the_waves_it_covers(estate):
