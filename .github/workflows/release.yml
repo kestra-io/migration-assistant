@@ -5,8 +5,12 @@
 #                 container image for linux/amd64 and linux/arm64, smoke-tested on both, pushed to
 #                 ghcr.io/kestra-io/migration-assistant:<version>, with an SBOM per architecture; SHA256SUMS; a
 #                 GitHub release with all of them attached (a pre-release for a candidate)
-#   final tags    the image is also tagged latest, and the packages go to PyPI through Trusted Publishing: no token
-#                 is stored anywhere, PyPI trusts this workflow in the `pypi` environment
+#   final tags    the image is also tagged latest
+#
+# Customers install from the tag (uv tool install git+https://github.com/kestra-io/migration-assistant@v<version>),
+# so nothing goes to PyPI: a version there can never be replaced. The PyPI job is kept, off, for later: set the
+# repository variable PUBLISH_TO_PYPI to true (Settings, Secrets and variables, Actions, Variables) and a final tag
+# publishes through Trusted Publishing from the `pypi` environment, with no token stored anywhere.
 #
 # Actions are pinned to a commit; the tag they were at is in the comment.
 name: release
@@ -227,22 +231,20 @@ jobs:
           base="$(echo "$VERSION" | sed -E 's/(a|b|rc)[0-9]+$//')"
           {
             if [ "$FINAL" != true ]; then
-              echo "Release candidate for $base. Not on PyPI: install the wheel attached here."
+              echo "Release candidate for $base."
               echo
             fi
             awk -v h="## $base" '/^## /{p = index($0, h) == 1; next} p' CHANGELOG.md
             echo
             echo "## Install"
             echo
-            if [ "$FINAL" = true ]; then
-              echo '```bash'
-              echo "uv tool install kestra-migration-assistant==$VERSION"
-              echo '```'
-            else
-              echo '```bash'
-              echo "uv tool install ./kestra_migration_assistant-$VERSION-py3-none-any.whl"
-              echo '```'
-            fi
+            echo "From this tag, with uv (git is needed; pipx and pip take the same URL):"
+            echo
+            echo '```bash'
+            echo "uv tool install git+https://github.com/$GITHUB_REPOSITORY@$GITHUB_REF_NAME"
+            echo '```'
+            echo
+            echo "Or the wheel attached here: \`uv tool install ./kestra_migration_assistant-$VERSION-py3-none-any.whl\`."
             echo
             echo "Container image, linux/amd64 and linux/arm64: \`$IMAGE:$VERSION\`"
             echo "(\`$(cat artifacts/image/image.txt)\`)."
@@ -262,7 +264,8 @@ jobs:
   pypi:
     name: PyPI
     needs: [check, release]
-    if: needs.check.outputs.final == 'true'
+    # Off unless the repository variable PUBLISH_TO_PYPI is true (it is not set): see the top of this file
+    if: needs.check.outputs.final == 'true' && vars.PUBLISH_TO_PYPI == 'true'
     runs-on: ubuntu-24.04
     environment:
       name: pypi

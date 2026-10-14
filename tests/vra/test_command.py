@@ -267,3 +267,15 @@ def test_a_persons_words_survive_two_runs_byte_for_byte(tmp_path):
         assert re.search(rf"\n\s*answer: {re.escape(w)}(\n|$)", e), (k, w, e)
     assert not re.search(r"answer: (true|false|'yes'|'no'|'on'|'off'|'y'|'42')\s*$", after, re.M)
     assert yaml.safe_load(after)                       # still YAML any reader parses
+
+
+def test_the_re_running_line_names_each_file_once(tmp_path, capsys):
+    """Assess re-runs when a file it reads is newer than its output. cluster-summaries.json is one of them by name and
+    also sits in the spec folder: the line named it twice."""
+    export = _export(tmp_path / "estate")
+    assert _main("run", export, "--no-model") == 0
+    lines = [x for x in capsys.readouterr().out.splitlines() if "re-running: newer than" in x]
+    assert lines, "a first run re-reads what Understand wrote"
+    for line in lines:
+        named = line.split("newer than assess.json: ")[1].split(", ")
+        assert len(named) == len(set(named)), line

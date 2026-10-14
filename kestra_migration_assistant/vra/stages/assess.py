@@ -899,9 +899,10 @@ def load() -> dict:
     """Assess output as later stages read it. Re-runs Assess if a human edit or a spec is newer."""
     path = os.path.join(C.ASSESS, "assess.json")
     spec_files = [os.path.join(C.SPEC_DIR, f) for f in os.listdir(C.SPEC_DIR)] if os.path.isdir(C.SPEC_DIR) else []
-    newer = [p for p in (C.CORRECTIONS, C.PLUGIN_MAP,
-                         C.CLUSTER_SUMMARIES, C.ENTRY_POINTS, *C.VRA_INPUTS.values(), *spec_files)
-             if C.mtime(p) > C.mtime(path)]
+    # cluster-summaries.json is named here and is also in the spec folder: each file once
+    watched = dict.fromkeys(os.path.normpath(p) for p in (C.CORRECTIONS, C.PLUGIN_MAP, C.CLUSTER_SUMMARIES,
+                                                          C.ENTRY_POINTS, *C.VRA_INPUTS.values(), *spec_files))
+    newer = [p for p in watched if C.mtime(p) > C.mtime(path)]
     if not os.path.exists(path) or newer:
         if newer:
             print(f"[assess] re-running: newer than assess.json: {', '.join(C.rel(p) for p in newer[:5])}"

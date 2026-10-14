@@ -107,3 +107,22 @@ def test_each_workflow_says_it_needs_a_model_not_manual(out):
     assert not brief["plan"]["waves"]
     page = _text(next((out / "report" / "workflows").glob("dns-*.html")))
     assert "need a model" in page
+
+
+def test_in_the_container_the_way_forward_offers_only_what_works_there(tmp_path, monkeypatch):
+    """The image sets KESTRA_MIGRATE_CONTAINER=1. A Claude Code login and `kestra-migrate init` don't work there, so
+    the page and BRIEF.md offer an API key or an OpenAI-compatible endpoint, with the arguments after the image."""
+    from kestra_migration_assistant.config import CONTAINER_ENV
+    from kestra_migration_assistant.vra import cli
+    monkeypatch.setenv(CONTAINER_ENV, "1")
+    monkeypatch.setenv("VRO_NO_MODEL", "1")
+    export = tmp_path / "acme"
+    shutil.copytree(os.path.join(REVIEW, "vro"), export / "vro")
+    assert cli.main(["run", str(export), "--no-model"]) == 0
+    out = export / "kestra-assessment"
+    page = _sections(open(out / "index.html", encoding="utf-8").read())["What a model adds"]
+    brief = (out / "report" / "BRIEF.md").read_text(encoding="utf-8")
+    for text in (page, brief):
+        assert "docker run" in text and "vra run" in text and "ANTHROPIC_API_KEY" in text
+        assert "KESTRA_MIGRATE_PROVIDER=openai-compatible" in text
+        assert "Claude Code login" not in text and "kestra-migrate init" not in text and "kestra-migrate vra" not in text
