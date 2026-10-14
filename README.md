@@ -31,6 +31,8 @@ pipx install git+https://github.com/kestra-io/migration-assistant@v1.0.0
 pip install git+https://github.com/kestra-io/migration-assistant@v1.0.0
 ```
 
+If `kestra-migrate` isn't found after `uv tool install`, run `uv tool update-shell` and open a new terminal.
+
 To call a model with an Anthropic API key, add the `anthropic` extra:
 `uv tool install 'kestra-migration-assistant[anthropic] @ git+https://github.com/kestra-io/migration-assistant@v1.0.0'`. Nothing else is needed for a Claude Code
 login or an OpenAI-compatible endpoint. To move to a later version, run the same command with its tag; the
