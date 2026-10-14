@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,13 +11,22 @@ requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Kestra Technologies" }]
+keywords = ["kestra", "vmware", "vra", "vro", "aria", "orchestrator", "migration", "assessment"]
 dependencies = ["PyYAML>=6.0"]
 
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Operating System :: OS Independent",
-    "Environment :: Console",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: System :: Systems Administration",
 ]
 
@@ -26,8 +35,10 @@ classifiers = [
 anthropic = ["anthropic>=1.0"]
 
 [project.urls]
-Homepage = "https://github.com/kestra-io/migration-assistant"
+Homepage = "https://kestra.io/resources/migration/vra/assistant"
+Repository = "https://github.com/kestra-io/migration-assistant"
 Issues = "https://github.com/kestra-io/migration-assistant/issues"
+Changelog = "https://github.com/kestra-io/migration-assistant/blob/main/CHANGELOG.md"
 
 [project.scripts]
 kestra-migrate = "kestra_migration_assistant.cli:main"
