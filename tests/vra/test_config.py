@@ -20,7 +20,7 @@ from kestra_migration_assistant import config as K
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch, tmp_path):
-    for v in (*K.ENV.values(), "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "MY_KEY"):
+    for v in (*K.ENV.values(), K.CONTAINER_ENV, "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "MY_KEY"):
         monkeypatch.delenv(v, raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home-config"))
     monkeypatch.setattr(K, "claude_code_ready", lambda: False)
@@ -158,3 +158,36 @@ def test_a_run_set_to_claude_code_without_claude_says_so_before_starting(tmp_pat
     assert vra_cli.main(["run", str(tmp_path / "acme"), "--provider", "claude-code"]) == 2
     err = capsys.readouterr().err
     assert "needs the `claude` command" in err and "--provider" in err
+
+
+# ------------------------------------------------------------------ in the container image
+
+def test_in_the_container_a_claude_code_login_is_never_used(tmp_path, monkeypatch):
+    """The image sets KESTRA_MIGRATE_CONTAINER=1. A Claude Code login cannot reach it, so it is not looked for, and
+    asking for it is a clear error that names the two ways that work."""
+    monkeypatch.setenv(K.CONTAINER_ENV, "1")
+    looked = []
+    monkeypatch.setattr(K, "claude_code_ready", lambda: looked.append(1) or True)
+    s = K.resolve(path=str(tmp_path / "none.yaml"))
+    assert s.provider is None and not looked
+    assert "ANTHROPIC_API_KEY" in s.why and "openai-compatible" in s.why and "claude auth login" not in s.why
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "placeholder")
+    assert K.resolve(path=str(tmp_path / "none.yaml")).provider == "anthropic"
+    with pytest.raises(K.ConfigError, match="Claude Code login cannot be used"):
+        K.resolve({"provider": "claude-code"}, path=str(tmp_path / "none.yaml"))
+
+
+def test_in_the_container_the_help_says_which_models_work_and_init_says_why_not(monkeypatch, capsys):
+    from kestra_migration_assistant.vra import cli as vra_cli
+    monkeypatch.setenv(K.CONTAINER_ENV, "1")
+    for main, args in ((cli.main, ["--help"]), (vra_cli.main, ["--help"]), (vra_cli.main, ["run", "--help"])):
+        with pytest.raises(SystemExit):
+            main(args)
+        out = " ".join(capsys.readouterr().out.split())
+        assert "Claude Code login cannot be used" in out and "ANTHROPIC_API_KEY" in out and "--no-model" in out
+    assert cli.main(["init"]) == 1
+    assert "lost when it stops" in capsys.readouterr().err
+    monkeypatch.delenv(K.CONTAINER_ENV)
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    assert "container" not in capsys.readouterr().out

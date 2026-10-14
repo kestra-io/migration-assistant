@@ -18,6 +18,10 @@ INIT_HELP = "write the config file that says which model to call, and how (in yo
 
 def init(force: bool) -> int:
     from kestra_migration_assistant import config as K
+    if K.in_container():
+        print(f"kestra-migrate init: a config file written in the container is lost when it stops. {K.CONTAINER_HELP}",
+              file=sys.stderr)
+        return 1
     try:
         path, provider = K.init(force=force)
     except FileExistsError as e:
@@ -34,12 +38,13 @@ def init(force: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from kestra_migration_assistant import config as K
     argv = sys.argv[1:] if argv is None else list(argv)
     ap = argparse.ArgumentParser(
         prog="kestra-migrate",
         description="Kestra Migration Assistant for vRA: assess a VMware vRA / vRO estate for migration to Kestra, "
                     "from its export. Everything runs on this machine; only the configured model is called.",
-        epilog="Start with: kestra-migrate vra run <export folder>")
+        epilog="Start with: kestra-migrate vra run <export folder>." + (f" {K.CONTAINER_HELP}" if K.in_container() else ""))
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="tool", required=True, metavar="{" + ",".join([*TOOLS, "init"]) + "}")
     ip = sub.add_parser("init", help=INIT_HELP, description=INIT_HELP)

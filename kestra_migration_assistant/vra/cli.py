@@ -194,11 +194,13 @@ def _export_args(p: argparse.ArgumentParser, model: bool = True) -> None:
 
 
 def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kestra-migrate vra") -> int:
+    from kestra_migration_assistant import config as K
+    note = K.CONTAINER_HELP if K.in_container() else None
     ap = argparse.ArgumentParser(
         prog=prog, description="Kestra Migration Assistant for vRA: assess a vRA / vRO estate for migration to Kestra, "
-                               "from its export, on this machine.")
+                               "from its export, on this machine.", epilog=note)
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="{" + ",".join(COMMANDS_SHOWN) + "}")
-    _export_args(sub.add_parser("run", help=HELP["run"], description=HELP["run"]))
+    _export_args(sub.add_parser("run", help=HELP["run"], description=HELP["run"], epilog=note))
     _export_args(sub.add_parser("status", help=HELP["status"], description=HELP["status"]), model=False)
     ci = sub.add_parser("check-intake", help=HELP["check-intake"], description=HELP["check-intake"])
     ci.add_argument("path", help="a .package, .workflow, ZIP or folder as received")

@@ -39,8 +39,22 @@ HELP_URL = "https://kestra.io/resources/migration/vra/assistant?utm_source=migra
 HELP_ASK = "Need help running it, or want us to run it for you?"
 
 
+# Set by the container image. A Claude Code login cannot be used inside it, and a config file written there is lost
+# when the container stops, so the model is set with environment variables.
+CONTAINER_ENV = "KESTRA_MIGRATE_CONTAINER"
+CONTAINER_MODELS = ("an Anthropic API key (-e ANTHROPIC_API_KEY), or an OpenAI-compatible endpoint "
+                    "(-e KESTRA_MIGRATE_PROVIDER=openai-compatible -e KESTRA_MIGRATE_BASE_URL -e KESTRA_MIGRATE_MODEL "
+                    "-e OPENAI_API_KEY)")
+CONTAINER_HELP = (f"In the container, a Claude Code login cannot be used. Pass {CONTAINER_MODELS}, or run with "
+                  "--no-model.")
+
+
 class ConfigError(ValueError):
     pass
+
+
+def in_container() -> bool:
+    return os.environ.get(CONTAINER_ENV) == "1"
 
 
 @dataclass
@@ -135,7 +149,7 @@ def claude_code_ready() -> bool:
 def resolve(flags: dict | None = None, path: str | None = None, detect=None) -> Settings:
     """The settings, from flags, then the environment, then the config file, then the defaults."""
     path = path or config_path()
-    detect = detect or claude_code_ready
+    detect = detect or (lambda: False if in_container() else claude_code_ready())
     layers = [("command line", {k: v for k, v in (flags or {}).items() if v}),
               ("environment", {k: os.environ[e] for k, e in ENV.items() if os.environ.get(e)}),
               (path, read_file(path))]
@@ -156,6 +170,8 @@ def resolve(flags: dict | None = None, path: str | None = None, detect=None) -> 
     cap = float(got.get("max_cost_usd", DEFAULT_MAX_COST_USD))
     if prov not in PROVIDERS:
         raise ConfigError(f"provider {prov!r} ({source['provider']}) is not one of {', '.join(PROVIDERS)}")
+    if prov == "claude-code" and in_container():
+        raise ConfigError(f"provider claude-code ({source['provider']}) is not available. {CONTAINER_HELP}")
     s = Settings(prov, model=got.get("model"), base_url=got.get("base_url"), api_key_env=got.get("api_key_env"),
                  api_key=got.get("api_key"), timeout_s=got.get("timeout_s"), max_cost_usd=cap, source=source,
                  path=path)
@@ -175,6 +191,9 @@ def resolve(flags: dict | None = None, path: str | None = None, detect=None) -> 
 
 
 def no_model_help(path: str) -> str:
+    if in_container():
+        return ("No model is set up, so this run uses no model: everything the code can find is in the brief, and "
+                f"what needs a model is marked. To add one, pass {CONTAINER_MODELS}.")
     return ("No model is set up, so this run uses no model: everything the code can find is in the brief, and "
             "what needs a model is marked. To add one, either log in to Claude Code (`claude auth login`), set "
             f"ANTHROPIC_API_KEY, or run `kestra-migrate init` and edit {path}.")
