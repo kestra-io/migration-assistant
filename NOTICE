@@ -31,15 +31,21 @@ kestra_migration_assistant/vra/assets/vendor/mermaid/mermaid.min.js
         Reporters & Editors);
       cytoscape, MIT License, including "Embeddable Minimum Strictly-Compliant Promises/A+ 1.1.1
         Thenable", Copyright (c) 2013-2014 Ralf S. Engelschall, MIT License.
+    SHA-256 581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8, the same as
+    dist/mermaid.min.js in the npm package mermaid@11.17.2.
 
 kestra_migration_assistant/vra/assets/vendor/anthropic-code-modernization/topology-viewer.html
     From Anthropic's code-modernization plugin for Claude Code, assets/topology-viewer.html.
     Apache License 2.0 (LICENSE beside it). Inlines a subset of d3 v7, ISC License,
     Copyright Mike Bostock.
+    The d3 subset is the one line that starts `var d3=`, SHA-256
+    2cf8b399a74fd618bc9c056fa2f4bc27d7abeaec46441875455d3f6288457ab4.
 
 kestra_migration_assistant/vra/assets/explorer-viewer.html
     Adapted from the topology viewer above; the changes are listed in its header.
     Apache License 2.0. Inlines the same d3 v7 subset, ISC License, Copyright Mike Bostock.
+    The `var d3=` line is the same as above, SHA-256
+    2cf8b399a74fd618bc9c056fa2f4bc27d7abeaec46441875455d3f6288457ab4.
 
 kestra_migration_assistant/vra/assets/vendor/mona-sans/MonaSansVF-opsz-wght.ttf
     Mona Sans v2.0.27, https://github.com/github/mona-sans, unmodified (renamed only).
