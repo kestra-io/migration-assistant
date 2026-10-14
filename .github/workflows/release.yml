@@ -1,0 +1,264 @@
+# The release: runs only on a version tag (v1.0.0, v1.0.0rc1). The repository has no other CI; `make check` runs
+# before every commit and every merge.
+#
+#   every tag     make check; the wheel and source package, smoke-tested in a clean environment; their SBOM; the
+#                 container image for linux/amd64 and linux/arm64, smoke-tested on both, pushed to
+#                 ghcr.io/kestra-io/migration-assistant:<version>, with an SBOM per architecture; SHA256SUMS; a
+#                 GitHub release with all of them attached (a pre-release for a candidate)
+#   final tags    the image is also tagged latest, and the packages go to PyPI through Trusted Publishing: no token
+#                 is stored anywhere, PyPI trusts this workflow in the `pypi` environment
+#
+# Actions are pinned to a commit; the tag they were at is in the comment.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/kestra-io/migration-assistant
+
+jobs:
+  check:
+    name: make check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      final: ${{ steps.version.outputs.final }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # the secret scan reads every commit of every ref
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+      - name: The tag is the package's version
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(uv run --frozen python -c 'import kestra_migration_assistant as k; print(k.__version__)')"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the package's version $pkg"; exit 1
+          fi
+          echo "version=$pkg" >> "$GITHUB_OUTPUT"
+          if echo "$pkg" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+'; then final=true; else final=false; fi
+          echo "final=$final" >> "$GITHUB_OUTPUT"
+          echo "version $pkg, final release: $final"
+      - run: make check
+
+  packages:
+    name: packages
+    needs: check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+      - name: Build and check the wheel and the source package
+        run: |
+          make dist
+          uv run --frozen python scripts/check_dist.py dist --version "$VERSION"
+      - name: Smoke test, the wheel in a clean environment
+        run: |
+          python3 -m venv "$RUNNER_TEMP/clean"
+          "$RUNNER_TEMP/clean/bin/pip" install --quiet dist/kestra_migration_assistant-*.whl
+          scripts/smoke.sh "$RUNNER_TEMP/smoke" "$VERSION" "$RUNNER_TEMP/clean/bin/kestra-migrate"
+      - name: SBOM of the package
+        run: scripts/package_sbom.sh dist "dist/kestra-migration-assistant-$VERSION.cdx.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: packages
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build
+          path: |
+            dist/requirements.txt
+            dist/*.cdx.json
+          if-no-files-found: error
+
+  image:
+    name: container image
+    needs: [check, packages]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: packages
+          path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build
+          path: dist
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ env.VERSION }}
+            type=raw,value=latest,enable=${{ needs.check.outputs.final == 'true' }}
+      - name: Build for linux/amd64, to test before anything is pushed
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          build-args: VERSION=${{ env.VERSION }}
+          load: true
+          tags: migration-assistant:smoke
+          cache-to: type=gha,mode=max
+      - name: Smoke test, the image before it is pushed
+        run: |
+          scripts/smoke.sh "$RUNNER_TEMP/smoke-local" "$VERSION" \
+            docker run --rm --user "$(id -u):$(id -g)" -v "$RUNNER_TEMP/smoke-local/helpers:/work/helpers" \
+            migration-assistant:smoke
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build for linux/amd64 and linux/arm64, and push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ env.VERSION }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          sbom: false
+      - name: Smoke test, the pushed image on both architectures
+        env:
+          REF: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+        run: |
+          for arch in amd64 arm64; do
+            scripts/smoke.sh "$RUNNER_TEMP/smoke-$arch" "$VERSION" \
+              docker run --rm --platform "linux/$arch" --user "$(id -u):$(id -g)" \
+              -v "$RUNNER_TEMP/smoke-$arch/helpers:/work/helpers" "$REF"
+          done
+      - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        id: syft
+        with:
+          syft-version: v1.52.0
+      - name: SBOM of the image, one per architecture
+        env:
+          REF: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+          SYFT: ${{ steps.syft.outputs.cmd }}
+        run: |
+          mkdir -p sbom
+          for arch in amd64 arm64; do
+            "$SYFT" scan --quiet --platform "linux/$arch" "registry:$REF" \
+              -o "cyclonedx-json=sbom/migration-assistant-image-$VERSION-linux-$arch.cdx.json"
+          done
+          echo "$REF" > sbom/image.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image
+          path: sbom/
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    needs: [check, packages, image]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      FINAL: ${{ needs.check.outputs.final }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+      - name: Collect the assets and their checksums
+        run: |
+          mkdir assets
+          cp artifacts/packages/* artifacts/build/*.cdx.json artifacts/image/*.cdx.json assets/
+          (cd assets && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+      - name: Release notes, from CHANGELOG.md
+        run: |
+          base="$(echo "$VERSION" | sed -E 's/(a|b|rc)[0-9]+$//')"
+          {
+            if [ "$FINAL" != true ]; then
+              echo "Release candidate for $base. Not on PyPI: install the wheel attached here."
+              echo
+            fi
+            awk -v h="## $base" '/^## /{p = index($0, h) == 1; next} p' CHANGELOG.md
+            echo
+            echo "## Install"
+            echo
+            if [ "$FINAL" = true ]; then
+              echo '```bash'
+              echo "uv tool install kestra-migration-assistant==$VERSION"
+              echo '```'
+            else
+              echo '```bash'
+              echo "uv tool install ./kestra_migration_assistant-$VERSION-py3-none-any.whl"
+              echo '```'
+            fi
+            echo
+            echo "Container image, linux/amd64 and linux/arm64: \`$IMAGE:$VERSION\`"
+            echo "(\`$(cat artifacts/image/image.txt)\`)."
+            echo
+            echo "Check the downloads with \`sha256sum -c SHA256SUMS\`. The \`.cdx.json\` files are CycloneDX SBOMs:"
+            echo "one for the package and its dependencies, one per architecture for the image."
+          } > notes.md
+          cat notes.md
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          flags=""
+          if [ "$FINAL" != true ]; then flags="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" assets/* --verify-tag --title "$VERSION" --notes-file notes.md $flags
+
+  pypi:
+    name: PyPI
+    needs: [check, release]
+    if: needs.check.outputs.final == 'true'
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/kestra-migration-assistant/${{ needs.check.outputs.version }}/
+    permissions:
+      id-token: write           # Trusted Publishing: PyPI exchanges this workflow's OIDC token for an upload token
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: packages
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
