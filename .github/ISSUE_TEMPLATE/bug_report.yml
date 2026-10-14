@@ -12,8 +12,8 @@ body:
     id: version
     attributes:
       label: Version
-      description: The output of `kestra-migrate --version`, and how you installed it (uv, pipx, pip or the container image).
-      placeholder: kestra-migrate 1.0.0, uv tool install
+      description: The output of `kestra-migrate --version`, and how you installed it (uv, pipx or pip from the git tag, or the container image).
+      placeholder: kestra-migrate 1.0.0, uv tool install from the v1.0.0 tag
     validations:
       required: true
   - type: input

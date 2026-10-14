@@ -41,6 +41,10 @@ A security issue never goes in a public issue: see [SECURITY.md](SECURITY.md).
    It is the only check: there is no CI on pull requests, so run it before you push.
 6. Open the pull request against `main`, saying what changed and why. Keep it to one change.
 
+To try a change the way a customer installs a release, install your branch from its git URL (git is needed):
+`uv tool install git+https://github.com/<you>/migration-assistant@<branch>`. A release is installed the same way,
+from its tag: `uv tool install git+https://github.com/kestra-io/migration-assistant@v1.0.0`.
+
 Each stage also runs on its own for development (`kestra-migrate vra preflight`, `sanitize`, `assess`, `understand`,
 `brief`, `visuals`, and `all`, which is `run` without Understand); they are not listed in `--help`.
 
