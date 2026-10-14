@@ -307,9 +307,9 @@ class AnthropicAPIProvider(Provider):
         try:
             import anthropic
         except ImportError as e:
-            raise ModelError("provider anthropic needs the `anthropic` package: "
-                             "uv tool install 'kestra-migration-assistant[anthropic]' "
-                             "(or pip install anthropic)") from e
+            from kestra_migration_assistant import config as K
+            raise ModelError(f"provider anthropic needs the `anthropic` package: {K.install_command('anthropic')} "
+                             "(needs git), or pip install anthropic") from e
         client = anthropic.Anthropic(api_key=key, timeout=timeout_of(self.cfg))
         t0 = time.time()
         try:

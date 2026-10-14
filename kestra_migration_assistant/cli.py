@@ -44,7 +44,10 @@ def main(argv: list[str] | None = None) -> int:
         prog="kestra-migrate",
         description="Kestra Migration Assistant for vRA: assess a VMware vRA / vRO estate for migration to Kestra, "
                     "from its export. Everything runs on this machine; only the configured model is called.",
-        epilog="Start with: kestra-migrate vra run <export folder>." + (f" {K.CONTAINER_HELP}" if K.in_container() else ""))
+        epilog="Start with: kestra-migrate vra run <export folder>. "
+               + (K.CONTAINER_HELP if K.in_container() else
+                  f"Installed with `{K.install_command()}`, which needs git; pipx and pip take the same git+ URL. "
+                  f"For an Anthropic API key: `{K.install_command('anthropic')}`."))
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="tool", required=True, metavar="{" + ",".join([*TOOLS, "init"]) + "}")
     ip = sub.add_parser("init", help=INIT_HELP, description=INIT_HELP)

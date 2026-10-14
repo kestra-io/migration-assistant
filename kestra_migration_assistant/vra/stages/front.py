@@ -823,6 +823,19 @@ def _reach_words(t: dict) -> str:
             "none": "no route found yet"}.get(r or "none", r or "")
 
 
+def _with_a_model(est: str) -> str:
+    """How to run it again with a model. In the container, only what works there: an API key or an endpoint."""
+    from kestra_migration_assistant import config as K
+    if K.in_container():
+        args = C.run_command().removeprefix("kestra-migrate ")
+        return (f"**Run it again with a model:** the same `docker run`, ending in `{args}`, with an Anthropic API key "
+                "(`-e ANTHROPIC_API_KEY`) or an OpenAI-compatible endpoint (`-e KESTRA_MIGRATE_PROVIDER=openai-compatible "
+                "-e KESTRA_MIGRATE_BASE_URL -e KESTRA_MIGRATE_MODEL -e OPENAI_API_KEY`). What this run found is kept.")
+    return (f"**Run it again with a model:** `{C.run_command()}`, from the folder that holds {est}. "
+            "It uses your Claude Code login if `claude` is installed and logged in, or an Anthropic API key in "
+            "ANTHROPIC_API_KEY, and `kestra-migrate init` sets up another model. What this run found is kept.")
+
+
 def document_no_model(assess: dict, brief: dict) -> list[tuple]:
     """The front page of a run with no model: everything the code found, in full, and one plain line where a
     verdict needs a model. No recommendation and no plan: both follow from verdicts this run could not make."""
@@ -959,9 +972,7 @@ def document_no_model(assess: dict, brief: dict) -> list[tuple]:
           ("p", "A model reads each workflow's code and writes down what it does. From that come the three things this "
                 "run leaves open: what each workflow does, its possible defects, and whether to convert or rebuild it. "
                 "The recommendation and the migration plan in waves follow from those verdicts."),
-          ("p", f"**Run it again with a model:** `{C.run_command()}`, from the folder that holds {est}. "
-                "It uses your Claude Code login if `claude` is installed and logged in, or an Anthropic API key in "
-                "ANTHROPIC_API_KEY, and `kestra-migrate init` sets up another model. What this run found is kept.")]
+          ("p", _with_a_model(est))]
 
     nd = needs(assess, brief, st)
     if nd:
