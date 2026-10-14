@@ -17,25 +17,25 @@ model, and nothing leaves the machine except the calls to the configured model.
 
 ### 1. Install
 
-From the release's tag on GitHub, with [uv](https://docs.astral.sh/uv/), which installs Python for you if it needs
+From GitHub, with [uv](https://docs.astral.sh/uv/), which installs Python for you if it needs
 to. It needs [git](https://git-scm.com/downloads) on the machine:
 
 ```bash
-uv tool install git+https://github.com/kestra-io/migration-assistant@v1.0.0
+uv tool install git+https://github.com/kestra-io/migration-assistant@main
 ```
 
 Or with pipx, or pip in a virtual environment (Python 3.10 or later), from the same URL:
 
 ```bash
-pipx install git+https://github.com/kestra-io/migration-assistant@v1.0.0
-pip install git+https://github.com/kestra-io/migration-assistant@v1.0.0
+pipx install git+https://github.com/kestra-io/migration-assistant@main
+pip install git+https://github.com/kestra-io/migration-assistant@main
 ```
 
 If `kestra-migrate` isn't found after `uv tool install`, run `uv tool update-shell` and open a new terminal.
 
 To call a model with an Anthropic API key, add the `anthropic` extra:
-`uv tool install 'kestra-migration-assistant[anthropic] @ git+https://github.com/kestra-io/migration-assistant@v1.0.0'`. Nothing else is needed for a Claude Code
-login or an OpenAI-compatible endpoint. To move to a later version, run the same command with its tag; the
+`uv tool install 'kestra-migration-assistant[anthropic] @ git+https://github.com/kestra-io/migration-assistant@main'`. Nothing else is needed for a Claude Code
+login or an OpenAI-compatible endpoint. To update, run `uv tool upgrade kestra-migration-assistant`. To pin a version, replace `main` with its tag; the
 [releases](https://github.com/kestra-io/migration-assistant/releases) list them.
 
 ### 2. Run it on an export folder

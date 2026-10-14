@@ -7,7 +7,7 @@
 #                 GitHub release with all of them attached (a pre-release for a candidate)
 #   final tags    the image is also tagged latest
 #
-# Customers install from the tag (uv tool install git+https://github.com/kestra-io/migration-assistant@v<version>),
+# The README installs from main; a release can be pinned by its tag (git+https://github.com/kestra-io/migration-assistant@v<version>),
 # so nothing goes to PyPI: a version there can never be replaced. The PyPI job is kept, off, for later: set the
 # repository variable PUBLISH_TO_PYPI to true (Settings, Secrets and variables, Actions, Variables) and a final tag
 # publishes through Trusted Publishing from the `pypi` environment, with no token stored anywhere.
