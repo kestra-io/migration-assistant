@@ -79,3 +79,46 @@ def test_an_earlier_wave_is_said_plainly(estate):
     page, text = _waves()
     assert "Starts once Wave 1 is migrated and verified" in text
     assert "is done first" not in text and "closes when" not in text
+
+
+def _panels(page: str) -> dict[int, str]:
+    return {int(m.group(1)): p for p in page.split('<div class="panel"')[1:]
+            if (m := re.search(r"<h2>Wave (\d+)", p))}
+
+
+def test_only_open_criteria_are_listed_and_the_met_ones_fold_into_one_line(estate):
+    from test_gates import _answer_everything
+
+    from kestra_migration_assistant.vra.stages import front as F
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    # partly met: what is open is listed, with the entry that closes it, above "k of n met"
+    estate("edition", "available")
+    page, _ = _waves()
+    w1 = _panels(page)[1]
+    m = re.search(r"<details class='met'><summary>(\d+) of (\d+) met</summary>", w1)
+    assert m and 0 < int(m.group(1)) < int(m.group(2))
+    assert w1.index("<span class='status wait'>open</span>") < w1.index("<details")
+    assert "<code>defects.web-provision-host</code>" in w1                        # the entry that closes it
+    met = w1.split("<details", 1)[1]
+    assert "Kestra Enterprise Edition" in met and "Kestra Enterprise Edition" not in w1.split("<details", 1)[0]
+    assert "status wait" not in met
+    md = open(C.BRIEF_MD).read().split("## Appendix B", 1)[1]
+    md1 = md.split("### Wave 1", 1)[1].split("### Wave", 1)[0]
+    assert f"\n{m.group(1)} of {m.group(2)} met.\n" in md1 and "- open: " in md1 and "- met" not in md1
+    assert "`edition`" not in md1 and "`defects.web-provision-host`" in md1
+
+    # fully met (Wave 1): nothing listed, one folded line; Wave 2 still waits on Wave 1's exit
+    for _ in range(2):
+        _answer_everything()
+        _waves()
+    Y.set_signature("full")
+    page, _ = _waves()
+    p = _panels(page)
+    m = re.search(r"<details class='met'><summary>(\d+) of (\d+) met</summary>", p[1])
+    assert m and m.group(1) == m.group(2)
+    assert "status wait" not in p[1] and "<h3>Entry criteria</h3><details" in p[1]
+    assert F.text_of(p[2]).count("open") == 1 and "Starts once Wave 1 is migrated and verified" in F.text_of(p[2])
+    md = open(C.BRIEF_MD).read().split("## Appendix B", 1)[1]
+    md1, md2 = md.split("### Wave 1", 1)[1].split("### Wave 2", 1)
+    assert md1.strip() == f"{m.group(1)} of {m.group(2)} met."
+    assert "- open: Starts once Wave 1 is migrated and verified" in md2

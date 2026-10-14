@@ -85,10 +85,12 @@ def test_every_criterion_names_the_file_and_field_that_close_it(estate):
         assert e["status"] in ("open", "done", "blocked")
         if c["file"] == G.ANSWERS_FILE:
             assert c["field"] in keys, (c["field"], "is not an item of answers.yaml")
-    # BRIEF.md's appendix gives every criterion the key that closes it (possible defects and spec questions are
-    # counted instead)
+    # BRIEF.md's appendix gives every open criterion the key that closes it (possible defects and spec questions
+    # are counted instead; met ones are a count)
     appendix = md.split("## Appendix B", 1)[1]
     for _, e in crit:
+        if e["status"] == "done":                             # met: counted, not listed
+            continue
         if e["closes"]["kind"] == "gate":
             assert f": {e['closes']['when']}" in appendix
             continue
@@ -131,7 +133,7 @@ def test_a_decision_closes_every_criterion_it_covers(estate):
     ed = [(n, e) for n, e in _criteria(b) if e["closes"]["key"] == "edition"]
     assert all(e["status"] == "done" and "available" in e["note"] for _, e in ed)
     assert Y.section_of(_doc(), "edition") == "answered"
-    assert "- met: Kestra Enterprise Edition available (`edition`)" in md
+    assert "(`edition`)" not in md.split("## Appendix B", 1)[1]           # met: counted, no longer listed
 
 
 def test_a_blocking_option_marks_the_criterion_blocked(estate):

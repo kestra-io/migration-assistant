@@ -508,16 +508,23 @@ def _wave_panel(w: dict, assess: dict, tri: dict) -> str:
         writes_l = "Writes to"
         gaps = ""
     crit = criteria_lines(w, assess)
-    n_met = sum(1 for e in w["entry_criteria"] if e["status"] == "done")
+    n_met, n = sum(1 for e in w["entry_criteria"] if e["status"] == "done"), len(w["entry_criteria"])
+
+    def li(lines):
+        return "".join(f"<li><span class='status {cls}'>{st}</span> {C.esc(label)} {keys}</li>"
+                       for cls, st, label, keys in lines)
+    still = [x for x in crit if x[1] != "met"]
+    met = [x for x in crit if x[1] == "met"]
+    # what is still open, each with the answers.yaml entry that closes it; the met ones folded into one line
+    folded = (f"<details class='met'><summary>{n_met} of {n} met</summary><ul>{li(met)}</ul></details>" if met else
+              f"<p>{n_met} of {n} met</p>")
     dep = ", ".join(f"Wave {d}" for d in w["depends_on"])
     from .front import wave_title
     return (f'<div class="panel" style="margin-bottom:10px"><h2>{C.esc(wave_title(w, assess))}</h2>'
             f"<div>In it: {what}.</div><div>First of a kind: {first}.</div>"
             f"<div>{writes_l}: {C.esc(writes)}.</div>{gaps}"
             + (f"<div>Starts after {dep}.</div>" if dep else "")
-            + f"<h3>Entry criteria: {n_met} of {len(w['entry_criteria'])} met</h3><ul>"
-            + "".join(f"<li><span class='status {cls}'>{st}</span> {C.esc(label)} {keys}</li>" for cls, st, label, keys in crit)
-            + "</ul></div>")
+            + "<h3>Entry criteria</h3>" + (f"<ul>{li(still)}</ul>" if still else "") + folded + "</div>")
 
 
 def _and_html(xs: list[str]) -> str:
@@ -548,6 +555,8 @@ def criteria_lines(w: dict, assess: dict) -> list[tuple[str, str, str, str]]:
         if gkey in I.COUNTED:
             short = rest.split(".")[0]
             g["per"][short] = g["per"].get(short, 0) + 1
+            if e["status"] != "done":
+                g["keys"].append(I.entry_key(key))
         elif c.get("kind") == "gate":
             pass                                     # its label says it all
         elif key and key not in g["keys"]:
@@ -560,8 +569,9 @@ def criteria_lines(w: dict, assess: dict) -> list[tuple[str, str, str, str]]:
             u_of = {x["short"]: u for u, x in assess["workflows"].items()}
             pages = [f'<a href="{href(u_of[sh]) if sh in u_of else sh + ".html"}">'
                      f'{C.esc(nm(u_of.get(sh)) or sh)}</a> ({k})' for sh, k in sorted(g["per"].items())]
+            closes = "".join(f" <code>{C.esc(k)}</code>" for k in dict.fromkeys(g["keys"]))
             out.append(("done" if ok else "wait", "met" if ok else "open", label,
-                        "<span class='muted'>(listed on the pages of " + _and_html(pages) + ")</span>"))
+                        "<span class='muted'>(listed on the pages of " + _and_html(pages) + ")</span>" + closes))
             continue
         label = g["label"] + (f" ({g['n'] - g['done']} open)" if g["n"] > 1 and not ok else "")
         ks = g["keys"]
