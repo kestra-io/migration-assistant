@@ -198,6 +198,11 @@ def test_a_second_run_reuses_the_model_cache_and_keeps_every_answer(tmp_path, mo
     from kestra_migration_assistant.vra.stages import common as C
     from kestra_migration_assistant.vra.stages import your_input as Y
     monkeypatch.delenv("VRO_NO_MODEL")
+    # A provider of its own, so the run never depends on what this machine has set up (a Claude Code login, a key,
+    # a config file): with nothing found, it would go ahead without a model and never reach the stand-in
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("KESTRA_MIGRATE_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "placeholder")
     calls = []
 
     class StandIn(M.Provider):
