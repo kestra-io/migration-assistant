@@ -1,0 +1,4 @@
+# The image is built from the wheel and the pinned requirements in dist/, nothing else.
+*
+!dist/*.whl
+!dist/requirements.txt
