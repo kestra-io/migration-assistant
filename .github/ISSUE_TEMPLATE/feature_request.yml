@@ -1,0 +1,28 @@
+name: Feature request
+description: Something you would like the Kestra Migration Assistant for vRA to do
+type: Feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search the [open issues](https://github.com/kestra-io/migration-assistant/issues) first: one issue with
+        many votes is easier to plan for than several. Never attach a customer's export or its output.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: What you would like it to do, and how you would use it.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead
+      description: Optional. Any workaround, or another tool you use for it.

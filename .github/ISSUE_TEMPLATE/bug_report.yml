@@ -1,0 +1,53 @@
+name: Bug report
+description: Something the Kestra Migration Assistant for vRA did wrong
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never attach a customer's export**, its `kestra-assessment/` folder, `answers.yaml` or the model cache:
+        they hold the estate's hosts, accounts and code, and this issue is public. Describe what happened, or
+        reproduce it with names you make up. A security issue goes [here](https://github.com/kestra-io/migration-assistant/security/advisories/new) instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `kestra-migrate --version`, and how you installed it (uv, pipx, pip or the container image).
+      placeholder: kestra-migrate 1.0.0, uv tool install
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: The provider and the model the run printed on its `Model:` line, or "no model".
+      placeholder: claude-opus-5-5 through your Claude Code login
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 26, Windows 11, Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what happened instead. Paste the terminal output, with any host or account names replaced.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: Optional. The smallest export that shows it, with every name made up, or the steps.
+  - type: checkboxes
+    id: no-customer-data
+    attributes:
+      label: No customer data
+      options:
+        - label: Nothing in this issue comes from a customer's export, its output or its answers.
+          required: true

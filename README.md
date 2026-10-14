@@ -13,32 +13,45 @@ structure, counts and outcomes always come from code. Without a model, the brief
 finds, and marks each workflow whose verdict needs one. The export is sanitized before anything reaches a
 model, and nothing leaves the machine except the calls to the configured model.
 
-## Install
+## Quickstart
 
-With [uv](https://docs.astral.sh/uv/):
+### 1. Install
+
+With [uv](https://docs.astral.sh/uv/), which installs Python for you if it needs to:
 
 ```bash
 uv tool install kestra-migration-assistant
 ```
 
-Or with pipx, or pip in a virtual environment:
+Or with pipx, or pip in a virtual environment (Python 3.10 or later):
 
 ```bash
 pipx install kestra-migration-assistant
 pip install kestra-migration-assistant
 ```
 
-Python 3.10 or later. The only dependency is PyYAML; to call a model with an Anthropic API key, add the
-`anthropic` extra (`uv tool install 'kestra-migration-assistant[anthropic]'`). Until the first release is on PyPI, install from a
-checkout: `uv tool install ./migration-assistant` (or `pipx install ./migration-assistant`).
+To call a model with an Anthropic API key, add the `anthropic` extra:
+`uv tool install 'kestra-migration-assistant[anthropic]'`. Nothing else is needed for a Claude Code login or
+an OpenAI-compatible endpoint.
 
-## Run it
+### 2. Run it on an export folder
 
 Put the export in a folder of its own. The folder's name becomes the estate's name.
+[INPUTS.md](https://github.com/kestra-io/migration-assistant/blob/main/INPUTS.md) says what goes in it and
+how an administrator produces it.
 
 ```bash
 kestra-migrate vra run ~/exports/acme
-open ~/exports/acme/kestra-assessment/index.html
+```
+
+With a Claude Code login on this machine, it uses that; otherwise see [Choose a model](#choose-a-model). With
+no model, it still writes the brief from what the code finds. Before its first billed call, it prints what the
+run will cost.
+
+### 3. Open the report
+
+```bash
+open ~/exports/acme/kestra-assessment/index.html        # macOS; xdg-open on Linux, start on Windows
 ```
 
 Everything it writes goes to `kestra-assessment/` inside the export folder (or the folder `--out` names, for
@@ -52,15 +65,34 @@ acme/kestra-assessment/
 └── data/          the stages' working files, never edited, and the model cache (model-cache/)
 ```
 
-Answer the open items in `your-input/answers.yaml` and run the same command again. Only what changed is
-re-done, every answer is kept, and a model reply already paid for comes from the cache.
+### 4. Answer, and run again
 
-| Command | What it does |
-|---|---|
-| `kestra-migrate init` | Write the config file that says which model to call, and how |
-| `kestra-migrate vra run <export folder> [--out <folder>] [--no-model] [--provider ...] [--model ...] [--base-url ...]` | Sanitize, Preflight, Assess, Understand, Brief, then the pages. `--no-model` never calls a model: it uses cached replies, and the brief says what needs a model |
-| `kestra-migrate vra status <export folder> [--out <folder>]` | Where each stage is, and what to do next |
-| `kestra-migrate vra check-intake <path>` | Exit 1, with a masked report, if a received export carries anything secret-shaped |
+Answer the open items in `kestra-assessment/your-input/answers.yaml`, then run the same command again:
+
+```bash
+kestra-migrate vra run ~/exports/acme
+```
+
+Only what changed is re-done, every answer is kept as you wrote it, and a model reply already paid for comes
+from the cache. When nothing is left open, sign the plan in the same file.
+
+## In a container
+
+The image is `ghcr.io/kestra-io/migration-assistant`, for linux/amd64 and linux/arm64. Its working folder is
+`/work`: mount the export folder inside it, under its own name, and pass an API key in.
+
+```bash
+cd ~/exports
+docker run --rm -it -v "$PWD/acme:/work/acme" -e ANTHROPIC_API_KEY \
+  ghcr.io/kestra-io/migration-assistant vra run acme
+```
+
+A Claude Code login cannot be used in a container. Use an Anthropic API key (`-e ANTHROPIC_API_KEY`), an
+OpenAI-compatible endpoint (`-e KESTRA_MIGRATE_PROVIDER=openai-compatible -e KESTRA_MIGRATE_BASE_URL
+-e KESTRA_MIGRATE_MODEL -e OPENAI_API_KEY`; a server on your own machine is `http://host.docker.internal:<port>/v1`,
+with `--add-host=host.docker.internal:host-gateway` on Linux), or no model (`--no-model`). On Linux, add
+`--user "$(id -u):$(id -g)"` so the files it writes are yours. Keep `-it`: above the cost threshold the run asks
+before going on, and without a terminal it stops instead (or pass `--yes`).
 
 ## Choose a model
 
@@ -69,12 +101,8 @@ One model answers every call. There are three ways to connect to it:
 | Provider | What it uses |
 |---|---|
 | `claude-code` | Your own Claude Code login, through `claude -p`. No API key needed |
-| `anthropic` | An Anthropic API key |
+| `anthropic` | An Anthropic API key, with the `anthropic` extra installed |
 | `openai-compatible` | A base URL and a key: a model you host yourself, or Azure OpenAI and Amazon Bedrock through a proxy such as [LiteLLM](https://docs.litellm.ai/) |
-
-A model you host yourself needs a context of at least 32,768 tokens: a workflow's prompt carries its whole call
-tree. Ollama's default is 4,096, and it cuts a longer prompt without saying so, so start it with
-`OLLAMA_CONTEXT_LENGTH=32768 ollama serve` (or more); a reply to a prompt the server cut is refused, never used.
 
 With nothing set up, it uses `claude-code` if `claude` is installed and logged in, else `anthropic` if
 `ANTHROPIC_API_KEY` is set, else it runs without a model: the brief still shows everything the code can find,
@@ -89,6 +117,10 @@ Tested models, through `claude-code` on a load-balancer estate: `claude-opus-5-5
 but cost about three times as much and took twice as long; to use it, set `model: claude-fable-5-1` in the
 config file, or pass `--model claude-fable-5-1`. Sonnet is the cheapest, but it missed a real defect that the
 other two found.
+
+A model you host yourself needs a context of at least 32,768 tokens: a workflow's prompt carries its whole call
+tree. Ollama's default is 4,096, and it cuts a longer prompt without saying so, so start it with
+`OLLAMA_CONTEXT_LENGTH=32768 ollama serve` (or more); a reply to a prompt the server cut is refused, never used.
 
 Every reply is checked against the structure the tool expects. A reply that does not match is asked for once
 more, with what was wrong; a second miss stops that call with an error that names the model. Other models
@@ -112,44 +144,44 @@ script, a CI job), a run above the threshold stops unless `--yes` is given. Cach
 run again after answering estimates only what is new, and one with every reply cached makes no billed call.
 For a model with no price on record (a self-hosted one), the estimate gives the number of calls only.
 
-[INPUTS.md](INPUTS.md) says what goes in the export folder and how an administrator produces it, and how
-to answer. [SECURITY.md](SECURITY.md) lists what protects the tool and the export, and what is still missing.
+## Commands
+
+| Command | What it does |
+|---|---|
+| `kestra-migrate init` | Write the config file that says which model to call, and how |
+| `kestra-migrate vra run <export folder> [--out <folder>] [--no-model] [--provider ...] [--model ...] [--base-url ...] [--yes]` | Sanitize, Preflight, Assess, Understand, Brief, then the pages. `--no-model` never calls a model: it uses cached replies, and the brief says what needs a model |
+| `kestra-migrate vra status <export folder> [--out <folder>]` | Where each stage is, and what to do next |
+| `kestra-migrate vra check-intake <path>` | Exit 1, with a masked report, if a received export carries anything secret-shaped |
 
 ## The brief
 
 `index.html` is the brief, in the words of the [vRA migration guide](https://kestra.io/resources/migration/vra):
 a status box (the next step), what is in the estate, the recommendation (convert, a mix or rebuild, with how
 many elements convert Direct, how many need a Redesign and what the rest wait on, and a table of what each kind
-becomes in Kestra), what we need from you, grouped and counted, the
-plan with one line per wave, and where to check. `report/BRIEF.md` is the same text with an appendix.
+becomes in Kestra), what we need from you, grouped and counted, and the plan with one line per wave.
+`report/BRIEF.md` is the same text with an appendix.
 
 `your-input/answers.yaml` has two lists, `open` (what a wave waits on, first) and `answered`, then
 `signed_for` (`wave 1` or `full plan`, empty until signed). Each item is an `id`, one plain `question`, a
 `suggested` value when the code points to one, and an `answer`. Write `yes` to take the suggested value, or
 write the answer itself. The tool moves an item to `answered` once it has an answer, keeps every answer as
 written, and never drops an id. Corrections to what the tool found (domains, clusters, reach, wrappers,
-outcomes) go in a `your-input/corrections.yaml` you add yourself; [INPUTS.md](INPUTS.md) shows its shape.
+outcomes) go in a `your-input/corrections.yaml` you add yourself;
+[INPUTS.md](https://github.com/kestra-io/migration-assistant/blob/main/INPUTS.md) shows its shape.
+[SECURITY.md](https://github.com/kestra-io/migration-assistant/blob/main/SECURITY.md) lists what protects the
+tool and the export, and what is still missing.
 
 ## Help
 
 Need help running it, or want us to run it for you? [Ask us here](https://kestra.io/resources/migration/vra/assistant?utm_source=migration-assistant&utm_medium=readme).
-
-## Development
-
-```bash
-git clone https://github.com/kestra-io/migration-assistant && cd migration-assistant
-uv sync                  # the package, editable, with the pinned development tools (uv.lock)
-make check               # tests, ruff, mypy, the secret scan over the full history, the boundary test
-make hooks               # run make check before every commit
-```
-
-Each stage also runs on its own for development (`preflight`, `sanitize`, `assess`, `understand`, `brief`,
-`visuals`, and `all`, which is `run` without Understand); they are not listed in `--help`.
-The tests are in `tests/vra/`, on synthetic inputs in `tests/vra/conformance/` (every name in them is invented);
-`scripts/` holds `make check` and the secret scan. Neither ships with the package.
+Found a bug, or want something it doesn't do?
+[Open an issue](https://github.com/kestra-io/migration-assistant/issues/new/choose), and never attach a
+customer's export. To contribute, see
+[CONTRIBUTING.md](https://github.com/kestra-io/migration-assistant/blob/main/CONTRIBUTING.md).
 
 ## Licence
 
-Apache License 2.0 ([LICENSE](LICENSE)). Bundled third-party files keep their own licences, listed in
-[NOTICE](NOTICE). The Kestra name and logo are trademarks of Kestra Technologies and are not covered by
-the licence.
+Apache License 2.0 ([LICENSE](https://github.com/kestra-io/migration-assistant/blob/main/LICENSE)). Bundled
+third-party files keep their own licences, listed in
+[NOTICE](https://github.com/kestra-io/migration-assistant/blob/main/NOTICE). The Kestra name and logo are
+trademarks of Kestra Technologies and are not covered by the licence.
