@@ -1,5 +1,5 @@
-# The release: runs only on a version tag (v1.0.0, v1.0.0rc1). The repository has no other CI; `make check` runs
-# before every commit and every merge.
+# The release: runs only on a version tag (v1.0.0, v1.0.0rc1). `make check` also runs on every pull request and
+# push to main (check.yml).
 #
 #   every tag     make check; the wheel and source package, smoke-tested in a clean environment; their SBOM; the
 #                 container image for linux/amd64 and linux/arm64, smoke-tested on both, pushed to

@@ -33,7 +33,7 @@ A security issue never goes in a public issue.
 3. Every bug fixed comes with a test that fails without the fix. Tests are in `tests/vra/`, on the synthetic
    inputs in `tests/vra/conformance/`.
 4. `make check` passes: the tests, ruff, mypy, the secret scan over the full history, and the boundary test.
-   It is the only check: there is no CI on pull requests, so run it before you push.
+   It also runs on every pull request, but run it before you push.
 5. Open the pull request against `main`, saying what changed and why. Keep it to one change.
 
 To try a change the way a customer installs a release, install the branch from its git URL (git is needed):
