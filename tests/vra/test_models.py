@@ -198,7 +198,7 @@ def test_the_config_file_may_set_a_timeout_and_it_does_not_change_the_cache_key(
 
 FAKE_CLAUDE = """#!/bin/sh
 # Records how it was run: its folder, that folder's mode and contents, and its arguments.
-{{ pwd; ls -A; stat -f %Lp . 2>/dev/null || stat -c %a .; printf '%s\n' "$@"; }} > "{log}.$$"
+{{ pwd; ls -A; stat -c %a . 2>/dev/null || stat -f %Lp .; printf '%s\n' "$@"; }} > "{log}.$$"
 echo '{{"result": "{{\\"ok\\": true}}", "is_error": false, "total_cost_usd": 0.001}}'
 """
 
