@@ -127,6 +127,12 @@ jobs:
           tags: |
             type=raw,value=${{ env.VERSION }}
             type=raw,value=latest,enable=${{ needs.check.outputs.final == 'true' }}
+          # the action's own labels would replace the Dockerfile's with the repository's name, description and URL
+          labels: |
+            org.opencontainers.image.title=Kestra Migration Assistant for vRA
+            org.opencontainers.image.description=Assess a VMware vRA / vRO estate for migration to Kestra, from its export.
+            org.opencontainers.image.url=https://kestra.io/resources/migration/vra/assistant
+            org.opencontainers.image.vendor=Kestra Technologies
       - name: Build for linux/amd64, to test before anything is pushed
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -161,11 +167,18 @@ jobs:
       - name: Smoke test, the pushed image on both architectures
         env:
           REF: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+        # Each architecture by its own manifest's digest: the runner's image store holds one reference per digest,
+        # so running the multi-architecture digest for a second platform fails with "cannot overwrite digest"
         run: |
           for arch in amd64 arm64; do
+            digest="$(docker buildx imagetools inspect "$REF" --format '{{json .Manifest}}' | jq -r --arg a "$arch" \
+              '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $a) | .digest')"
+            one="$IMAGE@$digest"
             scripts/smoke.sh "$RUNNER_TEMP/smoke-$arch" "$VERSION" \
               docker run --rm --platform "linux/$arch" --user "$(id -u):$(id -g)" \
-              -v "$RUNNER_TEMP/smoke-$arch/helpers:/work/helpers" "$REF"
+              -v "$RUNNER_TEMP/smoke-$arch/helpers:/work/helpers" "$one"
+            test "$(docker image inspect --format '{{.Architecture}}' "$one")" = "$arch"
+            echo "smoke: linux/$arch is $one"
           done
       - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         id: syft
