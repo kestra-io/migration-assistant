@@ -165,7 +165,7 @@ def test_old_layout_gets_a_message_not_a_crash(tmp_path, monkeypatch, capsys):
     rc = cli.main(["brief", str(src), "--out", str(stages / "old"), "--no-model"])
     err = capsys.readouterr().err
     assert rc == 2
-    assert "older layout" in err and "mv " in err and "2-understand" in err and "3-brief" in err and "rm -r" in err
+    assert "an earlier version's layout" in err and "mv " in err and "2-understand" in err and "3-brief" in err and "rm -r" in err
     # nothing was moved, deleted or written
     assert (stages / "old" / "specs" / "x.json").exists() and (stages / "old" / "2-brief" / "BRIEF.md").read_text() == "signed"
     assert sorted(os.listdir(stages / "old")) == ["2-brief", "specs", "visuals"]
@@ -201,7 +201,7 @@ def test_a_2c_estate_is_moved_and_its_answers_carried_into_answers_yaml(tmp_path
     (old / "pages").mkdir()
     assert cli.main(["all", str(src), "--out", str(old), "--no-model"]) == 0
     out = capsys.readouterr().out
-    assert "2c layout" in out and "moved 0-preflight/ to data/0-preflight/" in out and "carried what a person wrote" in out
+    assert "an earlier version's layout" in out and "moved 0-preflight/ to data/0-preflight/" in out and "carried what a person wrote" in out
     names = set(os.listdir(old))
     assert {"data", "report", "your-input", "index.html"} <= names and not names & {"0-preflight", "3-brief", "pages"}
     doc = yaml.safe_load(open(old / "your-input" / "answers.yaml"))

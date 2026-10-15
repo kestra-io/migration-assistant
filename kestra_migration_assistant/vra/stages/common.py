@@ -153,8 +153,8 @@ def old_layout_message(stages_dir: str) -> str | None:
             steps.append(f"  # both {n}/ and {new}/ exist: keep the files you edited from {n}/, then remove it")
         else:
             steps.append(f"  mv {where}/{n} {where}/{new}")
-    return (f"{where}/ was written with an older layout ({', '.join(n + '/' for n in old)}). Move the folders "
-            "to the names of the 2c layout first, and the next run carries them into data/ and your-input/:\n"
+    return (f"{where}/ was written with an earlier version's layout ({', '.join(n + '/' for n in old)}). Move the "
+            "folders to the names below first, and the next run carries them into data/ and your-input/:\n"
             + "\n".join(steps) + "\nthen run `kestra-migrate vra run` again.")
 
 

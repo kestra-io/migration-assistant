@@ -168,9 +168,9 @@ def _old_keys() -> dict[str, str]:
 
 
 HELP = {
-    "run": "assess an export folder: sanitize, Preflight, Assess, Understand (billed only for what changed) and "
+    "run": "assess an export folder: Sanitize, Preflight, Assess, Understand (billed only for what changed) and "
            "Brief, then the pages. Run it again after answering: it reuses the model cache and keeps every answer",
-    "status": "say where each stage of an export folder's assessment is, and what to do next",
+    "status": "show where each stage of an export folder's assessment is, and what to do next",
     "check-intake": "exit 1 with a masked report if a received export carries anything secret-shaped",
 }
 
@@ -245,7 +245,7 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
         return 2
     moved = C.migrate_layout(C.STAGES)
     if moved:
-        print(f"[migrate] {C.rel(C.STAGES)}/ was written with the 2c layout; it now has index.html, your-input/, "
+        print(f"[migrate] {C.rel(C.STAGES)}/ was written with an earlier version's layout; it now has index.html, your-input/, "
               "report/ and data/:")
         for m in moved:
             print(f"  - {m}")

@@ -204,10 +204,10 @@ def resolve(flags: dict | None = None, path: str | None = None, detect=None) -> 
 
 def no_model_help(path: str) -> str:
     if in_container():
-        return ("No model is set up, so this run uses no model: everything the code can find is in the brief, and "
-                f"what needs a model is marked. To add one, pass {CONTAINER_MODELS}.")
-    return ("No model is set up, so this run uses no model: everything the code can find is in the brief, and "
-            "what needs a model is marked. To add one, either log in to Claude Code (`claude auth login`), set "
+        return ("No model is set up, so this run goes ahead without one. The brief shows everything the code can find "
+                f"and marks what needs a model. To add one, pass {CONTAINER_MODELS}.")
+    return ("No model is set up, so this run goes ahead without one. The brief shows everything the code can find "
+            "and marks what needs a model. To add one, either log in to Claude Code (`claude auth login`), set "
             f"ANTHROPIC_API_KEY, or run `kestra-migrate init` and edit {path}.")
 
 
@@ -239,11 +239,11 @@ model: {model}
 # if anyone else can. An environment variable is still the safer place.
 # api_key:
 
-# How long one call may take, in seconds, before it is given up. The default is 2700 (45 minutes).
+# How long one call may take, in seconds, before the tool gives up on it. The default is 2700 (45 minutes).
 # timeout_s: 2700
 
-# Before its first billed call, a run estimates what it will cost and asks to go on when the estimate is above
-# this many US dollars (`--yes` goes on without asking). With claude-code, the estimate is what the calls would
+# Before its first billed call, a run estimates what it will cost and asks before going on when the estimate is
+# above this many US dollars (`--yes` goes on without asking). With claude-code, the estimate is what the calls would
 # cost at API prices; they count against your Claude plan instead of being billed separately.
 # max_cost_usd: 20
 """

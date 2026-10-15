@@ -29,7 +29,7 @@ def init(force: bool) -> int:
               file=sys.stderr)
         return 1
     print(f"Wrote {path} (readable by you only), set to provider {provider} and model {K.DEFAULT_MODEL}.\n"
-          "Every setting in it is explained in a comment; edit it to change how kestra-migrate calls a model.")
+          "A comment explains every setting in it. Edit it to change how kestra-migrate calls a model.")
     try:
         print(f"Each run will use: {K.resolve().describe()}.")
     except K.ConfigError as e:

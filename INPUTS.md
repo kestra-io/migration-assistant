@@ -1,8 +1,8 @@
 # Inputs: what the customer sends, and where it goes
 
 This tool reads one estate at a time from one **export folder**. An **estate** is one customer's whole
-vRO/vRA scope, and it is named after its export folder; one estate is one run
-(`kestra-migrate vra run <export folder>`). This page says what to put in that folder,
+vRO/vRA scope, named after its export folder, and one estate is one run
+(`kestra-migrate vra run <export folder>`). This page covers what to put in that folder,
 how an administrator produces it, and what has to come separately because no export contains it.
 
 Every step that describes how the VMware product behaves is marked **(to confirm with a vRO expert)**.
@@ -21,15 +21,15 @@ How an administrator produces one **(to confirm with a vRO expert)**:
 1. In the Orchestrator client, open **Assets > Packages** (vRO 8.x and VCF 9; in the vRO 7.x Java
    client, the **Packages** view in Design mode).
 2. **Create a new package**, name it after the estate (for example `com.acme.migration.estate`).
-3. Add content. Two ways, either is fine:
+3. Add content in either of two ways:
    - **Whole folders**: add each workflow folder and each action module in scope. Folder contents,
      including sub-folders, go in with it.
    - **Individual workflows**: add them one by one. When asked, **include dependencies**, so the
      actions, configuration elements, resource elements and nested workflows they reference come too.
      A nested workflow left out appears in the brief as a call "not in the export".
-4. **Export** the package. Leave the default export options; in particular keep configuration
-   element values if the customer is comfortable sharing them (they can be redacted, see section 6),
-   because without them some target endpoints are unknown.
+4. **Export** the package. Leave the default export options. Configuration element values can stay in
+   the export: their numbers, booleans and netmasks reach the model, and every text value is dropped before
+   any later step reads the export (section 6).
 5. One package per vRO cluster is ideal. Several packages from the same estate are fine: put them all
    in the estate folder and they are read together.
 
@@ -57,16 +57,16 @@ reports the version as unknown.
 
 vRO can export one workflow at a time as a `.workflow` file (a ZIP of `workflow-info`,
 `workflow-content` and optional input forms). The tool reads it, and **Preflight marks every such
-input "experimental"**: that reader has never run on a real export (none was among the inputs it was built on). Prefer a
-package; if single files are all that is available, send them and check their counts by hand.
+input "experimental"**, because that reader has never run on a real export (none was among the inputs it was built on).
+Prefer a package. If single files are all you have, send them and check their counts by hand.
 
 ## 4. Entry points: a vRA content export (`.vra-ng`), or `entry-points.yaml`
 
 A vRO package does not say what starts its workflows. If the estate runs under vRA 8, Aria
 Automation or VCF Automation, the customer can export that side with VMware Build Tools for
 Aria (a `vra-ng` project) and put the `.vra-ng` next to the package. A Build Tools vRA project folder (with its `content.yaml`, optionally under
-`src/main/resources/`) is read the same way. The tool reads, with the same ZIP guards and safe
-JSON/YAML loading as everything else:
+`src/main/resources/`) is read the same way. With the same ZIP guards and safe JSON/YAML loading as
+everything else, the tool reads:
 
 - `content.yaml`, and whether each item it lists is present;
 - catalog items, their content source and request form fields (from `forms/<item>.json`, or a
@@ -80,14 +80,16 @@ Folders it does not know are listed in `readiness.md`, not dropped. Every workfl
 matched to the package by vRO workflow ID, and any that does not resolve is reported.
 
 Without a vRA export, the customer gives the same facts by hand in
-`<export folder>/kestra-assessment/your-input/entry-points.yaml`. Preflight writes it only then, as a template with one
-commented example in the same schema, and never overwrites it once it has an entry; `answers.yaml` then has
-one open question, Q2, that points to it. With a vRA export there is no such file: Q2 is asked in
-`answers.yaml` itself, for what no export holds (vRO scheduled tasks and policies, an ITSM, scripts calling
-the vRO REST API): name them, or answer `none`. A filled-in `entry-points.yaml` a person adds is always
-read. When both exist they are merged, and a conflict keeps the export's value and is reported. Q2 is
-"partly answered" while there are entry points on record, and answered once the file says
-`complete: true` (or Q2 is answered in `your-input/answers.yaml`).
+`<export folder>/kestra-assessment/your-input/entry-points.yaml`. Preflight writes this file only in that case, as a
+template with one commented example in the same schema, and never overwrites it once it has an entry.
+`answers.yaml` then has one open question, Q2, that points to it.
+
+With a vRA export, there is no such file. Q2 is asked in `answers.yaml` itself, for what no export holds (vRO
+scheduled tasks and policies, an ITSM, scripts calling the vRO REST API). Name them, or answer `none`.
+
+A filled-in `entry-points.yaml` that a person adds is always read. When both exist, they are merged, and a
+conflict keeps the export's value and is reported. Q2 is "partly answered" while there are entry points on
+record, and answered once the file says `complete: true` (or Q2 is answered in `your-input/answers.yaml`).
 
 ## 5. What is not in any export, and has to come separately
 
@@ -134,7 +136,8 @@ answered:
 signed_for: full plan
 ```
 
-`open` lists what a wave waits on, first; `answered` lists the rest. Each entry has an `id`, one plain
+`open` lists what is still unanswered, with what a wave waits on first, and `answered` lists what already has an
+answer. Each entry has an `id`, one plain
 `question`, a `suggested` value when the code points to one, and an `answer`. Write `yes` to take the
 suggested value; any other answer is the answer itself. A remark goes in the answer too. `signed_for` is
 `wave 1` or `full plan`, and stays empty until you sign.
@@ -153,34 +156,36 @@ that words or orders its findings differently keeps each answer on its item. The
 every run: it moves an entry to `answered` once it has an answer, keeps every answer exactly as written, and
 never drops an id. An answer whose item a run no longer finds moves to a third list, `no_longer_asked`, with
 the question it was given for, and lands on nothing else. A file that does not parse is never rewritten; the
-version before it is kept in `data/answers.yaml.previous`. An `answers.yaml` in an older format is moved to
-this one on the next run, every answer and the signature carried over, and the old file kept as
-`data/answers.yaml.before-2g`.
+version before it is kept in `data/answers.yaml.previous`. An `answers.yaml` written by an earlier version is
+moved to this format on the next run, every answer and the signature carried over, and the old file is kept
+in `data/`.
 
 The questions are asked from what is on record, and asked again after Assess: with a vRA export read, Q2
 asks only for what an export cannot hold (vRO scheduled tasks and policies, the ITSM, REST callers); Q3
 names the systems the tool found; Q7 names any run-history files in the folder; Q8 suggests the vRO plugins
-the code uses, for you to answer `yes` or correct. Q9 takes keep, replace, or replace with a bridge until
-then. A `.vra-ng` in the estate folder is read (section 4). Other files (a run-history CSV) can go there
+the code uses, for you to answer `yes` or correct. Q9 takes keep, replace, or replace vRA with a bridge that
+forwards vRA's requests to Kestra until users move to the new front end. A `.vra-ng` in the estate folder is read (section 4). Other files (a run-history CSV) can go there
 too; Preflight lists them as "other files" and they are not parsed yet.
 
-Later, the brief asks for the decisions its waves wait for (a client route for a system with no Kestra
-plugin, whether Enterprise Edition is available, a timeout policy for each blocking step, how to get a
-resource no Kestra task creates, keep or fix each suspected defect) in the same `answers.yaml`, each a plain
-question with the choices in it, and with a suggested value where the tool has a recommendation. A
-suspected defect, after `decide each`, reads like this: "The Deployment Registry is read before the teardown
-gate, so an event that should be ignored can still fail the run. Keep the current behavior, or fix it?"
-(answer `keep` or `fix`). The specs' open questions and the spec review are there too, and the signature. A
-question a decision already asks is asked once, there: a spec question about certificate checks in the
-certificate decision, one about what a failure does in the timeout and failure decision of the blocking
-subscription that runs the workflow. Every wave entry criterion names the id that closes it.
+Later, the brief asks in the same `answers.yaml` for the decisions its waves wait for: a client route for a
+system with no Kestra plugin, whether Enterprise Edition is available, a timeout policy for each blocking step,
+how to get a resource no Kestra task creates, and keep or fix for each suspected defect. Each is a plain
+question with the choices in it, and a suggested value where the tool has a recommendation. After
+`decide each`, a suspected defect reads like this: "The Deployment Registry is read before the teardown gate,
+so an event that should be ignored can still fail the run. Keep the current behavior, or fix it?" (answer
+`keep` or `fix`). The specs' open questions, the spec review and the signature are there too.
+
+A question that a decision already asks is asked only once, in that decision. A spec question about
+certificate checks goes in the certificate decision, and one about what a failure does goes in the timeout and
+failure decision of the blocking subscription that runs the workflow. Every wave entry criterion names the id
+that closes it.
 
 ### Optional: correct what the tool found (`corrections.yaml`)
 
 This step is for advanced use, and most estates never need it. If the tool got something wrong (a domain's
 name, which domain a cluster belongs to, how a target is reached, a wrapper flag, a workflow's outcome),
-add `<export folder>/kestra-assessment/your-input/corrections.yaml`. The tool never creates it; it reads it on every run if it
-is there. Leave a section empty to change nothing:
+add `<export folder>/kestra-assessment/your-input/corrections.yaml`. The tool never creates it, but reads it on every run if it's
+there. Leave a section empty to change nothing:
 
 ```yaml
 # Kestra Migration Assistant for vRA: corrections (optional). Read on every run; leave a section empty to change nothing.
@@ -199,8 +204,8 @@ wrappers:
   not_wrapper: []   # workflows flagged as wrappers that are not
   wrapper: []       # workflows that are wrappers the rule missed
 
-# One entry per workflow or action. The outcome must be one of: Retire, Near-duplicate, Wrapper,
-# Plugin-covered library, Convert, Needs owner input, Manual, Rebuild
+# One entry per workflow or action. The outcome must be one of these nine: Retire, Near-duplicate, Wrapper,
+# Plugin-covered library, Convert, Needs owner input, Needs a model, Manual, Rebuild
 #   outcomes:
 #     lb-create-load-balancer:
 #       outcome: Retire
@@ -210,19 +215,25 @@ outcomes: {}
 
 ## 6. Before anything leaves the customer's network: sanitize
 
-Every run sanitizes first: `kestra-migrate vra run acme` writes a redacted copy to
-`acme/kestra-assessment/data/0-preflight/sanitized/` and a `redaction-report.md` to review:
-hostnames, IPs, URLs, emails, account names and anything credential-shaped replaced with stable
-placeholders; configuration element values dropped, except numbers, booleans and netmasks;
-SecureString values dropped; signer and owner identities
-stripped. A `.vra-ng` is sanitized too: besides the same text rules, owners, subscribers and
-principals are redacted as accounts, the tenant (`orgId`) as an identity, and network names, constraint
-tags and cloud account tags as NETWORK; IDs, event topics, conditions and names are kept, so entry
-points still resolve. The export's own module and category names (`com.acme.net`) are code, not hosts, and
-are kept as written, as are workflow, action, element and file names. The structure is unchanged, so every
-later stage (Preflight, Assess, Understand, Brief and the pages) reads the copy and never the export: no
-prompt carries a value the copy replaced, and the pages show placeholders such as `<NETWORK-01>` where the
-export had a value. The customer can run this themselves and send only the sanitized copy.
+Every run sanitizes first. `kestra-migrate vra run acme` writes a redacted copy to
+`acme/kestra-assessment/data/0-preflight/sanitized/` and a `redaction-report.md` to review. In the copy:
+
+- hostnames, IPs, URLs, emails, account names and anything credential-shaped are replaced with stable
+  placeholders
+- configuration element values are dropped, except numbers, booleans and netmasks
+- SecureString values are dropped
+- signer and owner identities are stripped
+
+A `.vra-ng` is sanitized too. Besides the same text rules, owners, subscribers and principals are redacted as
+accounts, the tenant (`orgId`) as an identity, and network names, constraint tags and cloud account tags as
+NETWORK. IDs, event topics, conditions and names are kept, so entry points still resolve. The export's own
+module and category names (`com.acme.net`) are code, not hosts, and are kept as written, as are workflow,
+action, element and file names.
+
+The structure is unchanged, so every later stage (Preflight, Assess, Understand, Brief and the pages) reads the
+copy and never the export. No prompt carries a value the copy replaced, and the pages show placeholders such as
+`<NETWORK-01>` where the export had a value. The customer can run this themselves and send only the sanitized
+copy.
 
 ## 7. Where the customer puts it
 
@@ -245,10 +256,11 @@ Then:
 kestra-migrate vra run acme      # sanitize, preflight, assess, understand, brief, pages
 ```
 
-Everything the tool writes goes to `acme/kestra-assessment/` (or the folder `--out` names, for an export
-folder you cannot write to); open `acme/kestra-assessment/index.html`, the brief. Answer in
-`acme/kestra-assessment/your-input/answers.yaml` and run the same command again; only what changed is
-re-done, and the model replies already paid for come from the cache in `kestra-assessment/data/model-cache/`.
-Nothing is uploaded anywhere by these commands; the only outbound traffic is to the configured model, and
-only for the model calls the brief lists (domain names, walkthrough text, and the specs, which `run` writes
-unless `--no-model` is given), with every piece of export text marked as untrusted data.
+Everything the tool writes goes to `acme/kestra-assessment/`, or to the folder `--out` names if you can't
+write to the export folder. Open `acme/kestra-assessment/index.html`, the brief. Answer in
+`acme/kestra-assessment/your-input/answers.yaml` and run the same command again. Only what changed is redone,
+and model replies already paid for come from the cache in `kestra-assessment/data/model-cache/`.
+
+These commands upload nothing. The only outbound traffic goes to the configured model, and only for the model
+calls the brief lists (domain names, walkthrough text, and the specs, which `run` writes unless `--no-model` is
+given). Every piece of export text in those calls is marked as untrusted data.
