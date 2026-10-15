@@ -18,7 +18,7 @@ Search the [open issues](https://github.com/kestra-io/migration-assistant/issues
 [a feature request](https://github.com/kestra-io/migration-assistant/issues/new?template=feature_request.yml).
 Issues are triaged by the maintainers, with no promised response time.
 
-A security issue never goes in a public issue.
+A security issue never goes in a public issue: report it privately to security@kestra.io.
 
 ## Development (maintainers)
 

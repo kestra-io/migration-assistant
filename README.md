@@ -133,10 +133,28 @@ may work, but a smaller one is more likely to miss the structure.
 
 ### What is sent to the model
 
-Every run sanitizes the export first, and every later stage reads the sanitized copy. Hostnames, IPs, URLs,
-emails, account names and anything credential-shaped are replaced by placeholders (`<HOST-01>`); configuration
-element and SecureString values are dropped. What a prompt carries is the rest: a workflow's scripts and
-structure, the names of its elements, attributes and actions, and the specs of the workflows it shares state with.
+The first step of every run, Sanitize, writes a redacted copy of the export to
+`kestra-assessment/data/0-preflight/sanitized/`. It is the only step that opens the export. Every later step
+(Preflight, Assess, Understand, Brief and the pages) reads only that copy, and if the export changes, Sanitize
+runs again first. A prompt is built from the copy, so it carries:
+
+- **Replaced by a placeholder:** host names, IP addresses, URLs, email addresses, user and service accounts, and
+  anything credential-shaped (passwords and tokens in assignments, keys, JWTs). Each value gets one placeholder
+  wherever it appears (`<HOST-01>`, `<IP-02>`). In a vRA export, also owners, subscribers and principals, the
+  tenant, and network names, tags and CIDRs.
+- **Dropped:** every configuration element value and every SecureString value. Their names and types stay. A
+  package's signer and owner identities, and its signatures and certificates, are removed too.
+- **Sent as written:** the names of workflows, actions, modules, categories, elements, attributes and items,
+  the export's file and package names, the scripts and the workflows' structure, vRA IDs and event topics, and
+  the specs of the workflows a workflow shares state with. A module or category name is kept even when it reads
+  like a host name (`com.acme.net`), because it is code and the tool's IDs and calls are built from it. If a
+  name identifies your organization, the model sees it.
+
+The pages are built from the same copy, so they show a placeholder wherever the export had a replaced value: a
+vRA network tag reads `<NETWORK-01>`, not its name. In exchange, nothing in the `kestra-assessment/` folder is
+taken from a value Sanitize replaced or dropped, so it can be shared like the sanitized copy. The redaction
+report shows only masked previews (`ab… (12 chars)`). A model's reply can still state a value from its own
+knowledge, such as a common netmask it assumes.
 
 Where it goes depends on the provider:
 
@@ -206,6 +224,8 @@ Found a bug, or want something it doesn't do?
 [Open an issue](https://github.com/kestra-io/migration-assistant/issues/new/choose), and never attach a
 customer's export. This repository does not take outside contributions; see
 [CONTRIBUTING.md](https://github.com/kestra-io/migration-assistant/blob/main/CONTRIBUTING.md).
+
+Report security issues privately to security@kestra.io.
 
 ## Licence
 
