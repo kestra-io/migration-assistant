@@ -430,8 +430,9 @@ def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: b
     """Specs for `uids`, leaves first. With `call_tree`, each prompt carries every action the workflow
     reaches (action_tree) and what starts it (`entry_points`: uid -> list); without it, only the actions it
     calls directly (the closed benchmark's prompt, unchanged). `regenerate`: uids whose spec on disk is
-    replaced. `dry`: call no model; build each prompt from the specs on disk and return what each would
-    carry (`contexts`) and its fingerprint (`prompt_sha`), so a caller can tell a spec whose input changed.
+    replaced. `dry`: call no model; build each prompt from the specs on disk (but those in `regenerate`) and
+    return what each would carry (`contexts`) and its fingerprint (`prompt_sha`), so a caller can tell a spec
+    whose input changed.
     With `call_tree`, `lifecycle` (Assess's lifecycle groups) and `state` (uid -> state paths read and
     written) order a group's writers before its readers and show each reader the writers' specs."""
     spec_dir = spec_dir or os.path.join(out_dir, "spec")
@@ -536,7 +537,7 @@ def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: b
                 build_prompt(uid)
             for uid in lvl:
                 path = os.path.join(spec_dir, f"{uid}.json")
-                if os.path.exists(path):
+                if os.path.exists(path) and uid not in (regenerate or set()):
                     specs[uid] = json.load(open(path))
         return {"contexts": context, "prompt_sha": shas, "order": order, "prompts": prompts,
                 "schema": ESTATE_SPEC_SCHEMA if call_tree else SPEC_SCHEMA}
