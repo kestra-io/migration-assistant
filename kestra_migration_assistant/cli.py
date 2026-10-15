@@ -47,7 +47,8 @@ def main(argv: list[str] | None = None) -> int:
         epilog="Start with: kestra-migrate vra run <export folder>. "
                + (K.CONTAINER_HELP if K.in_container() else
                   f"Installed with `{K.install_command()}`, which needs git; pipx and pip take the same git+ URL. "
-                  f"For an Anthropic API key: `{K.install_command('anthropic')}`."))
+                  f"For an Anthropic API key: `{K.install_command('anthropic')}`. "
+                  f"To update: `{K.UPGRADE_COMMAND}`."))
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="tool", required=True, metavar="{" + ",".join([*TOOLS, "init"]) + "}")
     ip = sub.add_parser("init", help=INIT_HELP, description=INIT_HELP)

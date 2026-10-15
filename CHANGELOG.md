@@ -30,8 +30,9 @@ The first release: the assessment of a VMware vRA / vRO estate, on your own mach
 - A cost estimate before the first billed call, and a question before going on above $20 (`max_cost_usd`). Replies
   are cached, so a run again pays only for what is new.
 - Nothing leaves the machine except the calls to the configured model: no telemetry, no update check.
-- Installs from this tag with `uv tool install git+https://github.com/kestra-io/migration-assistant@v1.0.0` (or pipx,
-  or pip, with the same URL; git is needed), on Python 3.10 or later. A container
+- Installs from GitHub with `uv tool install git+https://github.com/kestra-io/migration-assistant@main` (or pipx,
+  or pip, with the same URL; git is needed), on Python 3.10 or later, and updates with
+  `uv tool upgrade kestra-migration-assistant`. To stay on this version, install `@v1.0.0` instead. A container
   image for linux/amd64 and linux/arm64, `ghcr.io/kestra-io/migration-assistant`, for an Anthropic API key, an
   OpenAI-compatible endpoint or no model. Each release carries SHA-256 checksums and CycloneDX SBOMs for the package
   and the image.

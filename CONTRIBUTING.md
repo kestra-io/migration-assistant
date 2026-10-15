@@ -18,7 +18,8 @@ Search the [open issues](https://github.com/kestra-io/migration-assistant/issues
 [a feature request](https://github.com/kestra-io/migration-assistant/issues/new?template=feature_request.yml).
 Issues are triaged by the maintainers, with no promised response time.
 
-A security issue never goes in a public issue: report it privately to security@kestra.io.
+A security issue never goes in a public issue: report it privately through
+[GitHub's security advisory form](https://github.com/kestra-io/kestra/security/advisories/new) on Kestra's main repository.
 
 ## Development (maintainers)
 
@@ -37,8 +38,10 @@ A security issue never goes in a public issue: report it privately to security@k
 5. Open the pull request against `main`, saying what changed and why. Keep it to one change.
 
 To try a change the way a customer installs a release, install the branch from its git URL (git is needed):
-`uv tool install git+https://github.com/kestra-io/migration-assistant@<branch>`. A release is installed the same
-way, from its tag: `uv tool install git+https://github.com/kestra-io/migration-assistant@v1.0.0`.
+`uv tool install git+https://github.com/kestra-io/migration-assistant@<branch>`. Customers install from `main`
+(`@main`), so whatever is merged to `main` is what `uv tool upgrade kestra-migration-assistant` gives them: merge
+to `main` only what is ready to ship. A release is also tagged (`v1.0.0`), for the CHANGELOG, the container image
+and anyone who pins a version (`@v1.0.0`).
 
 Each stage also runs on its own for development (`kestra-migrate vra preflight`, `sanitize`, `assess`, `understand`,
 `brief`, `visuals`, and `all`, which is `run` without Understand); they are not listed in `--help`.
