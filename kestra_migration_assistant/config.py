@@ -49,14 +49,15 @@ CONTAINER_HELP = (f"In the container, a Claude Code login cannot be used. Pass {
                   "--no-model.")
 
 
-# Installed from the repository's version tag, with git; pipx and pip take the same git+ URL
+# Installed from the repository's main branch, with git; pipx and pip take the same git+ URL. A release can be pinned
+# by its tag (@v1.0.0) instead of main.
 REPO_URL = "https://github.com/kestra-io/migration-assistant"
+UPGRADE_COMMAND = "uv tool upgrade kestra-migration-assistant"
 
 
 def install_command(extra: str | None = None) -> str:
-    """The command that installs this version, from its tag: `uv tool install git+...@v<version>`."""
-    from kestra_migration_assistant import __version__
-    url = f"git+{REPO_URL}@v{__version__}"
+    """The command that installs the latest release, from main: `uv tool install git+...@main`."""
+    url = f"git+{REPO_URL}@main"
     return f"uv tool install '{f'kestra-migration-assistant[{extra}] @ {url}'}'" if extra else f"uv tool install {url}"
 
 

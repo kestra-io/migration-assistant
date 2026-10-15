@@ -13,3 +13,7 @@ venv/
 .env
 # What the tool writes next to an export, if one is ever run inside the repository
 kestra-assessment/
+# Editor swap and backup files
+*.swp
+*.swo
+*~
