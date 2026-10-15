@@ -6,9 +6,11 @@ Hostile inputs are built here at run time rather than kept on disk.
 from __future__ import annotations
 
 import ast
+import hashlib
 import io
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -259,3 +261,33 @@ def test_the_repository_scan_skips_prose_and_punctuation_but_not_a_credential():
     loud = ['password = "S3cretPass"', 'token: "abc 123 def"', 'api_key = "k-9f8e7d6c5b4a"', 'secret: "hunter2"']
     for text in loud:
         assert scan.scan_text("x", text), text
+
+
+# ------------------------------------------------------------------ vendored JavaScript
+
+ASSETS = os.path.join(ROOT, "kestra_migration_assistant", "vra", "assets")
+
+
+def _recorded_sha256(path):
+    """The SHA-256 NOTICE records under a bundled file's entry."""
+    notice = open(os.path.join(ROOT, "NOTICE"), encoding="utf-8").read()
+    entry = notice.split(f"kestra_migration_assistant/vra/assets/{path}\n", 1)[1].split("\n\n", 1)[0]
+    return re.search(r"SHA-256\s+([0-9a-f]{64})", entry).group(1)
+
+
+def _d3_line(path):
+    lines = [ln for ln in open(os.path.join(ASSETS, path), encoding="utf-8").read().splitlines()
+             if ln.startswith("var d3=")]
+    assert len(lines) == 1, f"{path}: expected one `var d3=` line"
+    return lines[0].encode()
+
+
+def test_mermaid_is_the_bundle_notice_records():
+    path = "vendor/mermaid/mermaid.min.js"
+    data = open(os.path.join(ASSETS, path), "rb").read()
+    assert hashlib.sha256(data).hexdigest() == _recorded_sha256(path)
+
+
+@pytest.mark.parametrize("path", ["vendor/anthropic-code-modernization/topology-viewer.html", "explorer-viewer.html"])
+def test_the_inlined_d3_subset_is_the_one_notice_records(path):
+    assert hashlib.sha256(_d3_line(path)).hexdigest() == _recorded_sha256(path)

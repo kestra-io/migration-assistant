@@ -1,0 +1,31 @@
+# `make check` on every pull request and every push to main. Read-only: `pull_request` (not `pull_request_target`)
+# gives a fork's run no secrets and a read-only token.
+#
+# Actions are pinned to a commit; the tag they were at is in the comment.
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: make check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # the secret scan reads every commit of every ref
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+      - run: make check

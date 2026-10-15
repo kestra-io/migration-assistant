@@ -18,25 +18,25 @@ or emails. Nothing leaves the machine except the calls to the configured model.
 
 ### 1. Install
 
-From the release's tag on GitHub, with [uv](https://docs.astral.sh/uv/), which installs Python for you if it needs
+From GitHub, with [uv](https://docs.astral.sh/uv/), which installs Python for you if it needs
 to. It needs [git](https://git-scm.com/downloads) on the machine:
 
 ```bash
-uv tool install git+https://github.com/kestra-io/migration-assistant@v1.0.0
+uv tool install git+https://github.com/kestra-io/migration-assistant@main
 ```
 
 Or with pipx, or pip in a virtual environment (Python 3.10 or later), from the same URL:
 
 ```bash
-pipx install git+https://github.com/kestra-io/migration-assistant@v1.0.0
-pip install git+https://github.com/kestra-io/migration-assistant@v1.0.0
+pipx install git+https://github.com/kestra-io/migration-assistant@main
+pip install git+https://github.com/kestra-io/migration-assistant@main
 ```
 
 If `kestra-migrate` isn't found after `uv tool install`, run `uv tool update-shell` and open a new terminal.
 
 To call a model with an Anthropic API key, add the `anthropic` extra:
-`uv tool install 'kestra-migration-assistant[anthropic] @ git+https://github.com/kestra-io/migration-assistant@v1.0.0'`. Nothing else is needed for a Claude Code
-login or an OpenAI-compatible endpoint. To move to a later version, run the same command with its tag; the
+`uv tool install 'kestra-migration-assistant[anthropic] @ git+https://github.com/kestra-io/migration-assistant@main'`. Nothing else is needed for a Claude Code
+login or an OpenAI-compatible endpoint. To update, run `uv tool upgrade kestra-migration-assistant`. To pin a version, replace `main` with its tag; the
 [releases](https://github.com/kestra-io/migration-assistant/releases) list them.
 
 ### 2. Run it on an export folder
@@ -131,6 +131,31 @@ Every reply is checked against the structure the tool expects. A reply that does
 more, with what was wrong; a second miss stops that call with an error that names the model. Other models
 may work, but a smaller one is more likely to miss the structure.
 
+### What is sent to the model
+
+Every run sanitizes the export first, and every later stage reads the sanitized copy. Hostnames, IPs, URLs,
+emails, account names and anything credential-shaped are replaced by placeholders (`<HOST-01>`); configuration
+element and SecureString values are dropped. What a prompt carries is the rest: a workflow's scripts and
+structure, the names of its elements, attributes and actions, and the specs of the workflows it shares state with.
+
+Where it goes depends on the provider:
+
+| Provider | Prompts go to |
+|---|---|
+| `claude-code` | Anthropic, through your Claude Code login, under your account's terms |
+| `anthropic` | The Anthropic API, under the terms of the organization that owns the key |
+| `openai-compatible` | The endpoint `base_url` names. A model you host keeps everything on your network |
+
+Nothing else leaves the machine: no telemetry, no update check. Replies are cached locally in
+`kestra-assessment/data/model-cache/`.
+
+The sanitizer works from patterns, so it can miss things: a hostname with no dot or known domain suffix, a
+password in a variable not named like one, a secret inside a binary resource. It has been tested on public vRO
+libraries and synthetic fixtures, not yet on a real customer export. Before a run with a model, read
+`kestra-assessment/data/0-preflight/redaction-report.md` and check the sanitized copy next to it, or run with
+`--no-model`, or with a model you host. `kestra-migrate vra check-intake <path>` rejects an export that still
+carries anything secret-shaped.
+
 ### What a run costs
 
 A typical run: the load balancer use case (4 workflows, 39 actions) cost $1.32 on `claude-opus-5-5`, in 8
@@ -173,15 +198,13 @@ write the answer itself. The tool moves an item to `answered` once it has an ans
 written, and never drops an id. Corrections to what the tool found (domains, clusters, reach, wrappers,
 outcomes) go in a `your-input/corrections.yaml` you add yourself;
 [INPUTS.md](https://github.com/kestra-io/migration-assistant/blob/main/INPUTS.md) shows its shape.
-[SECURITY.md](https://github.com/kestra-io/migration-assistant/blob/main/SECURITY.md) lists what protects the
-tool and the export, and what is still missing.
 
 ## Help
 
 Need help running it, or want us to run it for you? [Ask us here](https://kestra.io/resources/migration/vra/assistant?utm_source=migration-assistant&utm_medium=readme).
 Found a bug, or want something it doesn't do?
 [Open an issue](https://github.com/kestra-io/migration-assistant/issues/new/choose), and never attach a
-customer's export. To contribute, see
+customer's export. This repository does not take outside contributions; see
 [CONTRIBUTING.md](https://github.com/kestra-io/migration-assistant/blob/main/CONTRIBUTING.md).
 
 ## Licence
