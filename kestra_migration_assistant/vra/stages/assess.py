@@ -59,11 +59,13 @@ STAGE_RULES = [
 def _parse(pm: dict) -> dict:
     from kestra_migration_assistant.vra.parse import corpus, formats
     C.ensure(C.WORK)
-    idx = corpus.parse_corpus(C.WORK, C.INPUTS, root=C.SOURCE_DIR)
+    # the sanitized copy, never the export: paths in it are laid out as in the export folder
+    inputs, _ = C.sanitized_inputs()
+    idx = corpus.parse_corpus(C.WORK, inputs, root=C.copy_of(C.SOURCE_DIR))
 
     # Script modules again, for their parameter types (the index keeps only the script).
     actions: list[dict] = []
-    for label, path in C.INPUTS.items():
+    for label, path in inputs.items():
         elements, _ = formats.read_any(path)
         for e in elements:
             if e.kind not in ("ScriptModule", "ScriptingAction"):
@@ -83,7 +85,7 @@ def _parse(pm: dict) -> dict:
             actions.append({
                 "key": key, "uid": C.slug(key.replace(":", "-").replace("/", "-")),
                 "source": label, "module": module, "name": e.name,
-                "file": C.rel(e.source_path.split("!")[0]) +
+                "file": C.rel(C.export_of(e.source_path.split("!")[0])) +
                         ("!" + e.source_path.split("!")[1] if "!" in e.source_path else ""),
                 "params": params, "script": script, "lines": len(lines),
                 "norm_hash": hashlib.sha256(norm.encode()).hexdigest()[:16],

@@ -314,6 +314,92 @@ def require_estate() -> None:
         raise EstateError("no estate configured: pass the export folder")
 
 
+# ------------------------------------------------------------------ the sanitized copy
+#
+# Sanitize is the only stage that opens the export. Every stage after it reads the sanitized copy in
+# data/0-preflight/sanitized/, through sanitized_inputs(); what the results record and the pages show is still
+# the export's own path (export_of), so a reader finds the file in what they exported.
+
+def sanitized_dir() -> str:
+    return os.path.join(PRE, "sanitized")
+
+
+def _tree() -> bool:
+    """True when the export folder is itself one tree (it holds Workflow/, META-INF/ ...)."""
+    return any(os.path.abspath(p) == SOURCE_DIR for p in INPUTS.values())
+
+
+def _under(path: str, folder: str) -> bool:
+    return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
+
+
+def copy_of(path: str) -> str:
+    """
+    Where a file of the export is in the sanitized copy: the same path below the export folder, under the
+    folder's own name when the export folder is one tree. An input given from outside the export folder goes
+    in under its own name.
+    """
+    p = os.path.abspath(path)
+    if _tree():
+        return os.path.normpath(os.path.join(sanitized_dir(), os.path.basename(SOURCE_DIR), os.path.relpath(p, SOURCE_DIR)))
+    if _under(p, SOURCE_DIR):
+        return os.path.normpath(os.path.join(sanitized_dir(), os.path.relpath(p, SOURCE_DIR)))
+    for q in sorted((os.path.abspath(x) for x in (*INPUTS.values(), *VRA_INPUTS.values())), key=len, reverse=True):
+        if _under(p, q):
+            return os.path.normpath(os.path.join(sanitized_dir(), os.path.basename(q), os.path.relpath(p, q)))
+    raise EstateError(f"{path} is not part of the export")
+
+
+def export_of(path: str) -> str:
+    """The export's own path for a file of the sanitized copy (the inverse of copy_of), for the results and pages."""
+    r = os.path.relpath(os.path.abspath(path), sanitized_dir())
+    if _tree():
+        r = r.split(os.sep, 1)[1] if os.sep in r else ""
+    return os.path.normpath(os.path.join(SOURCE_DIR, r))
+
+
+def _newest(path: str) -> float:
+    """The newest modification time of a file, or of a folder and everything in it (the output folder left out)."""
+    newest = mtime(path)
+    if os.path.isdir(path):
+        for dp, dirs, files in os.walk(path):
+            outdir.prune(dp, dirs)
+            newest = max([newest, mtime(dp), *(mtime(os.path.join(dp, f)) for f in files)])
+    return newest
+
+
+def sanitize_needed() -> bool:
+    """True when the sanitized copy is missing, or the export changed after it was written."""
+    report = os.path.join(PRE, "redaction-report.json")
+    if not os.path.exists(report):
+        return True
+    unreadable = read_json(report).get("unreadable") or {}
+    labelled = {**INPUTS, **VRA_INPUTS}
+    if not all(os.path.exists(copy_of(p)) or k in unreadable for k, p in labelled.items()):
+        return True
+    return max(_newest(p) for p in labelled.values()) > mtime(report)
+
+
+def sanitize_report() -> dict:
+    """What Sanitize recorded about the export: among it, `unreadable` (label -> why: the inputs it could not open,
+    which have no copy, so no stage reads them) and `signed` (the packages whose signatures the copy drops)."""
+    report = os.path.join(PRE, "redaction-report.json")
+    return read_json(report) if os.path.exists(report) else {}
+
+
+def sanitized_inputs() -> tuple[dict[str, str], dict[str, str]]:
+    """
+    The export's vRO inputs and vRA exports as every stage after Sanitize reads them: their sanitized copies,
+    label -> path. Sanitize runs first when the copy is missing or older than the export, so no stage ever falls
+    back to the export itself.
+    """
+    require_estate()
+    if sanitize_needed():
+        from kestra_migration_assistant.vra import sanitize
+        sanitize.run()
+    return ({k: copy_of(v) for k, v in INPUTS.items()}, {k: copy_of(v) for k, v in VRA_INPUTS.items()})
+
+
 def package_rel(path: str) -> str:
     """A file of the installed package as `kestra_migration_assistant/vra/...`, never as a path through the home
     folder or the site-packages of this machine."""

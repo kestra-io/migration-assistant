@@ -935,7 +935,7 @@ that is not in the export.</p>
 
 def _xml_excerpt(w: dict, max_lines: int = 60) -> tuple[str, str]:
     """The workflow tag and the items up to the entry point, from the file on disk."""
-    path = os.path.join(cast(str, C.BASE), w["file"])
+    path = C.copy_of(os.path.join(cast(str, C.BASE), w["file"]))      # the sanitized copy, never the export
     from kestra_migration_assistant.vra import safety
     from kestra_migration_assistant.vra.parse import formats
     raw = safety.read_file(path)
