@@ -43,8 +43,10 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import zipfile
 from collections import Counter, defaultdict
+from collections.abc import Callable
 
 from . import outdir, safety
 
@@ -104,7 +106,9 @@ XML_TOKENS = re.compile(r"<!\[CDATA\[(.*?)\]\]>|<!--(.*?)-->|<[^>]*>", re.S)
 
 
 class Redactor:
-    def __init__(self) -> None:
+    def __init__(self, names: set[str] | frozenset[str] = frozenset()) -> None:
+        self.names = {n.lower() for n in names}       # the export's module and category names: code, kept
+        self.kept_names: Counter = Counter()
         self.maps: dict[str, dict[str, str]] = {c: {} for c in CATEGORIES}
         self.counts: Counter = Counter()
         self.per_file: dict[str, Counter] = defaultdict(Counter)
@@ -176,6 +180,9 @@ class Redactor:
             self.kept_public[h.lower()] += 1
             return h
         if first in NOT_HOST_FIRST or re.fullmatch(r"[\d.]+", h):
+            return h
+        if h.lower() in self.names:                   # a module or category of the export (com.acme.net)
+            self.kept_names[h] += 1
             return h
         # Code, not a host: a camelCase label (newProperty.local) or used as an lvalue or call target.
         if any(re.search(r"[a-z][A-Z]", lab) for lab in h.split(".")) or \
@@ -426,36 +433,62 @@ def _sanitize_zip(r: Redactor, src: str | bytes, dst: str | None, rel_label: str
     return data, n
 
 
-def sanitize_inputs(inputs: dict[str, str], out_dir: str, vra_inputs: dict[str, str] | None = None) -> dict:
+GET_MODULE_RE = re.compile(r"""\bSystem\s*\.\s*getModule\s*\(\s*(["'])([\w.-]+)\1""")
+
+
+def code_names(inputs: dict[str, str]) -> set[str]:
+    """
+    The export's own module and category names, which read like host names (com.acme.net) but are code: every
+    element's category path, and every module a script names in System.getModule("..."). Read before anything is
+    redacted, so the copy keeps them as written and IDs, calls and verdicts come out the same as from the export.
+    An input that cannot be read adds nothing (sanitize reports it).
+    """
+    from .parse import formats
+    names: set[str] = set()
+    for path in inputs.values():
+        try:
+            elements, _ = formats.read_any(path)
+        except Exception:
+            continue
+        for e in elements:
+            if e.category_path:
+                names.add(e.category_path)
+            names.update(m.group(2) for m in GET_MODULE_RE.finditer(e.xml or ""))
+    return names
+
+
+def sanitize_inputs(inputs: dict[str, str], out_dir: str, vra_inputs: dict[str, str] | None = None,
+                    dest: Callable[[str], str] | None = None) -> dict:
     """
     Sanitize each input (label -> path) into out_dir, keeping names, and each vRA export in
-    `vra_inputs` the same way plus its keyed pass. Returns the report data.
+    `vra_inputs` the same way plus its keyed pass. `dest` says where an input's copy goes (the stages'
+    common.copy_of); by default, out_dir/<its name>. Returns the report data.
     """
-    import shutil
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
     os.makedirs(out_dir)
-    r = Redactor()
+    r = Redactor(code_names(inputs))
     touched: list[str] = []
     skipped: list[str] = []
+    unreadable: dict[str, str] = {}
+    signed: list[str] = []
     seen = 0
     vra_paths = set((vra_inputs or {}).values())
-    for _label, path in {**inputs, **(vra_inputs or {})}.items():
+    for label, path in {**inputs, **(vra_inputs or {})}.items():
         name = os.path.basename(os.path.normpath(path))
+        to = dest(path) if dest else os.path.join(out_dir, name)
         is_vra = path in vra_paths
-        if os.path.isdir(path):
-            seen += _sanitize_tree(r, path, os.path.join(out_dir, name), name, touched, skipped, vra=is_vra)
-        elif safety.is_zip(path):
-            _, n = _sanitize_zip(r, path, os.path.join(out_dir, name), name, touched, skipped, vra=is_vra)
-            seen += n
-        else:
-            seen += 1
-            r.file = name
-            new, _ = _sanitize_bytes(r, safety.read_file(path), name)
-            with open(os.path.join(out_dir, name), "wb") as f:
-                f.write(new)
-            if new != safety.read_file(path):
-                touched.append(name)
+        try:
+            seen += _sanitize_input(r, path, to, name, touched, skipped, is_vra)
+            if f"{name}!signatures/" in r.per_file:     # the copy drops them: say the export had them
+                signed.append(label)
+        except (safety.UnsafeInput, zipfile.BadZipFile, OSError) as exc:
+            # no copy for it, so no stage reads it; Preflight reports it as unreadable
+            unreadable[label] = f"{type(exc).__name__}: {exc}"
+            if os.path.isdir(to):
+                shutil.rmtree(to)
+            elif os.path.exists(to):
+                os.remove(to)
     # dedupe unsure by (file, preview)
     seen_u, unsure = set(), []
     for u in r.unsure:
@@ -471,8 +504,26 @@ def sanitize_inputs(inputs: dict[str, str], out_dir: str, vra_inputs: dict[str, 
             "touched": sorted(set(touched)),
             "per_file": {f: dict(c) for f, c in sorted(r.per_file.items()) if c},
             "unsure": unsure, "skipped": skipped, "kept_public": dict(r.kept_public),
+            "kept_names": dict(sorted(r.kept_names.items())), "unreadable": unreadable, "signed": signed,
             "placeholders": {c: sorted(r.maps[c].values()) for c in CATEGORIES},
             "_masked": {c: {ph: _mask(v) for v, ph in r.maps[c].items()} for c in CATEGORIES}}
+
+
+def _sanitize_input(r: Redactor, path: str, to: str, name: str, touched: list, skipped: list, is_vra: bool) -> int:
+    """Sanitize one input (a tree, a ZIP or one file) to `to`; returns the number of files read."""
+    if os.path.isdir(path):
+        return _sanitize_tree(r, path, to, name, touched, skipped, vra=is_vra)
+    if safety.is_zip(path):
+        return _sanitize_zip(r, path, to, name, touched, skipped, vra=is_vra)[1]
+    r.file = name
+    raw = safety.read_file(path)
+    new, _ = _sanitize_bytes(r, raw, name)
+    os.makedirs(os.path.dirname(to), exist_ok=True)
+    with open(to, "wb") as f:
+        f.write(new)
+    if new != raw:
+        touched.append(name)
+    return 1
 
 
 def _mask(v: str) -> str:
@@ -485,8 +536,8 @@ def _mask(v: str) -> str:
 def run() -> dict:
     from .stages import common as C
     C.require_estate()
-    out_dir = os.path.join(C.PRE, "sanitized")
-    rep = sanitize_inputs(C.INPUTS, out_dir, C.VRA_INPUTS)
+    out_dir = C.sanitized_dir()
+    rep = sanitize_inputs(C.INPUTS, out_dir, C.VRA_INPUTS, dest=C.copy_of)
     rep.update({"estate": C.ESTATE, "generated": C.now(), "out_dir": out_dir, "source_dir": C.rel(C.SOURCE_DIR)})
     C.write_json(os.path.join(C.PRE, "redaction-report.json"), {k: v for k, v in rep.items() if k != "out_dir"})
     C.write_text(os.path.join(C.PRE, "redaction-report.md"), C.no_em_dashes(report_md(rep, C)))
@@ -514,8 +565,14 @@ def report_md(r: dict, C) -> str:
          "account tags, CIDRs. USER also covers vRA owners, subscribers and principals; IDENTITY the tenant (orgId).", "",
          "Public namespace and schema hosts were kept, because every vRO file has them and they identify no one: "
          + (", ".join(f"{h} ({n})" for h, n in sorted(r["kept_public"].items())) or "none") + ".", "",
-         "What stays the same: XML structure, item graphs, bindings, workflow and item names, IDs, types, and "
-         "the scripts' logic. Markup is never edited. Every later stage (Assess, Brief) runs on this copy.", "",
+         "The export's own module and category names were kept as written, though they read like host names, "
+         "because they are code: the workflows' IDs and calls are built from them. "
+         + ("Kept: " + ", ".join(f"`{n}` ({k})" for n, k in r.get("kept_names", {}).items()) + "."
+            if r.get("kept_names") else "None of them read like a host name in this export."), "",
+         "What stays the same: XML structure, item graphs, bindings, workflow, action, module, element and item "
+         "names, IDs, types, and the scripts' logic. Markup is never edited. Every stage after this one "
+         "(Preflight, Assess, Understand, Brief and the pages) reads this copy, never the export, so this copy "
+         "is all the model is sent.", "",
          "## Placeholders and what they replaced (masked)", ""]
     rows = [[ph, c, mv] for c in CATEGORIES for ph, mv in sorted(r["_masked"][c].items())]
     L += [C.md_table(["Placeholder", "Category", "Original (masked)"], rows) if rows else "None.", ""]
@@ -527,6 +584,9 @@ def report_md(r: dict, C) -> str:
         L += [C.md_table(["File", "Value", "Why"], [[u["file"], f"`{u['preview']}`", u["why"]] for u in r["unsure"]]), ""]
     else:
         L += ["Nothing.", ""]
+    if r.get("unreadable"):
+        L += ["## Not readable", "", "These inputs could not be opened safely. They have no sanitized copy, so no "
+              "stage reads them; Preflight lists them.", ""] + [f"- `{k}`: {v}" for k, v in r["unreadable"].items()] + [""]
     if r["skipped"]:
         L += ["## Not inspected", "", "Binary files and symlinks are copied unread (or not copied). Check them by "
               "hand if they could hold anything identifying.", ""] + [f"- `{s}`" for s in r["skipped"]] + [""]

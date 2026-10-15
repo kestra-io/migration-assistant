@@ -271,11 +271,17 @@ def check_export() -> dict:
     history_files = []
     failures = []
     wf_ids: dict[str, dict] = {}
-    for label, path in C.INPUTS.items():
+    inputs, _ = C.sanitized_inputs()
+    sanitized = C.sanitize_report()
+    unreadable = sanitized.get("unreadable") or {}
+    for label, path in inputs.items():
+        if label in unreadable:
+            failures.append({"source": label, "path": C.rel(C.export_of(path)), "error": unreadable[label]})
+            continue
         try:
             elements, summary = formats.read_any(path)
         except Exception as exc:
-            failures.append({"source": label, "path": C.rel(path), "error": f"{type(exc).__name__}: {exc}"})
+            failures.append({"source": label, "path": C.rel(C.export_of(path)), "error": f"{type(exc).__name__}: {exc}"})
             continue
         kinds = Counter(e.kind for e in elements)
         totals.update(kinds)
@@ -303,11 +309,11 @@ def check_export() -> dict:
         raw_name = meta.get("pkg-name") or ""
         sources.append({
             "source": label,
-            "path": C.rel(path),
+            "path": C.rel(C.export_of(path)),
             "format": summary.get("format"),
             # The single .workflow reader has never run on real data.
             "experimental": summary.get("format") == "workflow-export",
-            "signed": summary.get("signed"),
+            "signed": True if label in (sanitized.get("signed") or []) else summary.get("signed"),
             "element_counts": dict(sorted(kinds.items())),
             "dunes_meta_inf": meta_file,
             "package_name": raw_name if "${" not in raw_name else None,
@@ -315,7 +321,9 @@ def check_export() -> dict:
             "vro_version": version,
             "vro_build": meta.get("vso-build-nb") or None,
             "used_plugins": plugins,
-            "build_host_recorded": bool(re.match(r"^[\w.-]+:\d+$", (meta.get("comment") or "").strip())),
+            # host:port, read from the sanitized copy, where the host is a placeholder (&lt;IP-01&gt;:8281)
+            "build_host_recorded": bool(re.match(r"^(?:[\w.-]+|&lt;[A-Z]+-\d+&gt;|<[A-Z]+-\d+>):\d+$",
+                                                 (meta.get("comment") or "").strip())),
         })
 
     versions = sorted({s["vro_version"] for s in sources if s["vro_version"]})

@@ -448,7 +448,10 @@ def for_estate(workflows: dict[str, dict] | None = None) -> dict:
     """`collect` for the configured estate, resolved against `workflows` ({vRO id: {name, uid?}}) if given."""
     from .stages import common as C
     C.require_estate()
-    ep = collect(C.VRA_INPUTS, C.ENTRY_POINTS)
+    _, vra_inputs = C.sanitized_inputs()
+    ep = collect(vra_inputs, C.ENTRY_POINTS)
+    for x in ep["exports"]:
+        x["path"] = C.export_of(x["path"])          # read from the sanitized copy, named as exported
     if workflows is not None:
         ep["resolution"] = resolve(ep["model"], workflows)
     return ep

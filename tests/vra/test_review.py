@@ -120,8 +120,9 @@ def test_1_a_spec_prompt_shows_the_elements_its_code_opens(estate):
     assert "Example/Dns/Settings/Defaults" in ctx["elements"]
     assert "Example/Dns/Templates/zone-body.json" in ctx["elements"]
     assert "Example/Dns/State/Zone Registry" in ctx["elements"]
-    # names and types always, values where the export has them, never a secret's
-    assert '"name": "suffix"' in p and '"value": "zones.example.test"' in p
+    # names and types always; never a value: the prompt is built from the sanitized copy, which drops every
+    # configuration element value
+    assert '"name": "suffix"' in p and "zones.example.test" not in p
     assert '"name": "password"' in p and '"secret": true' in p
     # a text resource's content is shown
     assert '{{zone}}' in p and '"mime": "application/json"' in p
@@ -337,7 +338,9 @@ def test_11_an_existing_network_is_a_mapping_question_and_static_ips_day2_and_th
     dec = _decisions(estate)
     assert not any(k.startswith("gap.") for k in dec)
     m = next(v for k, v in dec.items() if k.startswith("mappings."))
-    assert "`host_net`" in m["closes"]["question"] and "net:example" in m["closes"]["question"]
+    # the network tag is read from the sanitized copy: a placeholder, never the tag itself
+    assert "`host_net`" in m["closes"]["question"] and "<NETWORK-01>" in m["closes"]["question"]
+    assert "net:example" not in m["closes"]["question"]
     assert any(k.startswith("ip-allocation.") for k in dec)
     assert dec[next(k for k in dec if k.startswith("deployment-record."))]["closes"]["recommended"].startswith("the KV")
     day2 = dec[next(k for k in dec if k.startswith("day2-scale."))]
@@ -347,7 +350,8 @@ def test_11_an_existing_network_is_a_mapping_question_and_static_ips_day2_and_th
 def test_11_the_reader_keeps_the_property_values_the_plan_needs(estate):
     tpl = estate["assess"]["entry_points"]["model"]["cloud_templates"][0]
     by = {r["name"]: r for r in tpl["creates"]}
-    assert by["host_net"]["network_type"] == "existing" and by["host_net"]["constraint_tags"] == ["net:example"]
+    # the tag's value comes from the sanitized copy (a placeholder); that the network is an existing one does not
+    assert by["host_net"]["network_type"] == "existing" and by["host_net"]["constraint_tags"] == ["<NETWORK-01>"]
     assert by["host"]["ip_assignment"] == ["static"]
 
 
