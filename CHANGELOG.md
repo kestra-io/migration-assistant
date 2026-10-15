@@ -11,7 +11,8 @@ The first release: the assessment of a VMware vRA / vRO estate, on your own mach
   (`index.html`, and `report/BRIEF.md`), the detail pages, and `your-input/answers.yaml`.
 - The export is parsed by code, behind guards for hostile XML, ZIP, JSON and YAML. The first step writes a
   sanitized copy (host names, IPs, URLs, emails, accounts and credential-shaped values replaced by placeholders;
-  configuration element and SecureString values dropped), and every later step, the prompts and the pages
+  configuration element and SecureString values dropped, except a configuration element's numbers, booleans and
+  netmasks), and every later step, the prompts and the pages
   included, reads only that copy. Workflow, action, module, element and file names are kept as written.
   `kestra-migrate vra check-intake` rejects an export that carries anything secret-shaped.
 - What each workflow does and what starts it, the call graph, the systems it touches and the Kestra plugins that

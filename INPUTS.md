@@ -213,7 +213,8 @@ outcomes: {}
 Every run sanitizes first: `kestra-migrate vra run acme` writes a redacted copy to
 `acme/kestra-assessment/data/0-preflight/sanitized/` and a `redaction-report.md` to review:
 hostnames, IPs, URLs, emails, account names and anything credential-shaped replaced with stable
-placeholders; configuration element and SecureString values dropped; signer and owner identities
+placeholders; configuration element values dropped, except numbers, booleans and netmasks;
+SecureString values dropped; signer and owner identities
 stripped. A `.vra-ng` is sanitized too: besides the same text rules, owners, subscribers and
 principals are redacted as accounts, the tenant (`orgId`) as an identity, and network names, constraint
 tags and cloud account tags as NETWORK; IDs, event topics, conditions and names are kept, so entry

@@ -167,3 +167,55 @@ def test_conformance_trees_parse_to_the_same_structure_after_sanitizing(tmp_path
         ma, mb = workflow.parse_workflow(wa[name]), workflow.parse_workflow(wb[name])
         ma["graph"], mb["graph"] = graph.shape(ma), graph.shape(mb)
         assert _structure(ma) == _structure(mb), name
+
+
+# Configuration element values that can't name a host or hold a secret are kept: numbers and booleans by their
+# attribute's type, and netmasks. Every string value is still dropped, and every SecureString value.
+def _config_values(tmp_path, atts: list[tuple[str, str, str]]) -> tuple[dict, dict[str, str]]:
+    src = tmp_path / "export" / "ConfigurationElement" / "Test"
+    src.mkdir(parents=True)
+    body = "".join(f'    <att name="{n}" type="{t}" read-only="false">\n'
+                   f'      <value encoded="n"><![CDATA[{v}]]></value>\n    </att>\n' for n, t, v in atts)
+    (src / "Defaults.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<config-element id="0badc0de-0000-4000-8000-000000000001" '
+        f'version="1.0.0">\n  <display-name><![CDATA[Defaults]]></display-name>\n  <atts>\n{body}  </atts>\n'
+        "</config-element>\n")
+    rep = S.sanitize_inputs({"export": str(tmp_path / "export")}, str(tmp_path / "s"))
+    out = (tmp_path / "s" / "export" / "ConfigurationElement" / "Test" / "Defaults.xml").read_text()
+    import re
+    values = dict(re.findall(r'<att name="([^"]+)"[^>]*>\s*<value encoded="n"><!\[CDATA\[(.*?)\]\]>', out))
+    return rep, values
+
+
+def test_config_numbers_are_kept(tmp_path):
+    rep, v = _config_values(tmp_path, [("monitorInterval", "number", "5"), ("monitorTimeout", "number", "16.0"),
+                                       ("offset", "number", "-1"), ("big", "number", "1.0E9"),
+                                       ("portAsText", "string", "8443"), ("notANumber", "number", "avi.lab.example")])
+    assert (v["monitorInterval"], v["monitorTimeout"], v["offset"], v["big"]) == ("5", "16.0", "-1", "1.0E9")
+    assert v["portAsText"] == v["notANumber"] == "__NULL__"
+    assert rep["kept_values"] == 4 and rep["dropped_values"] == 2
+
+
+def test_config_booleans_are_kept(tmp_path):
+    rep, v = _config_values(tmp_path, [("enabled", "boolean", "true"), ("strict", "boolean", "false"),
+                                       ("flagAsText", "string", "true"), ("odd", "boolean", "yes-please")])
+    assert (v["enabled"], v["strict"]) == ("true", "false")
+    assert v["flagAsText"] == v["odd"] == "__NULL__"
+    assert rep["kept_values"] == 2 and rep["dropped_values"] == 2
+
+
+def test_config_netmasks_are_kept(tmp_path):
+    rep, v = _config_values(tmp_path, [("mask", "string", "255.255.255.0"), ("hostMask", "string", "255.255.255.255"),
+                                       ("prefix", "string", "/24"), ("subnet", "string", "10.20.0.0/24"),
+                                       ("notAPrefix", "string", "/33"), ("secretMask", "SecureString", "255.255.0.0"),
+                                       ("secretNumber", "SecureString", "123456")])
+    assert (v["mask"], v["hostMask"], v["prefix"]) == ("255.255.255.0", "255.255.255.255", "/24")
+    assert v["subnet"] == v["notAPrefix"] == v["secretMask"] == v["secretNumber"] == "__NULL__"
+    assert rep["kept_values"] == 3 and rep["dropped_values"] == 4
+
+
+def test_a_netmask_in_text_is_kept_and_an_address_is_not():
+    r = S.Redactor()
+    out = r.text('{"mask": "255.255.255.255", "address": "10.20.30.40", "broadcast": "255.255.255.0"}')
+    assert '"mask": "255.255.255.255"' in out and '"broadcast": "255.255.255.0"' in out
+    assert "10.20.30.40" not in out and "<IP-01>" in out

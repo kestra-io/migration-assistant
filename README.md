@@ -145,9 +145,13 @@ runs again first. A prompt is built from the copy, so it carries:
 - **Replaced by a placeholder:** host names, IP addresses, URLs, email addresses, user and service accounts, and
   anything credential-shaped (passwords and tokens in assignments, keys, JWTs). Each value gets one placeholder
   wherever it appears (`<HOST-01>`, `<IP-02>`). In a vRA export, also owners, subscribers and principals, the
-  tenant, and network names, tags and CIDRs.
-- **Dropped:** every configuration element value and every SecureString value. Their names and types stay. A
-  package's signer and owner identities, and its signatures and certificates, are removed too.
+  tenant, and network names, tags and CIDRs. An address that starts with 255 is a netmask, not a host's
+  address, and is kept (`255.255.255.0`).
+- **Dropped:** every configuration element value that is text, and every SecureString value. Their names and
+  types stay. A package's signer and owner identities, and its signatures and certificates, are removed too.
+- **Kept from configuration elements:** the values that can't identify anything: a number or a boolean (by the
+  attribute's type, so a monitor's timeout of `16` stays), and a netmask (`255.255.255.0`, or a prefix like
+  `/24`). A string attribute holding a number is still dropped, and so is a SecureString whatever it holds.
 - **Sent as written:** the names of workflows, actions, modules, categories, elements, attributes and items,
   the export's file and package names, the scripts and the workflows' structure, vRA IDs and event topics, and
   the specs of the workflows a workflow shares state with. A module or category name is kept even when it reads
@@ -158,7 +162,7 @@ The pages are built from the same copy, so they show a placeholder wherever the 
 vRA network tag reads `<NETWORK-01>`, not its name. In exchange, nothing in the `kestra-assessment/` folder is
 taken from a value Sanitize replaced or dropped, so it can be shared like the sanitized copy. The redaction
 report shows only masked previews (`ab… (12 chars)`). A model's reply can still state a value from its own
-knowledge, such as a common netmask it assumes.
+knowledge.
 
 Where it goes depends on the provider:
 
