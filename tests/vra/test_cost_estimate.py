@@ -7,6 +7,7 @@ estate with a stand-in model that bills nothing:
 - --yes goes ahead without asking;
 - with no terminal to ask in, a run above the threshold stops before any call;
 - a re-run whose replies are all cached estimates nothing and calls nothing, and a cached call costs $0;
+- a re-run after the export changed counts the specs it regenerates, and what follows from them;
 - with the Claude Code login, the estimate is the API price and says it counts against the Claude plan.
 """
 from __future__ import annotations
@@ -14,6 +15,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -124,6 +126,41 @@ def test_a_fully_cached_re_run_estimates_nothing_and_a_cached_call_costs_nothing
     assert specs and all("prompt" in c for c in specs)
     est = M.estimate(specs, K.Settings("anthropic", model="claude-opus-5-5"))
     assert est == {"calls": len(specs), "billed": 0, "cached": len(specs), "usd": 0.0}
+
+
+def test_a_re_run_after_the_export_changed_counts_the_specs_it_regenerates(stand_in, monkeypatch, capsys):
+    """The actions the workflows call change, so the specs on disk are stale and Understand writes them again. The
+    run's first billed call comes before Understand (the domain names, in Assess, as in the LB use case after the
+    sanitize fix), while the stale specs are still on disk: the estimate counts them anyway."""
+    from kestra_migration_assistant.vra.stages import common as C
+    from kestra_migration_assistant.vra.stages import estimate as E
+    monkeypatch.setattr(sys, "stdin", _Stdin("", tty=False))
+    assert _main("run", stand_in["export"]) == 0
+    capsys.readouterr()
+    for dp, _d, fs in os.walk(os.path.join(stand_in["export"], "vro", "ScriptModule")):
+        for f in fs:
+            p = os.path.join(dp, f)
+            text = open(p, encoding="utf-8").read()
+            with open(p, "w", encoding="utf-8") as fh:
+                fh.write(re.sub(r"(<script encoded=\"false\"><!\[CDATA\[)", r"\1// reviewed\n", text, count=1))
+    log = os.path.join(stand_in["export"], "kestra-assessment", "data", "model-calls.jsonl")
+    for r in map(json.loads, open(log)):
+        if r.get("purpose") == "stages-domain-names":
+            for f in os.listdir(C.model().CACHE_DIR):
+                if f.startswith(r["key"]):
+                    os.remove(os.path.join(C.model().CACHE_DIR, f))
+    plans: list[list[dict]] = []
+    planned = E.planned
+    monkeypatch.setattr(E, "planned", lambda current: plans.append(planned(current)) or plans[-1])
+    first = len(stand_in["calls"])
+    assert _main("run", stand_in["export"]) == 0
+    out = capsys.readouterr().out
+    regenerated = out.count("regenerated: ")
+    assert regenerated == 2 and len(plans) == 1 and plans[0][0]["purpose"] == "stages-domain-names"
+    assert sum(c["purpose"] == "understand" for c in plans[0]) == regenerated
+    assert sum(c["purpose"] == "cluster-summary" for c in plans[0]) == 1
+    line = _estimate_line(out)
+    assert int(line.split("Estimate: ", 1)[1].split(" ", 1)[0]) >= len(stand_in["calls"]) - first
 
 
 def test_the_claude_code_login_shows_the_api_price_and_the_plan():
