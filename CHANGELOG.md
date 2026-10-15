@@ -17,7 +17,7 @@ The first release. It assesses a VMware vRA / vRO estate from its export, on you
 - What each workflow does and what starts it, the call graph, the systems it touches and the Kestra plugins that
   cover them (from a plugin catalog snapshot bundled with the release, its date on every page), and one of eight
   outcomes per workflow: convert, wrapper, near-duplicate, plugin-covered library, needs owner input, manual,
-  rebuild or retire.
+  rebuild or retire, or "needs a model" when a workflow's verdict needs one.
 - A migration plan in waves, each starting with its first of a kind, and a recommendation: how many elements
   convert Direct, how many need a Redesign, and what the rest wait on.
 - One file to answer, `answers.yaml`, with what is settled together grouped, and a suggested answer where the code

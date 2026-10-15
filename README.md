@@ -4,7 +4,7 @@ Assess your VMware vRA and vRO environment before migrating workflows to [Kestra
 
 The Kestra Migration Assistant reads an export of your existing environment and produces a workflow inventory, migration recommendations, a plan organized into waves, and a brief for the people who need to review and approve it. It works from a vRO `.package`, a Build Tools source tree, or individual `.workflow` files. You can include a vRA export as well. The parser includes safeguards for malformed and potentially hostile export files.
 
-The tool identifies what each workflow does, what triggers it, which systems it interacts with, and which Kestra plugins may cover those integrations. It then assigns each workflow one of eight outcomes: convert, wrapper, near-duplicate, plugin-covered library, needs owner input, manual, rebuild, or retire. The assessment helps you decide what to migrate, what to consolidate, and where you still need input from an owner. It does not perform the migration.
+The tool identifies what each workflow does, what triggers it, which systems it interacts with, and which Kestra plugins may cover those integrations. It then assigns each workflow one of eight outcomes: convert, wrapper, near-duplicate, plugin-covered library, needs owner input, manual, rebuild, or retire. A workflow whose verdict needs a model gets "needs a model" instead. The assessment helps you decide what to migrate, what to consolidate, and where you still need input from an owner. It does not perform the migration.
 
 Parsing, inventory, counts, and outcomes are controlled by deterministic code. A language model helps interpret workflow intent where the structure alone isn't enough. You can also run the assessment without a model. In that case, the report includes what the code can determine and marks workflows that still need model analysis.
 
@@ -75,7 +75,7 @@ Open `kestra-assessment/your-input/answers.yaml` and answer the questions that n
 kestra-migrate vra run ~/exports/acme
 ```
 
-The tool reruns only the stages affected by changes, preserves your answers, and reuses cached model responses instead of paying for the same analysis again. Once the open questions are resolved, you can sign off on the plan in `answers.yaml`.
+Every stage runs again, but only work affected by a change is redone. The tool preserves your answers and reuses cached model responses instead of paying for the same analysis again. Once the open questions are resolved, you can sign off on the plan in `answers.yaml`.
 
 ## In a container
 
