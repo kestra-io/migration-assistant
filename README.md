@@ -170,7 +170,8 @@ Prompts are built from the copy, so this is what the model gets from the export:
 - **Kept from configuration elements:** only the values that can't identify anything.
   - A number or a boolean, going by the attribute's type, so a monitor's timeout of `16` stays.
   - A netmask (`255.255.255.0`, or a prefix like `/24`).
-  - A string attribute holding a number is still dropped, and so is a SecureString, whatever it holds.
+
+  A string attribute holding a number is still dropped, and so is a SecureString, whatever it holds.
 - **Sent as written:** the names of workflows, actions, modules, categories, elements, attributes and items;
   the export's file and package names; the scripts and the workflows' structure; vRA IDs and event topics; and
   the specs of the workflows a workflow shares state with. A module or category name is kept even when it
