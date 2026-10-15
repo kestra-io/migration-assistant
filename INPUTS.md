@@ -217,8 +217,11 @@ placeholders; configuration element and SecureString values dropped; signer and 
 stripped. A `.vra-ng` is sanitized too: besides the same text rules, owners, subscribers and
 principals are redacted as accounts, the tenant (`orgId`) as an identity, and network names, constraint
 tags and cloud account tags as NETWORK; IDs, event topics, conditions and names are kept, so entry
-points still resolve. The structure is unchanged, so every later stage runs on the copy. The customer
-can run this themselves and send only the sanitized copy.
+points still resolve. The export's own module and category names (`com.acme.net`) are code, not hosts, and
+are kept as written, as are workflow, action, element and file names. The structure is unchanged, so every
+later stage (Preflight, Assess, Understand, Brief and the pages) reads the copy and never the export: no
+prompt carries a value the copy replaced, and the pages show placeholders such as `<NETWORK-01>` where the
+export had a value. The customer can run this themselves and send only the sanitized copy.
 
 ## 7. Where the customer puts it
 

@@ -10,8 +10,9 @@ plugins cover them, and sorts every workflow into one of eight outcomes: convert
 plugin-covered library, needs owner input, manual, rebuild or retire. It plans the migration in waves and
 writes a brief that a person answers and signs. A model is used only where reading intent needs one;
 structure, counts and outcomes always come from code. Without a model, the brief shows everything the code
-finds, and marks each workflow whose verdict needs one. The export is sanitized before anything reaches a
-model, and nothing leaves the machine except the calls to the configured model.
+finds, and marks each workflow whose verdict needs one. The first step makes a sanitized copy of the export,
+and every later step reads only that copy, so a prompt never carries the export's credentials, IPs, host names
+or emails. Nothing leaves the machine except the calls to the configured model.
 
 ## Quickstart
 

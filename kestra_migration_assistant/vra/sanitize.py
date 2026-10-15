@@ -22,8 +22,11 @@ Stripped: signature-owner, pkg-owner and pkg-signer identities (`<IDENTITY-01>`)
 the redacted content anyway). The sanitized package is for analysis, not for importing into vRO.
 
 Kept intact: the XML structure, item graphs, bindings, names, IDs, types and the code's logic, so
-every later stage runs on the sanitized copy. Markup (tag and attribute names, IDs, `out-name`,
-`script-module`, namespaces) is never edited; only text content, CDATA and comments are.
+every later stage runs on the sanitized copy, and only on it (stages/common.py sanitized_inputs). Markup
+(tag and attribute names, IDs, `out-name`, `script-module`, namespaces) is never edited; only text content,
+CDATA and comments are. The export's own module and category names (`com.acme.net`, and every module a
+script names in System.getModule) read like host names but are code: they are kept as written, so IDs and
+calls come out as from the export itself.
 
 Placeholders are written as `<HOST-01>` inside CDATA, comments, JSON and plain text, and as
 `&lt;HOST-01&gt;` in XML text nodes, so the XML still parses and reads back as `<HOST-01>`.

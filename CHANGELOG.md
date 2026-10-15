@@ -9,8 +9,11 @@ The first release: the assessment of a VMware vRA / vRO estate, on your own mach
 - `kestra-migrate vra run <export folder>` reads a vRO `.package`, a Build Tools source tree or `.workflow` files,
   and a vRA content export, and writes everything to `kestra-assessment/` inside the export folder: the brief
   (`index.html`, and `report/BRIEF.md`), the detail pages, and `your-input/answers.yaml`.
-- The export is parsed by code, behind guards for hostile XML, ZIP, JSON and YAML, and sanitized before anything
-  reaches a model. `kestra-migrate vra check-intake` rejects an export that carries anything secret-shaped.
+- The export is parsed by code, behind guards for hostile XML, ZIP, JSON and YAML. The first step writes a
+  sanitized copy (host names, IPs, URLs, emails, accounts and credential-shaped values replaced by placeholders;
+  configuration element and SecureString values dropped), and every later step, the prompts and the pages
+  included, reads only that copy. Workflow, action, module, element and file names are kept as written.
+  `kestra-migrate vra check-intake` rejects an export that carries anything secret-shaped.
 - What each workflow does and what starts it, the call graph, the systems it touches and the Kestra plugins that
   cover them (from a plugin catalog snapshot bundled with the release, its date on every page), and one of eight
   outcomes per workflow: convert, wrapper, near-duplicate, plugin-covered library, needs owner input, manual,
