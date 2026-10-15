@@ -5,9 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Never attach a customer's export**, its `kestra-assessment/` folder, `answers.yaml` or the model cache:
-        they hold the estate's hosts, accounts and code, and this issue is public. Describe what happened, or
-        reproduce it with names you make up. A security issue never goes here: report it privately through
+        **Never attach a customer's export**, its `kestra-assessment/` folder, `answers.yaml` or the model cache.
+        They hold the estate's hosts, accounts and code, and this issue is public. Describe what happened, or
+        reproduce it with names you make up. Don't report a security issue here. Report it privately through
         [GitHub's security advisory form](https://github.com/kestra-io/kestra/security/advisories/new).
   - type: input
     id: version
