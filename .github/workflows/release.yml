@@ -7,7 +7,8 @@
 #                 GitHub release with all of them attached (a pre-release for a candidate)
 #   final tags    the image is also tagged latest
 #
-# The README installs from main; a release can be pinned by its tag (git+https://github.com/kestra-io/migration-assistant@v<version>),
+# The README installs from main (uv tool upgrade picks up what main holds); a release is tagged, for the CHANGELOG
+# and the image, and can be pinned by its tag (git+https://github.com/kestra-io/migration-assistant@v<version>),
 # so nothing goes to PyPI: a version there can never be replaced. The PyPI job is kept, off, for later: set the
 # repository variable PUBLISH_TO_PYPI to true (Settings, Secrets and variables, Actions, Variables) and a final tag
 # publishes through Trusted Publishing from the `pypi` environment, with no token stored anywhere.
@@ -238,11 +239,14 @@ jobs:
             echo
             echo "## Install"
             echo
-            echo "From this tag, with uv (git is needed; pipx and pip take the same URL):"
+            echo "From GitHub, with uv (git is needed; pipx and pip take the same URL):"
             echo
             echo '```bash'
-            echo "uv tool install git+https://github.com/$GITHUB_REPOSITORY@$GITHUB_REF_NAME"
+            echo "uv tool install git+https://github.com/$GITHUB_REPOSITORY@main"
             echo '```'
+            echo
+            echo "Update with \`uv tool upgrade kestra-migration-assistant\`. To stay on this version, install"
+            echo "\`@$GITHUB_REF_NAME\` instead of \`@main\`."
             echo
             echo "Or the wheel attached here: \`uv tool install ./kestra_migration_assistant-$VERSION-py3-none-any.whl\`."
             echo

@@ -7,13 +7,14 @@ body:
       value: |
         **Never attach a customer's export**, its `kestra-assessment/` folder, `answers.yaml` or the model cache:
         they hold the estate's hosts, accounts and code, and this issue is public. Describe what happened, or
-        reproduce it with names you make up.
+        reproduce it with names you make up. A security issue never goes here: report it privately through
+        [GitHub's security advisory form](https://github.com/kestra-io/kestra/security/advisories/new).
   - type: input
     id: version
     attributes:
       label: Version
-      description: The output of `kestra-migrate --version`, and how you installed it (uv, pipx or pip from the git tag, or the container image).
-      placeholder: kestra-migrate 1.0.0, uv tool install from the v1.0.0 tag
+      description: The output of `kestra-migrate --version`, and how you installed it (uv, pipx or pip from `@main` or a tag, or the container image).
+      placeholder: kestra-migrate 1.0.0, uv tool install from @main
     validations:
       required: true
   - type: input

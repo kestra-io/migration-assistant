@@ -193,13 +193,12 @@ def test_in_the_container_the_help_says_which_models_work_and_init_says_why_not(
     assert "container" not in capsys.readouterr().out
 
 
-def test_the_install_command_is_this_versions_tag(capsys):
-    """Installed from the repository's version tag with git, not from a package index."""
-    from kestra_migration_assistant import __version__
-    url = f"git+https://github.com/kestra-io/migration-assistant@v{__version__}"
+def test_the_install_command_is_main(capsys):
+    """Installed from the repository's main branch with git, as the README says, not from a package index."""
+    url = "git+https://github.com/kestra-io/migration-assistant@main"
     assert K.install_command() == f"uv tool install {url}"
     assert K.install_command("anthropic") == f"uv tool install 'kestra-migration-assistant[anthropic] @ {url}'"
     with pytest.raises(SystemExit):
         cli.main(["--help"])
     out = " ".join(capsys.readouterr().out.split())
-    assert url in out and "needs git" in out
+    assert url in out and "needs git" in out and "uv tool upgrade kestra-migration-assistant" in out

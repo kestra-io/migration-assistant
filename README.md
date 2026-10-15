@@ -36,7 +36,11 @@ If `kestra-migrate` isn't found after `uv tool install`, run `uv tool update-she
 
 To call a model with an Anthropic API key, add the `anthropic` extra:
 `uv tool install 'kestra-migration-assistant[anthropic] @ git+https://github.com/kestra-io/migration-assistant@main'`. Nothing else is needed for a Claude Code
-login or an OpenAI-compatible endpoint. To update, run `uv tool upgrade kestra-migration-assistant`. To pin a version, replace `main` with its tag; the
+login or an OpenAI-compatible endpoint.
+
+To update, run `uv tool upgrade kestra-migration-assistant`: it installs whatever `main` holds
+now, with the extras you installed. `kestra-migrate --version` says which version you have. To stay on one version,
+replace `main` with its tag (`@v1.0.0`); the
 [releases](https://github.com/kestra-io/migration-assistant/releases) list them.
 
 ### 2. Run it on an export folder
@@ -225,7 +229,7 @@ Found a bug, or want something it doesn't do?
 customer's export. This repository does not take outside contributions; see
 [CONTRIBUTING.md](https://github.com/kestra-io/migration-assistant/blob/main/CONTRIBUTING.md).
 
-Report security issues privately to security@kestra.io.
+Report a security issue privately, through [GitHub's security advisory form](https://github.com/kestra-io/kestra/security/advisories/new) on Kestra's main repository, never in a public issue.
 
 ## Licence
 
