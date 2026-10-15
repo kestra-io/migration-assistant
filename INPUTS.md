@@ -27,9 +27,9 @@ How an administrator produces one **(to confirm with a vRO expert)**:
    - **Individual workflows**: add them one by one. When asked, **include dependencies**, so the
      actions, configuration elements, resource elements and nested workflows they reference come too.
      A nested workflow left out appears in the brief as a call "not in the export".
-4. **Export** the package. Leave the default export options; in particular keep configuration
-   element values if the customer is comfortable sharing them (they can be redacted, see section 6),
-   because without them some target endpoints are unknown.
+4. **Export** the package. Leave the default export options. Configuration element values can stay in
+   the export: their numbers, booleans and netmasks reach the model, and every text value is dropped before
+   any later step reads the export (section 6).
 5. One package per vRO cluster is ideal. Several packages from the same estate are fine: put them all
    in the estate folder and they are read together.
 
@@ -156,15 +156,15 @@ that words or orders its findings differently keeps each answer on its item. The
 every run: it moves an entry to `answered` once it has an answer, keeps every answer exactly as written, and
 never drops an id. An answer whose item a run no longer finds moves to a third list, `no_longer_asked`, with
 the question it was given for, and lands on nothing else. A file that does not parse is never rewritten; the
-version before it is kept in `data/answers.yaml.previous`. An `answers.yaml` in an older format is moved to
-this one on the next run, every answer and the signature carried over, and the old file kept as
-`data/answers.yaml.before-2g`.
+version before it is kept in `data/answers.yaml.previous`. An `answers.yaml` written by an earlier version is
+moved to this format on the next run, every answer and the signature carried over, and the old file is kept
+in `data/`.
 
 The questions are asked from what is on record, and asked again after Assess: with a vRA export read, Q2
 asks only for what an export cannot hold (vRO scheduled tasks and policies, the ITSM, REST callers); Q3
 names the systems the tool found; Q7 names any run-history files in the folder; Q8 suggests the vRO plugins
-the code uses, for you to answer `yes` or correct. Q9 takes keep, replace, or replace with a bridge until
-then. A `.vra-ng` in the estate folder is read (section 4). Other files (a run-history CSV) can go there
+the code uses, for you to answer `yes` or correct. Q9 takes keep, replace, or replace vRA with a bridge that
+forwards vRA's requests to Kestra until users move to the new front end. A `.vra-ng` in the estate folder is read (section 4). Other files (a run-history CSV) can go there
 too; Preflight lists them as "other files" and they are not parsed yet.
 
 Later, the brief asks in the same `answers.yaml` for the decisions its waves wait for: a client route for a
@@ -204,8 +204,8 @@ wrappers:
   not_wrapper: []   # workflows flagged as wrappers that are not
   wrapper: []       # workflows that are wrappers the rule missed
 
-# One entry per workflow or action. The outcome must be one of: Retire, Near-duplicate, Wrapper,
-# Plugin-covered library, Convert, Needs owner input, Manual, Rebuild
+# One entry per workflow or action. The outcome must be one of these nine: Retire, Near-duplicate, Wrapper,
+# Plugin-covered library, Convert, Needs owner input, Needs a model, Manual, Rebuild
 #   outcomes:
 #     lb-create-load-balancer:
 #       outcome: Retire

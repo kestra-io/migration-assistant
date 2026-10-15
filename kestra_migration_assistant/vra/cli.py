@@ -245,7 +245,7 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
         return 2
     moved = C.migrate_layout(C.STAGES)
     if moved:
-        print(f"[migrate] {C.rel(C.STAGES)}/ was written with the 2c layout; it now has index.html, your-input/, "
+        print(f"[migrate] {C.rel(C.STAGES)}/ was written with an earlier version's layout; it now has index.html, your-input/, "
               "report/ and data/:")
         for m in moved:
             print(f"  - {m}")
