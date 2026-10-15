@@ -14,8 +14,11 @@ anything that looks like a credential, token or key. Each distinct value gets on
 per category (`<HOST-01>`, `<IP-02>` ...), so a host named in five scripts is `<HOST-01>` in all five
 and repeated references still line up.
 
-Dropped entirely, names and types kept: every configuration element value, and every value of a
-SecureString attribute or parameter (replaced by vRO's null sentinel `__NULL__`).
+Dropped entirely, names and types kept: every configuration element value that could name a host or hold a
+secret, and every value of a SecureString attribute or parameter (replaced by vRO's null sentinel `__NULL__`).
+Kept, because they can't identify anything: a configuration element value that is a number or a boolean (by its
+attribute's type), or a netmask (255.x.x.x, or a prefix like /24). Every string value is still dropped. In text,
+a 255.x.x.x address is a netmask, not a host's address, and is kept too.
 
 Stripped: signature-owner, pkg-owner and pkg-signer identities (`<IDENTITY-01>`), and a package's
 `signatures/` and `certificates/` entries (they name the signer, and the signatures no longer match
@@ -96,6 +99,14 @@ SHORT_HOST_RE = re.compile(r"""(["'])([a-z][a-z0-9]*(?:-[a-z0-9]+)*\d[a-z0-9-]*)
 IDENTITY_KEYS = ("signature-owner", "pkg-owner", "pkg-signer", "owner", "created-by", "author")
 
 SECURE_RE = re.compile(r"<(att|attrib|param)\b[^>]*\btype=\"SecureString\"[^>]*>.*?</\1>", re.S)
+# Configuration element values that can't name a host or hold a secret, kept: a number or a boolean by the
+# attribute's type, and a netmask whatever its type. 255.x.x.x is never a host's address.
+CONFIG_ATT_RE = re.compile(r"<att\b[^>]*>.*?</att>", re.S)
+KEPT_VALUES = {
+    "number": re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?"),
+    "boolean": re.compile(r"true|false"),
+}
+NETMASK_RE = re.compile(r"255(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}|/(?:3[0-2]|[12]?\d)")
 
 
 def looks_like_key(v: str) -> bool:
@@ -145,7 +156,7 @@ class Redactor:
         s = USER_KV_RE.sub(lambda m: m.group(1) + m.group(2) + self._keep_ph(m.group(3), "USER") + m.group(2), s)
         s = DOMAIN_USER_RE.sub(lambda m: self.ph("USER", m.group(0)), s)
         s = SVC_RE.sub(lambda m: self.ph("USER", m.group(0)), s)
-        s = IPV4_RE.sub(lambda m: self.ph("IP", m.group(0)), s)
+        s = IPV4_RE.sub(lambda m: m.group(0) if m.group(0).startswith("255.") else self.ph("IP", m.group(0)), s)
         s = IPV6_RE.sub(lambda m: self.ph("IP", m.group(0)), s)
         s = HOST_RE.sub(self._host, s)
         s = HIGH_ENTROPY_RE.sub(self._entropy, s)
@@ -238,8 +249,22 @@ class Redactor:
 
     def _drop_secure_values(self, s: str) -> str:
         if "<config-element" in s[:2000]:
-            return re.sub(r"<atts>.*?</atts>", lambda m: self._null_values(m.group(0)), s, flags=re.S)
+            return re.sub(r"<atts>.*?</atts>", lambda m: CONFIG_ATT_RE.sub(self._config_att, m.group(0)), s,
+                          flags=re.S)
         return SECURE_RE.sub(lambda m: self._null_values(m.group(0)), s)
+
+    def _config_att(self, m: re.Match) -> str:
+        """One configuration element attribute: its value kept if it can't identify anything, else dropped."""
+        att = m.group(0)
+        typ = re.match(r"<att\b[^>]*\btype=\"([^\"]*)\"", att)
+        value = self.VALUE_RE.search(att)
+        if typ and value:
+            v = re.sub(r"^\s*<!\[CDATA\[(.*)\]\]>\s*$", r"\1", value.group(2), flags=re.S).strip()
+            rx = KEPT_VALUES.get(typ.group(1))
+            if rx and rx.fullmatch(v) or typ.group(1) != "SecureString" and NETMASK_RE.fullmatch(v):
+                self.counts["KEPT"] += 1
+                return att
+        return self._null_values(att)
 
     def _identities(self, s: str) -> str:
         def one(m):
@@ -502,6 +527,7 @@ def sanitize_inputs(inputs: dict[str, str], out_dir: str, vra_inputs: dict[str, 
     return {"counts": {c: r.counts.get(c, 0) for c in CATEGORIES},
             "distinct": {c: len(r.maps[c]) for c in CATEGORIES},
             "dropped_values": r.counts.get("DROPPED", 0),
+            "kept_values": r.counts.get("KEPT", 0),
             "stripped_entries": r.counts.get("STRIPPED_ENTRY", 0),
             "files_seen": seen, "files_touched": len(sorted(set(touched))),
             "touched": sorted(set(touched)),
@@ -561,6 +587,8 @@ def report_md(r: dict, C) -> str:
                       ", ".join(r["placeholders"][c][:6]) + (" ..." if len(r["placeholders"][c]) > 6 else "")]
                      for c in CATEGORIES]), "",
          f"- Configuration element and SecureString values dropped (set to `__NULL__`): **{r['dropped_values']}**",
+         "- Configuration element values kept because they can't identify anything (numbers, booleans, netmasks): "
+         f"**{r.get('kept_values', 0)}**",
          f"- Package `signatures/` and `certificates/` entries removed: **{r['stripped_entries']}**. A sanitized "
          "package is for analysis only; it will not import into vRO.",
          f"- Files read: {r['files_seen']}; files changed: {r['files_touched']}.", "",
