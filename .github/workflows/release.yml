@@ -7,6 +7,10 @@
 #                 GitHub release with all of them attached (a pre-release for a candidate)
 #   final tags    the image is also tagged latest
 #
+# A tag is published once. GitHub can deliver one tag push twice (it did for v1.0.0rc5): the runs for one tag share
+# a concurrency group, so the second waits for the first, and then finds the release already there and publishes
+# nothing. Without that, it would push the image again after its SBOM was written.
+#
 # The README installs from main (uv tool upgrade picks up what main holds); a release is tagged, for the CHANGELOG
 # and the image, and can be pinned by its tag (git+https://github.com/kestra-io/migration-assistant@v<version>),
 # so nothing goes to PyPI: a version there can never be replaced. The PyPI job is kept, off, for later: set the
@@ -22,6 +26,7 @@ on:
 
 permissions: {}
 
+# One run at a time per tag; a second one waits, never cancels the first
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -30,8 +35,35 @@ env:
   IMAGE: ghcr.io/kestra-io/migration-assistant
 
 jobs:
+  once:
+    name: not released yet
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+    steps:
+      - name: Publish only if this tag has no release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # 404: no release, publish. 200: published already, skip every job. Anything else stops the run, so a
+        # failed lookup never publishes twice.
+        run: |
+          code="$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME")"
+          case "$code" in
+            404) echo "publish=true" >> "$GITHUB_OUTPUT"; echo "$GITHUB_REF_NAME has no release yet: publishing" ;;
+            200) echo "publish=false" >> "$GITHUB_OUTPUT"
+                 echo "::notice::$GITHUB_REF_NAME is already released: nothing is built or pushed again" ;;
+            *)   echo "::error::could not tell whether $GITHUB_REF_NAME is released (HTTP $code)"; exit 1 ;;
+          esac
+
   check:
     name: make check
+    needs: once
+    if: needs.once.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
