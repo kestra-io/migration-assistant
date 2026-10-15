@@ -1,3 +1,3 @@
 """Kestra Migration Assistant: assess an automation estate for migration to Kestra, on your own machine."""
 
-__version__ = "1.0.0rc5"
+__version__ = "1.0.0rc6"
