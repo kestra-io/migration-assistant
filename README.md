@@ -10,6 +10,13 @@ Parsing, inventory, counts, and outcomes are controlled by deterministic code. A
 
 The tool runs locally. Before analysis, it creates a sanitized copy of the export, which is the only copy later stages read. When you enable a model, prompts are built from that sanitized copy. See [What is sent to the model](#what-is-sent-to-the-model) for what the sanitizer removes, what it preserves, and where you should review the results before sending them to an external provider.
 
+## Learn more
+
+- **[The vRA migration guide](https://kestra.io/resources/migration/vra?utm_source=migration-assistant&utm_medium=readme)**: the full method this tool follows, from assessing your estate to switching vRA off.
+- **[A sample migration brief](https://kestra.io/resources/migration/vra/assistant?utm_source=migration-assistant&utm_medium=readme)**: see what the tool produces before you run it.
+- **Live walkthrough, with Q&A:** from the sample export to a converted flow tested in the VMware Migration Lab. [Europe](https://watch.getcontrast.io/register/kestra-leaving-vra-without-the-big-rewrite), Wednesday, November 4 at 2 PM CET. [Americas](https://watch.getcontrast.io/register/kestra-leaving-vra-without-the-big-rewrite-9061c391), Thursday, November 5 at 11 AM PT.
+- **[Get help running it](https://kestra.io/resources/migration/vra/assistant?utm_source=migration-assistant&utm_medium=readme)**, or ask us to run it for you.
+
 ## Quickstart
 
 ### 1. Install
@@ -50,6 +57,8 @@ kestra-migrate vra run ~/exports/acme
 If Claude Code is installed and you're logged in, the tool uses that login by default. Otherwise, it checks for an Anthropic API key. If neither is available, the assessment runs without a model. Before its first billed model call, it shows an estimated cost. See [Choose a model](#choose-a-model) for other options.
 
 **Working with sensitive exports?** Run the command with `--no-model` first. You can then inspect the redaction report and sanitized copy before running it with an external model. The [data handling section](#what-is-sent-to-the-model) explains what to look for.
+
+No export at hand? Download the [sample load balancer export](https://kestra.io/kestra-migration-assistant-sample-vra-load-balancer.zip) (a vRA catalog item and four vRO workflows), unzip it into a folder, and run the tool on that.
 
 ### 3. Open the report
 
