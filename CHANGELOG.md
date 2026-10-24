@@ -2,7 +2,7 @@
 
 Every release of the Kestra Migration Assistant for vRA. Versions follow [semantic versioning](https://semver.org).
 
-## 1.1.0 (unreleased)
+## 1.1.0 (2026-10-24)
 
 Fixes found by running the assistant on a 46-workflow test estate, five more systems named, and one change to how
 a workflow's outcome is decided. Re-running 1.1.0 on a folder that 1.0.0 assessed keeps every answer you gave.
