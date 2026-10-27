@@ -436,13 +436,13 @@ def ensure(*dirs: str) -> None:
 
 
 def read_json(path: str):
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
 def write_json(path: str, obj) -> str:
     ensure(os.path.dirname(path))
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=1, sort_keys=False, default=str)
         f.write("\n")
     return path
@@ -450,14 +450,14 @@ def write_json(path: str, obj) -> str:
 
 def write_text(path: str, text: str) -> str:
     ensure(os.path.dirname(path))
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(text if text.endswith("\n") else text + "\n")
     return path
 
 
 def write_csv(path: str, rows: list[dict], fields: list[str]) -> str:
     ensure(os.path.dirname(path))
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
         for r in rows:
@@ -469,7 +469,7 @@ def load_yaml(path: str):
     import yaml
     if not os.path.exists(path):
         return None
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

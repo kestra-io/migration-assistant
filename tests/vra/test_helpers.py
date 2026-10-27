@@ -403,3 +403,10 @@ def test_a_spec_whose_input_changed_is_stale(tmp_path, monkeypatch):
     spec["context"] = dict(probe["contexts"][u], prompt_sha="0" * 16)
     json.dump(spec, open(spec_dir / f"{u}.json", "w"))
     assert u in U.input_changes(uids, {u})
+
+
+def test_write_text_supports_unicode(tmp_path):
+    path = tmp_path / "report.md"
+    C.write_text(str(path), "workflow: café — 测试 🚀")
+    assert path.read_text(encoding="utf-8") == "workflow: café — 测试 🚀\n"
+
