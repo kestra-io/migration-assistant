@@ -270,11 +270,13 @@ class ClaudeCodeProvider(Provider):
         exe = shutil.which("claude")
         if not exe:
             raise ModelError("provider claude-code needs the `claude` command, and it is not installed")
-        args = [exe, "-p", prompt, *BASE_ARGS, "--json-schema", json.dumps(schema), "--model", self.cfg["model"]]
+        args = [exe, "-p", *BASE_ARGS, "--json-schema", json.dumps(schema), "--model", self.cfg["model"]]
         workdir = tempfile.mkdtemp(prefix="kestra-migrate-call-")
         t0 = time.time()
         try:
-            proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout_of(self.cfg), cwd=workdir)
+            proc = subprocess.run(
+                args, input=prompt, capture_output=True, text=True, timeout=timeout_of(self.cfg), cwd=workdir
+            )
         except subprocess.TimeoutExpired as e:
             raise ModelError(f"no reply within {timeout_of(self.cfg)} s (timeout_s in the config file)") from e
         finally:

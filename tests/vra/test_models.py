@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 
 import pytest
@@ -231,9 +232,42 @@ def test_each_claude_code_call_runs_in_a_fresh_empty_private_folder_that_is_remo
         assert "hostile" not in folder
         for flag in ("--safe-mode", "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"):
             assert flag in args, flag
+        assert "question" not in args, "prompt must be piped through stdin rather than passed as an argument"
         assert args[args.index("--setting-sources") + 1] == "user"
         assert args[args.index("--tools") + 1] == ""
         assert args[args.index("--model") + 1] == "claude-opus-5-5"
+
+
+def test_claude_code_passes_prompt_via_stdin_not_cli_args(monkeypatch):
+    """Multi-line prompt must be piped via stdin (input=...) to prevent Windows .cmd newline truncation."""
+    recorded = {}
+
+    def fake_run(args, **kwargs):
+        recorded["args"] = args
+        recorded["input"] = kwargs.get("input")
+        recorded["cwd"] = kwargs.get("cwd")
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=json.dumps({"result": "{\"ok\": true}", "is_error": False, "total_cost_usd": 0.001}),
+            stderr="",
+        )
+
+    monkeypatch.setattr(shutil, "which", lambda cmd: "claude" if cmd == "claude" else None)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    p = M.ClaudeCodeProvider({"provider": "anthropic", "auth": "claude-code", "model": "claude-opus-5-5"})
+    multi_line_prompt = "first line\nsecond line\n```json\n{\"test\": 123}\n```"
+    res = p.invoke(multi_line_prompt, SCHEMA)
+    assert json.loads(res["result"]) == {"ok": True}
+    assert recorded["input"] == multi_line_prompt
+    assert multi_line_prompt not in recorded["args"]
+    assert "-p" in recorded["args"]
+    idx = recorded["args"].index("-p")
+    assert recorded["args"][idx + 1] != multi_line_prompt
+    assert "--output-format" in recorded["args"]
+    assert "--json-schema" in recorded["args"]
+    assert "--model" in recorded["args"]
 
 
 @pytest.mark.skipif(not os.environ.get("KESTRA_MIGRATE_LIVE") or not shutil.which("claude"),
