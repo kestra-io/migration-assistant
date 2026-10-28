@@ -786,10 +786,9 @@ def estate_rows(its: list[dict], loaded: dict) -> list[tuple]:
                 if it.get("suggested"):
                     e["suggested"] = it["suggested"]
             later = sorted(x for x, by in (loaded.get("pending") or {}).items() if by == k)
-            if (fam == "estate" and it.get("needs_model") and os.environ.get("VRO_NO_MODEL") and not later
-                    and is_open(old.get("answer"))):
-                # with no model and nothing on record for it to settle, only a model's reading would use it
-                e["needs"] = "a model: this run has none, so it is not asked (you can still answer it here)"
+            idle = _idle(it, later, old) if fam == "estate" else None
+            if idle:
+                e["needs"] = idle
             else:
                 e["answer"] = old.get("answer")
             e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
@@ -799,6 +798,30 @@ def estate_rows(its: list[dict], loaded: dict) -> list[tuple]:
                 e["settles"] = later
             rows.append((k, e, []))
     return rows
+
+
+def _specs_on_record() -> bool:
+    d = C.SPEC_DIR
+    return bool(d and os.path.isdir(d) and any(f.endswith(".json") and f not in ("PROVENANCE.json", "cluster-summaries.json")
+                                              for f in os.listdir(d)))
+
+
+def _idle(it: dict, later: list[str], old: dict) -> str | None:
+    """Why an open estate question is not asked now (answers.yaml says so under `needs:`, and it has no answer line,
+    though a person can still add one), or None to ask it. One asked to settle questions (what starts the workflows,
+    non-production instances) is idle once all of those are answered on their own. One that only settles what a
+    model writes, or guides its reading, is asked before the first analysis, as context; after it, only while
+    something open waits on it, since answering it writes the specs again."""
+    if not is_open(old.get("answer")) or later:
+        return None
+    if not it.get("needs_model"):
+        return "nothing: every question it would settle is answered (you can still answer it here)"
+    if os.environ.get("VRO_NO_MODEL"):
+        return "a model: this run has none, so it is not asked (you can still answer it here)"
+    if _specs_on_record():
+        return ("nothing open: answer it only to give the model this context (the specs are then written again, "
+                "billed)")
+    return None
 
 
 def _lines(e: dict, each: list) -> int:

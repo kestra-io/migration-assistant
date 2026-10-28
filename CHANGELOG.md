@@ -60,8 +60,8 @@ gave.
 ### Behavior changes you will notice
 
 - **A run in a terminal asks questions.** To run it unattended, add `--batch`.
-- **Fewer questions.** On the 46-workflow test estate, a first run waits on 106 answers instead of 149, and on the
-  load balancer sample on 18 instead of 19. Answering the estate questions settles many more.
+- **Fewer questions.** On the 46-workflow test estate, a first run waits on 103 answers instead of 149, and on the
+  load balancer sample on 16 instead of 19. Answering the estate questions settles many more.
 - **Answering the estate questions writes the specs again, billed.** The answers are part of each workflow's prompt.
   The cost estimate shows it before the first call. A run with no estate answers sends the same prompts as 1.1.0,
   so its cached replies still count.
