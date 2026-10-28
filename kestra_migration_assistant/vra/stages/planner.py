@@ -79,6 +79,19 @@ def closed(its: list[dict], loaded: dict) -> dict[str, dict]:
     from . import your_input as Y
     entries = loaded.get("entries") or {}
     out = interview.closures(its, entries)
+    # an item a file lists under an assumption (`each:` with `assumed:`) keeps that answer while the assumption holds,
+    # even where today's sorting would not give it (a file replayed in a fresh folder, without a model)
+    by_key = {it["key"]: it for it in its}
+    for cid, ms in (loaded.get("file_groups") or {}).items():
+        est = by_key.get(cid)
+        if not cid.startswith("assume.") or not est or interview.answer_of(est, entries.get(cid)) is not None:
+            continue
+        for m in ms:
+            if m in out or m not in by_key or not Y.is_open((entries.get(m) or {}).get("answer")):
+                continue
+            words = Y._text((entries.get(m) or {}).get("assumed"))
+            if words:
+                out[m] = {"by": cid, "answer": f"{words} (assumed, {cid})"}
     loaded["pending"] = pending(its, entries, out)
     memo = ((loaded.get("memo") or {}).get("closures")) or (Y.registry().get("_memo") or {}).get("closures") or {}
     from_file: dict[str, str] = {}

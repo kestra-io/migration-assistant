@@ -90,7 +90,7 @@ def test_only_what_is_new_is_asked_and_the_signature_stays(upgraded):
     before, after = upgraded
     assert not before["unanswered"]
     new = after["unanswered"]
-    assert new and not new & set(before["answered"])        # nothing 1.0.0 had answered is asked again
+    assert not new & set(before["answered"])                # nothing 1.0.0 had answered is asked again
     # 1.2.0: the new systems' endpoints wait on one estate question, and missing code is not asked: it is listed
     est = after["estate"]
     assert {"endpoint.ansible-tower", "endpoint.ms-teams", "endpoint.slack"} <= set(

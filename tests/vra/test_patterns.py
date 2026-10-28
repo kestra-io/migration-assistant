@@ -108,7 +108,7 @@ def test_answering_the_estate_question_settles_them_everywhere_and_a_changed_ans
     assert not set(closed) & {m for x in b["input"]["shown"] for m in x["members"]}
     from kestra_migration_assistant.vra.stages import your_input as Y
     st = Y.state(closed[0])
-    assert st["state"] == "answered" and "KV store" in st["answer"]
+    assert st["state"] == "answered" and "namespace variables" in st["answer"]
     # an own answer the planner cannot match to an option still settles them (the rule reads any answer) ...
     _answer_and_rebrief(r, "estate.config", "")
     est = {e["id"]: e for e in _file(r)["estate"]}
@@ -122,7 +122,7 @@ def test_vault_lookups_through_a_module_are_one_question_about_secrets(run_patte
     assert [v["name"] for v in pat["vault"]] == ["readSecret"] and len(pat["vault"][0]["workflows"]) == 5
     est = {e["id"]: e for e in _file(r)["estate"]}
     q = est["estate.secrets"]
-    assert "5 workflows read secrets from HashiCorp Vault through readSecret" in q["question"]
+    assert "5 workflows read their secrets from HashiCorp Vault today, through readSecret" in q["question"]
     assert "Vault" in q["suggested"] and q["settles"] and all(k.endswith(".credentials") for k in q["settles"])
     _answer_and_rebrief(r, "estate.secrets", "yes")
     est = {e["id"]: e for e in _file(r)["estate"]}
@@ -135,24 +135,23 @@ def test_rest_in_code_and_its_mechanics_are_assumed_not_asked(run_pattern):
     assert len(pat["rest_in_code"]["workflows"]) == 3
     assert len(pat["mechanics"]["host_verification"]) == 3 and len(pat["mechanics"]["retries"]) == 3
     est = {e["id"]: e for e in _file(r)["estate"]}
-    assert {"assume.rest-hosts", "assume.host-verification", "assume.retries", "assume.trust-store"} <= set(est)
-    # the certificate defect and the retry question are settled by the assumptions, listed under them
-    hv = est["assume.host-verification"].get("closes") or []
-    rt = est["assume.retries"].get("closes") or []
-    assert len(hv) == 3 and all(".tls" in k for k in hv)
+    assert {"assume.rest-hosts", "assume.retries", "assume.trust-store"} <= set(est)
+    # the retry question is settled by the assumption, listed under it with the answer it takes
+    rt = [m["id"] for m in est["assume.retries"].get("each") or []]
+    assert all(m["assumed"].startswith("the task's retry setting") for m in est["assume.retries"]["each"])
     _use(r)
     from kestra_migration_assistant.vra.stages import your_input as Y
     assert rt and sorted(rt) == sorted(it["key"] for it in Y.items() if it.get("family") == "question")
-    b = _read(r, "3-brief", "brief.json")
-    a = {x["id"]: x for x in b["assumptions"]}
-    assert a["assume.host-verification"]["holds"] and a["assume.host-verification"]["settles"] == 3
-    # an override asks them again
-    b = _answer_and_rebrief(r, "assume.host-verification", "keep it off for the ticketing system")
-    a = {x["id"]: x for x in b["assumptions"]}
-    assert not a["assume.host-verification"]["holds"]
-    assert a["assume.host-verification"]["instead"] == "keep it off for the ticketing system"
+    # host verification turned off is a security matter: one question, asked after the analysis, not assumed
+    hv = est["estate.host-verification"]
+    assert hv["options"][0].startswith("yes, check them") and len(hv["settles"]) == 3
+    assert all(".tls" in k for k in hv["settles"])
+    _use(r)
+    assert next(it for it in Y.items() if it["key"] == "estate.host-verification")["phase"] == "plan"
+    b = _answer_and_rebrief(r, "estate.host-verification", "2")
+    assert all(Y.state(k)["answer"].startswith("keep: the checks stay off") for k in hv["settles"])
     open_ids = {m for x in b["input"]["shown"] for m in x["members"]}
-    assert set(hv) <= open_ids
+    assert not set(hv["settles"]) & open_ids
 
 
 def test_a_call_to_another_cluster_lists_what_to_add_and_asks_how_to_reach_it(run_pattern):

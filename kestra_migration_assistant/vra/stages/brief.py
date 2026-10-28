@@ -98,6 +98,11 @@ def run() -> dict:
     outside = interview.started_by()
     if outside and outside["all"]:
         retire = []                     # anything may be started from outside: run history tells which are unused
+    named = {by_short[s] for s in interview.scope_unsure() if s in by_short}
+    for u in sorted(named - {x["uid"] for x in retire}):
+        # found by name, and the owner is not sure: listed for its owner to confirm
+        retire.append({"uid": u, "why": "its name or folder says it is an old copy or a test; its owner confirms",
+                       "supporting": ["the owner was not sure (estate.scope)"]})
     retire_actions = [a["key"] for a in assess["actions"] if not a["called"]]
     defects = suspected_defects(assess, specs)
     asked_now = G.entries(plan)
@@ -143,6 +148,11 @@ def run() -> dict:
     from . import planner
     registered = G.input_items(asked) + spec_question_items(qgroups, wf, tri, qkeys, asked) + RV.input_items(specs, wf)
     planner.assign_patterns(registered, assess, tri)
+    # what keeps today's behavior is assumed, what only a wave's conversion needs waits for it, the rest is asked
+    from . import defaults
+    defaults.sort(registered, wf)
+    defaults.wave_of(registered, plan, wf)
+    Y.register("assumed", defaults.assumptions(registered), write=False)
     Y.register("brief", registered)
     Y.register_unblocks(preflight_unblocks(plan))
     loaded = Y.load()
@@ -356,7 +366,8 @@ def input_summary(loaded: dict) -> dict:
     from . import your_input as Y
     sm = Y.summary(loaded)
     out = {"path": C.rel(C.ANSWERS), "warnings": loaded["warnings"], "sign": sm["sign"],
-           "stand_in": bool(loaded.get("stand_in")), "shown": Y.shown(loaded)}
+           "stand_in": bool(loaded.get("stand_in")), "shown": Y.shown(loaded),
+           "later": [k for _g, _e, each in Y.deferred(Y.items(), loaded) for k, _ in each]}
     for g in ("confirm", "answer", "review"):
         fam: dict[str, dict] = {}
         for bucket in ("open", "stale", "done"):

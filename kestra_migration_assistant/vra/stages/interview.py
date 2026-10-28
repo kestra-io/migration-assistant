@@ -29,9 +29,9 @@ from collections.abc import Callable
 from typing import Any
 
 from . import common as C
+from . import defaults as _D
 from . import ids as I
 
-MAX_QUESTIONS = 8
 NONE_OF_THESE = "None of these, enter my own answer"
 KEEP = ("", "yes", "y", "keep", "keep it", "ok", "agreed", "true")
 
@@ -53,15 +53,22 @@ FOR_THE_MODEL = ("config", "secrets", "remote", "module", "scope")
 
 
 def _q(key: str, question: str, options: list[str], *, why: str, needs_model: bool = False,
-       topic: str | None = None, about: dict | None = None) -> dict:
+       topic: str | None = None, about: dict | None = None, several: bool = False, phase: str = "interview",
+       suggested: str | None = "first") -> dict:
+    """One estate question. `several`: its choices are not exclusive, and an answer can take several ("2, 4").
+    `phase`: "interview" (asked before the analysis, because the analysis reads it) or "plan" (asked after it,
+    because only the plan needs it)."""
     from . import your_input as Y
+    sug = (options[0] if options else None) if suggested == "first" else suggested
     it = Y.item(key, "confirm" if options else "answer", question, question=question, why=why,
-                options=options, suggested=options[0] if options else None, family="estate",
+                options=options, suggested=sug, family="estate",
                 unblocks=["applies to the whole estate"])
     it["family_title"] = "About the estate"
     it["topic"] = topic or key.split(".", 1)[1]
     it["about"] = about or {}
     it["needs_model"] = needs_model or it["topic"] in FOR_THE_MODEL
+    it["several"] = several
+    it["phase"] = phase
     return it
 
 
@@ -77,10 +84,22 @@ def _assume(key: str, assumed: str, where: list[str]) -> dict:
     return it
 
 
+# Kestra's words, said once in vRO's terms, for the choices that use them.
+NAMESPACE_VARIABLES = ("namespace variables, one set per environment: values a flow reads by name, like the attributes "
+                       "of a configuration element, set once for production and once for each other environment")
+KV_STORE = ("Kestra's KV store, one entry per element: key-value pairs a flow reads and can also change while it runs, "
+            "like a configuration element a workflow writes to")
+KESTRA_SECRETS = ("Kestra secrets, one per credential: stored encrypted in Kestra, read by name and never shown in "
+                  "logs, like a SecureString attribute")
+EXTERNAL_SECRETS = ("an external secret manager that Kestra reads (HashiCorp Vault, AWS Secrets Manager, Azure Key Vault "
+                    "or Google Secret Manager; Kestra Enterprise Edition)")
+
+
 # ------------------------------------------------------------------ the questions
 
 def questions(pat: dict, assess: dict, has_vra: bool, systems: list[str]) -> list[dict]:
-    """The estate questions for this estate, biggest first, at most MAX_QUESTIONS."""
+    """The estate questions for this estate: those the analysis reads (the interview), then those only the plan
+    needs (asked after the analysis). Every Kestra word in a choice is explained in vRO's terms."""
     wf = assess.get("workflows") or {}
     names = {u: w["name"] for u, w in wf.items()}
     out: list[dict] = []
@@ -88,22 +107,22 @@ def questions(pat: dict, assess: dict, has_vra: bool, systems: list[str]) -> lis
     if has_vra:
         out.append(_q("estate.started-by",
                       "vRA starts workflows through the catalog items and subscriptions in its export. What else "
-                      "starts these workflows from outside vRO?",
+                      "starts these workflows from outside vRO? Choose all that apply.",
                       ["nothing else: vRA, and workflows calling each other",
-                       "also an external platform or scripts, through the vRO API",
-                       "also vRO schedules or policies",
-                       "also an ITSM such as ServiceNow"],
+                       "an external platform or scripts, through the vRO API",
+                       "vRO schedules or policies",
+                       "an ITSM such as ServiceNow"],
                       why="a workflow nothing in the export starts may still be started from outside; the answer "
-                          "applies to every one of them"))
+                          "applies to every one of them", several=True))
     else:
         out.append(_q("estate.started-by",
-                      f"There is no vRA export. Who starts these {_n(len(wf), 'workflow')}?",
+                      f"There is no vRA export. Who starts these {_n(len(wf), 'workflow')}? Choose all that apply.",
                       ["an external platform, through the vRO API",
                        "people, from the vRO client",
                        "vRO schedules and policies",
                        "vRA: I will add its export to the folder"],
                       why="what starts a workflow becomes its trigger in Kestra; the answer applies to every "
-                          "workflow nothing in the export starts"))
+                          "workflow nothing in the export starts", several=True))
 
     rc = pat.get("runtime_config") or []
     if rc:
@@ -114,10 +133,9 @@ def questions(pat: dict, assess: dict, has_vra: bool, systems: list[str]) -> lis
                       f"{_n(len(users), 'workflow calls', 'workflows call')} "
                       f"{'a module' if len(mods) == 1 else 'modules'} named {_names(mods)}, which "
                       f"{'picks' if len(mods) == 1 else 'pick'} a configuration element at run time"
-                      + (f" (under {_names(cats)})" if cats else "") + ". Where should those settings live in Kestra?",
-                      ["Kestra's KV store, one entry per element, read by the same name",
-                       "namespace variables, one set per environment",
-                       "the system they come from today, which the flows call"],
+                      + (f" (under {_names(cats)})" if cats else "") + ", for each environment or site. Where should "
+                      "the converted flows read those settings?",
+                      [NAMESPACE_VARIABLES, KV_STORE],
                       why="the flows read the same settings by the same names; questions about which host or value a "
                           "workflow uses are settled by where the settings live",
                       about={"modules": mods, "workflows": users}))
@@ -126,30 +144,20 @@ def questions(pat: dict, assess: dict, has_vra: bool, systems: list[str]) -> lis
     if va:
         users = sorted({u for v in va for u in v["workflows"]})
         out.append(_q("estate.secrets",
-                      f"{_n(len(users), 'workflow reads', 'workflows read')} secrets from HashiCorp Vault through "
-                      f"{_names([v['name'] for v in va])}. Where do the converted flows get them?",
-                      ["from the same Vault paths, through Kestra's Vault secret manager",
-                       "from Kestra secrets, copied from Vault once",
-                       "they keep calling Vault's API themselves"],
+                      f"{_n(len(users), 'workflow reads', 'workflows read')} their secrets from HashiCorp Vault today, "
+                      f"through {_names([v['name'] for v in va])}. Where should the converted flows get them?",
+                      ["from the same Vault paths, as today: Kestra reads each secret from Vault when a flow needs it "
+                       "(Kestra Enterprise Edition's Vault secret manager)",
+                       KESTRA_SECRETS.replace("one per credential", "copied from Vault once"),
+                       "the flows keep calling Vault's API themselves, as the workflows do today"],
                       why="every credential question is settled by where secrets come from",
                       about={"modules": [v["name"] for v in va], "workflows": users}))
     else:
         out.append(_q("estate.secrets",
-                      "The workflows sign in to the systems they call with credentials kept in vRO (configuration "
-                      "elements, SecureString attributes). Where do the converted flows get them?",
-                      ["Kestra secrets, one per credential",
-                       "an external secret manager Kestra reads (HashiCorp Vault, AWS, Azure or Google)"],
+                      "The workflows sign in to the systems they call with credentials kept in vRO (SecureString "
+                      "attributes of configuration elements and workflows). Where should the converted flows get them?",
+                      [KESTRA_SECRETS, EXTERNAL_SECRETS],
                       why="every credential question is settled by where secrets come from"))
-
-    if systems:
-        out.append(_q("estate.non-production",
-                      f"The workflows reach {_n(len(systems), 'system')} ({_names(systems, 4)}). Is there a "
-                      "non-production instance of each for converted flows to run against first?",
-                      ["yes, of each: their addresses and credentials go in Kestra per environment",
-                       "only of some: I will say which in answers.yaml",
-                       "none: the flows are checked against production, with care"],
-                      why="a wave that writes to a system is verified on a non-production instance first",
-                      about={"systems": systems}))
 
     rm = pat.get("remote") or []
     if rm:
@@ -171,27 +179,32 @@ def questions(pat: dict, assess: dict, has_vra: bool, systems: list[str]) -> lis
                       f"{_n(len(sc), 'workflow looks', 'workflows look')} like an old copy or a test, from "
                       f"{'its' if len(sc) == 1 else 'their'} name or folder: {_names([s['name'] for s in sc], 5)}. "
                       "Leave them out of the migration?",
-                      ["yes, leave them all out", "no, migrate them too"],
+                      ["yes, leave them all out", "no, migrate them too",
+                       "not sure: list them for their owner to confirm"],
                       why="nothing is asked about a workflow that is left out, and it is marked Retire",
                       about={"shorts": [s["short"] for s in sc], "names": [s["name"] for s in sc]}))
 
-    covered = {r["name"] for r in rc} | {v["name"] for v in va} | {
-        m["name"] for m in (pat.get("rest_in_code") or {}).get("modules") or []}
-    for s in pat.get("shared") or []:
-        if len(out) >= MAX_QUESTIONS:
-            break
-        if s["name"] in covered:
-            continue
-        what = []
-        if s.get("targets"):
-            what.append(f"calls {_names(s['targets'])}" + (f" ({_names(s['ops'], 2)})" if s.get("ops") else ""))
-        out.append(_q(f"estate.module.{I.slug(s['name'])}",
-                      f"{_n(len(s['workflows']), 'workflow calls', 'workflows call')} a module named {s['name']}. "
-                      "What does it do?" + ("" if what else " (Needs a model to read its code and suggest an answer.)"),
-                      what + [],
-                      why="one answer for every workflow that calls it", needs_model=not what,
-                      topic="module", about={"module": s["name"], "workflows": s["workflows"]}))
-    return out[:MAX_QUESTIONS]
+    # only the plan needs these: asked after the analysis, with why they matter
+    if systems:
+        out.append(_q("estate.non-production",
+                      "Converted flows are tested in a simulated lab first. Before they go live, they can also run "
+                      f"against a non-production instance of each system they call, if you have one. The workflows "
+                      f"reach {_n(len(systems), 'system')} ({_names(systems, 4)}). Is there a non-production "
+                      "instance of each?",
+                      ["yes, of each", "only of some: I will say which in answers.yaml", "no, none"],
+                      why="a wave that writes to a system can run against a non-production instance before production",
+                      about={"systems": systems}, phase="plan"))
+    hv = (pat.get("mechanics") or {}).get("host_verification") or []
+    if hv:
+        out.append(_q("estate.host-verification",
+                      f"{_n(len(hv), 'workflow turns', 'workflows turn')} off the check of the certificate and "
+                      "host name when they connect to a system, so a connection to the wrong server is not "
+                      "noticed. Should the converted flows check them?",
+                      ["yes, check them: the certificate authorities go in Kestra's trust store once",
+                       "no, leave the checks off, as today"],
+                      why="a check turned off that protects a connection is the one change asked before the migration",
+                      about={"where": hv}, phase="plan"))
+    return out
 
 
 def assumptions(pat: dict, any_calls: bool) -> list[dict]:
@@ -204,11 +217,6 @@ def assumptions(pat: dict, any_calls: bool) -> list[dict]:
                            "Kestra checks each system's certificate against the CAs in its trust store. The CAs vRO "
                            "imported go there once, in the Kestra setup, not in each flow.",
                            mech.get("trust_store") or []))
-    if any_calls or mech.get("host_verification"):
-        out.append(_assume("assume.host-verification",
-                           "Where vRO turned host verification off, the converted flows verify the host. Name a "
-                           "system here to keep it off for that system only.",
-                           mech.get("host_verification") or []))
     if mech.get("retries") or any_calls:
         out.append(_assume("assume.retries",
                            "A retry loop or attempt counter in vRO code becomes the task's retry setting in Kestra "
@@ -240,22 +248,35 @@ def answer_of(it: dict, entry: dict | None) -> str | None:
     return option_text(it, a)
 
 
+SEVERAL = "; "                     # how the choices of an answer that takes several are written
+
+
 def option_text(it: dict, a: str) -> str:
     from . import your_input as Y
     opts = it.get("options") or []
     s = a.strip()
     if s.isdigit() and 1 <= int(s) <= len(opts):
         return opts[int(s) - 1]
+    if it.get("several") and re.fullmatch(r"\d+(\s*[, ]\s*\d+)+", s):
+        ns = [int(x) for x in re.split(r"[, ]+", s)]
+        if all(1 <= n <= len(opts) for n in ns):
+            return SEVERAL.join(opts[n - 1] for n in dict.fromkeys(ns))
     if Y._yes(s) and it.get("suggested"):
         return str(it["suggested"])
     return s
 
 
 def picked(it: dict, text: str) -> int | None:
-    """The option an answer is (1-based), or None for words of the person's own."""
+    """The option an answer is (1-based), or None for words of the person's own (or several choices)."""
     opts = [o.lower() for o in it.get("options") or []]
     t = text.strip().lower()
     return opts.index(t) + 1 if t in opts else None
+
+
+def picks(it: dict, text: str) -> set[int]:
+    """Every option an answer names (1-based): one, or several written with SEVERAL between them."""
+    opts = [o.lower() for o in it.get("options") or []]
+    return {opts.index(p) + 1 for p in (x.strip().lower() for x in text.split(SEVERAL)) if p in opts}
 
 
 def _workflow_of(key: str) -> str | None:
@@ -302,7 +323,20 @@ def _non_production(est: dict, ans: str, opt: int | None, it: dict) -> str | Non
     if it["key"].startswith("q3-"):
         return ans
     if it["key"].startswith("endpoint."):
+        if opt == 3:
+            return "no non-production instance: the flows go from the lab to production"
         return f"{ans}; credentials as in estate.secrets"
+    return None
+
+
+def _host_checks(est: dict, ans: str, opt: int | None, it: dict) -> str | None:
+    if opt not in (1, 2):
+        return None
+    if it["key"].startswith("tls."):
+        return "check it (the CA goes in the Kestra setup)" if opt == 1 else "do not check it, as today"
+    if it["key"].startswith(("defect.", "question.")) and _kind(it["key"]) == "tls":
+        return ("fix: the flow verifies the certificate and the host (estate.host-verification)" if opt == 1 else
+                "keep: the checks stay off, as today (estate.host-verification)")
     return None
 
 
@@ -324,6 +358,8 @@ def _scope(est: dict, ans: str, opt: int | None, it: dict) -> str | None:
 
 
 def _module(est: dict, ans: str, opt: int | None, it: dict) -> str | None:
+    """A module question (1.2.0's first interview asked what a shared module does): an answer given then still
+    settles that module's questions."""
     mod = I.slug((est.get("about") or {}).get("module") or "")
     parts = it["key"].split(".")
     if mod and it["key"].startswith("question.") and len(parts) >= 4 and parts[2] == mod:
@@ -332,7 +368,8 @@ def _module(est: dict, ans: str, opt: int | None, it: dict) -> str | None:
 
 
 RULES: dict[str, Rule] = {"started-by": _started_by, "config": _config, "secrets": _secrets,
-                          "non-production": _non_production, "remote": _remote, "scope": _scope, "module": _module}
+                          "non-production": _non_production, "remote": _remote, "scope": _scope, "module": _module,
+                          "host-verification": _host_checks}
 
 
 def _tls(est: dict, it: dict) -> str | None:
@@ -342,6 +379,7 @@ def _tls(est: dict, it: dict) -> str | None:
 
 
 def _host_verification(est: dict, it: dict) -> str | None:
+    """1.2.0's first version assumed this; an answer given to that assumption still counts."""
     if it["key"].startswith(("defect.", "question.")) and _kind(it["key"]) == "tls":
         return "fix: the flow verifies the certificate and the host (assumed, assume.host-verification)"
     return None
@@ -361,7 +399,11 @@ def _counters(est: dict, it: dict) -> str | None:
 
 
 ASSUMED: dict[str, Callable[[dict, dict], str | None]] = {
-    "trust-store": _tls, "host-verification": _host_verification, "retries": _retries, "counters": _counters}
+    "trust-store": _tls, "host-verification": _host_verification, "retries": _retries, "counters": _counters,
+    # after the analysis: what keeps today's behavior (defaults.py)
+    **{k.split(".", 1)[1]: rule for k, rule in _D.RULES.items()}}
+# Assumed for the plan, after the analysis: never in the analysis's prompts.
+PLAN_ASSUMPTIONS = frozenset(_D.ASSUMPTIONS)
 
 
 def closures(its: list[dict], entries: dict) -> dict[str, dict]:
@@ -396,6 +438,20 @@ def closures(its: list[dict], entries: dict) -> dict[str, dict]:
 
 # ------------------------------------------------------------------ applied estate-wide
 
+def scope_unsure() -> list[str]:
+    """The short names of the workflows estate.scope found by name when the owner is not sure: kept as retire
+    candidates for their owner to confirm."""
+    from . import your_input as Y
+    loaded = Y.load()
+    it = (loaded.get("items") or {}).get("estate.scope")
+    if not it:
+        return []
+    ans = answer_of(it, loaded["entries"].get("estate.scope"))
+    if ans is None or picked(it, ans) != 3:
+        return []
+    return list((it.get("about") or {}).get("shorts") or [])
+
+
 def scope_outcomes(by_short: dict[str, str] | None = None) -> dict[str, dict]:
     """uid -> outcome override for the workflows estate.scope leaves out (corrections.yaml still wins)."""
     from . import your_input as Y
@@ -423,8 +479,8 @@ def started_by() -> dict | None:
     ans = answer_of(it, loaded["entries"].get("estate.started-by"))
     if ans is None:
         return None
-    opt = picked(it, ans)
-    covers = (opt in (1, 2) and "no vRA" in (it.get("ask") or "")) or (opt == 2 and "no vRA" not in (it.get("ask") or ""))
+    ps = picks(it, ans)
+    covers = bool(ps & {1, 2}) if "no vRA" in (it.get("ask") or "") else 2 in ps
     return {"answer": ans, "all": bool(covers)}
 
 
@@ -436,8 +492,8 @@ def context() -> str:
     loaded = Y.load()
     lines = []
     for k, it in sorted((loaded.get("items") or {}).items()):
-        if it.get("family") not in ("estate", "assume"):
-            continue
+        if it.get("family") not in ("estate", "assume") or it.get("phase") == "plan" or k in PLAN_ASSUMPTIONS:
+            continue                    # asked or assumed for the plan only: the analysis does not read it
         a = answer_of(it, loaded["entries"].get(k))
         if a is None:
             continue

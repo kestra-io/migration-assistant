@@ -73,7 +73,7 @@ TOOL_FIELDS = ("id", "question", "options", "suggested", "assumed", "answer", "n
 OLD_SECTIONS = ("blocking", "open", "done", "confirm", "answer", "review", "no_longer_asked")
 OLD_FIELDS = ("answer", "confirmed", "by", "date", "note", "spec")    # the old format's own fields
 GONE = "No longer asked: "
-SECTIONS = ("estate", "open", "answered", "no_longer_asked")
+SECTIONS = ("estate", "open", "waves", "answered", "no_longer_asked")
 ESTATE_FAMILIES = ("estate", "assume")
 SIGN = {"full": "full plan", "wave-1": "wave 1"}
 
@@ -140,13 +140,16 @@ def item(key: str, group: str, ask: str, *, title: str | None = None, why: str |
             "family": family or key.split(".", 1)[0], "link": link, "fixed": fixed or {}, "blocks": blocks or []}
 
 
-def register(section: str, new_items: list[dict]) -> dict:
-    """Replace one section's items in the registry and rewrite answers.yaml. Returns write()'s result."""
+def register(section: str, new_items: list[dict], write: bool = True) -> dict:
+    """Replace one section's items in the registry and rewrite answers.yaml (unless `write` is False, when another
+    section is registered next). Returns write()'s result."""
     reg = registry()
     renames = _renames(reg.get(section) or [], new_items)
     reg[section] = new_items
     C.write_json(_registry_path(), reg)
-    return write(renames)
+    if not write:
+        return {"written": False, "warnings": []}
+    return _write(renames)
 
 
 def _renames(old: list[dict], new: list[dict]) -> dict[str, str]:
@@ -658,10 +661,10 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
     shut = closers(loaded)
 
     def closed(k: str) -> bool:
-        """Settled by another answer (estate, assumption, re-planning) and not answered on its own: listed under
-        the answer that settled it (`closes:`), not asked."""
-        return (k in (loaded.get("closed") or {}) or k in (loaded.get("pending") or {})) and is_open(
-            (loaded["entries"].get(k) or {}).get("answer"))
+        """Settled by another answer (estate, assumption, re-planning), or waiting for its wave, and not answered on
+        its own: listed under the answer that settled it (`closes:`) or under its wave (`waves:`), not asked now."""
+        return (k in (loaded.get("closed") or {}) or k in (loaded.get("pending") or {})
+                or waits(by_key.get(k))) and is_open((loaded["entries"].get(k) or {}).get("answer"))
 
     def single(it: dict, qtext: str | None = None) -> dict:
         k = it["key"]
@@ -757,6 +760,38 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
     return opened, answered, sorted(gone, key=lambda x: x[0])
 
 
+def waits(it: dict | None) -> bool:
+    """An item asked when its wave is converted, not now (defaults.py): listed under `waves:`."""
+    from . import defaults
+    return it is not None and defaults.waits_for_wave(it)
+
+
+def deferred(its: list[dict], loaded: dict) -> list[tuple]:
+    """The `waves:` section: per wave, what is asked when that wave is converted (how its flows are built, and the
+    review of a spec whose confidence is medium). Each keeps an answer line: it can be answered now too."""
+    by_wave: dict = {}
+    for it in its:
+        k = it["key"]
+        if it.get("family") in ESTATE_FAMILIES or not waits(it) or not is_open((loaded["entries"].get(k) or {}).get("answer")):
+            continue
+        if k in (loaded.get("closed") or {}) or k in (loaded.get("pending") or {}):
+            continue
+        by_wave.setdefault(it.get("wave"), []).append(it)
+    rows = []
+    for n in sorted(by_wave, key=lambda w: (w is None, w or 0)):
+        each = []
+        for it in by_wave[n]:
+            old = loaded["entries"].get(it["key"]) or {}
+            e: dict[str, Any] = {"question": question_of(it), "answer": old.get("answer")}
+            e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
+            each.append((it["key"], e))
+        gid = f"wave.{n}" if n is not None else "wave.none"
+        q = (f"Asked when Wave {n} is converted: how its flows are built. Answer them then, or now." if n is not None
+             else "Asked if these workflows are converted later: how their flows are built.")
+        rows.append((gid, {"question": q}, each))
+    return rows
+
+
 def closers(loaded: dict) -> dict[str, list[str]]:
     """Answer id -> the items its answer settled, as answers.yaml lists them under it (`closes:`)."""
     out: dict[str, list[str]] = {}
@@ -769,6 +804,7 @@ def closers(loaded: dict) -> dict[str, list[str]]:
 def estate_rows(its: list[dict], loaded: dict) -> list[tuple]:
     """The `estate:` section: the estate questions, then the assumptions, each with what its answer settles."""
     shut = closers(loaded)
+    by_key = {it["key"]: it for it in its}
     rows: list[tuple] = []
     for fam in ESTATE_FAMILIES:
         for it in its:
@@ -792,12 +828,23 @@ def estate_rows(its: list[dict], loaded: dict) -> list[tuple]:
             else:
                 e["answer"] = old.get("answer")
             e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
-            if shut.get(k):
+            each: list = []
+            if fam == "assume" and shut.get(k):
+                # each item the assumption settles, with the answer it takes: anything reading the file sees the
+                # decision, and `answer:` written under one overrides it for that item
+                each = [(m, {"question": question_of(by_key[m]) if m in by_key else m,
+                             "assumed": _assumed_words(loaded["closed"][m]["answer"])}) for m in shut[k]]
+            elif shut.get(k):
                 e["closes"] = shut[k]
             if later:
                 e["settles"] = later
-            rows.append((k, e, []))
+            rows.append((k, e, each))
     return rows
+
+
+def _assumed_words(answer: str) -> str:
+    """An assumed answer as the file shows it, without the note of which assumption gave it."""
+    return re.sub(r"\s*\(assumed, assume\.[\w-]+\)$", "", str(answer)).strip()
 
 
 def _specs_on_record() -> bool:
@@ -843,8 +890,9 @@ def count(loaded: dict | None = None) -> dict:
     assumed = sum(1 for it in its if it.get("family") == "assume"
                   and str(_text((loaded["entries"].get(it["key"]) or {}).get("answer"))).strip().lower() in
                   ("", "yes", "y", "keep", "keep it", "ok", "agreed", "true"))
+    later = sum(len(ea) for _k, _e, ea in deferred(its, loaded))
     return {"open": est_open + sum(_lines(e, ea) for _k, e, ea in opened),
-            "entries": est_open + len(opened), "estate_open": est_open,
+            "entries": est_open + len(opened), "estate_open": est_open, "later": later,
             "closed": len([k for k in (loaded.get("closed") or {})
                            if is_open((loaded["entries"].get(k) or {}).get("answer"))]),
             "assumed": assumed}
@@ -875,8 +923,10 @@ def render(its: list[dict], loaded: dict) -> str:
     opened, answered, gone = plan(its, loaded)
     L = [header(), ""]
     est = estate_rows(its, loaded)
-    for sec, rows in (("estate", est), ("open", opened), ("answered", answered), ("no_longer_asked", gone)):
-        if not rows and sec in ("estate", "no_longer_asked"):
+    later = deferred(its, loaded)
+    for sec, rows in (("estate", est), ("open", opened), ("waves", later), ("answered", answered),
+                      ("no_longer_asked", gone)):
+        if not rows and sec in ("estate", "waves", "no_longer_asked"):
             continue
         if not rows:
             L += [f"{sec}: []", ""]
@@ -953,6 +1003,10 @@ def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
 
 
 def write(renames: dict[str, str] | None = None) -> dict:
+    return _write(renames)
+
+
+def _write(renames: dict[str, str] | None = None) -> dict:
     """Rewrite answers.yaml from the registry, keeping every answer. Never over a file that does not parse.
     `renames` carries an answer from an item's old key to its new one (register)."""
     C.ensure(C.INPUT)

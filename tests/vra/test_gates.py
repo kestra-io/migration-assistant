@@ -115,6 +115,10 @@ def test_answers_yaml_lists_every_decision_with_options(estate):
     for k in asked:
         rec = G.entries(b["plan"])[k].get("recommended")
         e = Y.entry_of(d, k)
+        if "assumed" in e:                  # assumed (a timeout kept, as today): the answer it takes, no line to fill
+            assert set(e) == {"question", "assumed"} and Y.section_of(d, k) == "estate", k
+            assert not rec or e["assumed"] == rec, k
+            continue
         assert set(e) <= {"question", "suggested", "answer"} and e["question"] and e.get("answer") is None, k
         if rec:
             assert e["suggested"] == rec, k
@@ -247,7 +251,7 @@ def test_a_delete_path_step_does_not_run_the_create_cleanup():
 def _answer_everything():
     """Answer every open entry as a person would: yes to the suggestions and the specs, keep all to each workflow's
     defects, and a stand-in answer to everything asked one by one."""
-    for e in _doc()["open"] or []:
+    for e in (_doc()["open"] or []) + (_doc().get("waves") or []):
         k = e["id"]
         if "each" in e and "answer" not in e:
             for m in e["each"]:

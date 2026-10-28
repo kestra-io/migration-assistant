@@ -44,6 +44,7 @@ def input_items(specs: dict[str, dict | None], wf: dict) -> list[dict]:
                              "what is wrong)")
         it["family_title"] = "Specs"
         it["workflow"] = wf[u]["name"]
+        it["confidence"] = conf
         out.append(it)
     return out
 

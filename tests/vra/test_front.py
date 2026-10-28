@@ -94,7 +94,8 @@ def test_the_front_page_follows_the_guides_order(which, request):
     secs = _sections(page)
     assert secs[0] == "What's in this estate" and secs[1].startswith("The recommendation: ")
     assert secs[1].split(": ", 1)[1] in ("convert", "a mix", "rebuild")
-    assert secs[2:] == ["What we need from you", "The plan"]           # the navigation is where to check
+    # the navigation is where to check; what is assumed estate-wide, when anything is, comes before the plan
+    assert [x for x in secs[2:] if x != "Applied to the whole estate"] == ["What we need from you", "The plan"]
     assert "have a path to Kestra" in r["text"]
     assert "**Direct**" not in page and "<strong>Direct</strong> converts one for one" in page
 

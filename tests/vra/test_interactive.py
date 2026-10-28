@@ -160,10 +160,10 @@ def test_the_brief_counts_are_the_files_counts(tmp_path, monkeypatch):
     export = _export(tmp_path)
     _run(monkeypatch, export, None)
     from kestra_migration_assistant.vra.stages import status
-    for answer in (None, "keep all", "decide each"):
+    for answer in (None, "decide each", "yes"):
         if answer:
             from kestra_migration_assistant.vra.stages import your_input as Y
-            gid = next(x["id"] for x in _brief(export)["input"]["shown"] if "defect" in x["id"])
+            gid = next(x["id"] for x in _brief(export)["input"]["shown"] if x["id"] == "suggested")
             Y.set_answer(gid, answer)
             _run(monkeypatch, export, None)
         b, doc = _brief(export), _answers(export)

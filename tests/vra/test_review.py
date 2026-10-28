@@ -204,18 +204,25 @@ def test_3_a_question_asked_for_several_workflows_of_one_group_is_listed_once(es
     assert "Applies to: Dns - Create Zone" in estate["oq"] and "also asked for Dns - Register Host" in estate["oq"]
 
 
-def test_3_suspected_defects_are_their_own_list_and_a_decision_each(estate):
+def test_3_suspected_defects_are_their_own_list_and_kept_as_today(estate):
+    from kestra_migration_assistant.vra.stages import your_input as Y
     d = estate["brief"]["suspected_defects"]
     assert [(x["workflow"], x["n"]) for x in d] == [(CREATE, 1), (DELETE, 1), (DELETE, 2)]
-    assert "possible defects** in two answers, one per workflow and one per action several workflows share" in estate["md"]
     assert "## Suspected defects" in estate["oq"]
     dec = _decisions(estate)
     k = d[1]["decision"]
-    assert k in dec and dec[k]["closes"]["options"] == ["keep", "fix"]
-    # in answers.yaml, one plain question with the choice in it
-    q = dec[k]["closes"]["plain"]
-    assert q.startswith("Possible defect in ") and q.endswith(". Keep the current behavior, or fix it?")
-    assert "(" not in q
+    assert k in dec and dec[k]["closes"]["options"] == ["keep", "fix"]       # still a decision of its wave
+    # none fails every time or is a security problem: each is kept, as today, and answers.yaml says so under the
+    # assumption, described by what it does, with the answer it takes
+    doc = Y._yaml(open(C.ANSWERS, encoding="utf-8").read())
+    kept = next(e for e in doc["estate"] if e["id"] == "assume.defects")
+    assert {m["id"] for m in kept["each"]} == {x["decision"] for x in d}
+    assert all(m["assumed"] == "keep, as today" and "answer" not in m for m in kept["each"])
+    assert all(m["question"].endswith(". Keep it as today, or fix it?") for m in kept["each"])
+    assert not any(str(e["id"]).startswith(("defect", "same.defect")) for e in doc["open"] or [])
+    st = Y.state(k)
+    assert st["state"] == "answered" and st["answer"].startswith("keep")    # what the conversion reads
+    assert "kept as they are today" in estate["md"]
 
 
 # ------------------------------------------------------------ 4. stale specs reported by status and brief

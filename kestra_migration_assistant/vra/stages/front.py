@@ -572,12 +572,10 @@ def needs(assess: dict, brief: dict, st: dict) -> list[str]:
             if x is not defects[0]:
                 continue
             total = sum(len(d["members"]) for d in defects)
-            ne = sum(d.get("lines", 1) for d in defects)
             out.append((any(holds(d) for d in defects),
-                        f"**{cap(word(total)) if total <= 10 else total} possible {_s(total, 'defect')}** in "
-                        f"{word(ne)} {_s(ne, 'answer')}, one per workflow and one per action several workflows "
-                        "share: keep them, fix them, or decide each. They are on [each workflow's "
-                        "page](workflows/index.html)."))
+                        f"**{cap(word(total)) if total <= 10 else total} possible {_s(total, 'defect')}** that "
+                        f"{_s(total, 'makes its workflow fail every time, or is', 'make their workflow fail every time, or are')} "
+                        "a security problem: keep or fix each. They are on [each workflow's page](workflows/index.html)."))
             continue
         if x in sq:
             if x is not sq[0]:
@@ -621,12 +619,20 @@ def needs(assess: dict, brief: dict, st: dict) -> list[str]:
             f = _fam(k)
             line = f"**{cap(phrase.get(f, f.replace('-', ' ')))}.**"
         out.append((holds(x), line))
-    return [line for h, line in out if h] + [line + " Nothing waits on these yet." for h, line in out if not h]
+    lines = [line for h, line in out if h] + [line + " Nothing waits on these yet." for h, line in out if not h]
+    kept = next((a for a in brief.get("assumptions") or [] if a["id"] == "assume.defects" and a["holds"]), None)
+    if kept and kept.get("settles"):
+        n = kept["settles"]
+        lines.append(f"Nothing to do for **{cap(word(n)) if n <= 10 else n} possible {_s(n, 'defect')}**: "
+                     f"{_s(n, 'it is', 'they are')} kept as they are today, so the converted flows can be tested "
+                     "against the originals. Each is on its [workflow's page](workflows/index.html); to fix one, "
+                     "write `answer: fix` under it in `answers.yaml`.")
+    return lines
 
 
 EST_TOPIC = {"started-by": "what starts the workflows", "config": "where settings live", "secrets": "where secrets come "
              "from", "non-production": "where flows run before production", "remote": "calls to other vRO clusters",
-             "scope": "what is out of scope"}
+             "scope": "what is out of scope", "host-verification": "whether the flows check certificates"}
 
 
 def estate_lines(brief: dict) -> list[str]:
@@ -638,8 +644,8 @@ def estate_lines(brief: dict) -> list[str]:
                                                                if e.get("settles") else ""))
     for a in brief.get("assumptions") or []:
         if a["holds"]:
-            out.append(f"Assumed: {a['assumed']}" + (f" (settled {a['settles']} {_s(a['settles'], 'question')})"
-                                                      if a.get("settles") else ""))
+            out.append(f"Assumed: {a['assumed']}" + (f" ({a['settles']} {_s(a['settles'], 'item')}, each listed under it "
+                                                      "in answers.yaml)" if a.get("settles") else ""))
         else:
             out.append(f"Not assumed, by your answer: {a['assumed']} Instead: **{a['instead']}**")
     return out

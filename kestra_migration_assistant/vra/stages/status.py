@@ -32,11 +32,14 @@ def status_of(brief: dict) -> dict:
     inp = brief.get("input") or {}
     keys_open = {it["key"] for g in ("confirm", "answer", "review") for f in ((inp.get(g) or {}).get("families") or {}).values()
                  for it in f["open"]}
+    # asked when its wave is converted (answers.yaml, `waves:`): holds the wave's start, not the signature
+    later = set(inp.get("later") or [])
     blocks, blocking, after, start, package = [], set(), {}, [], set()
     for w in brief["plan"]["waves"]:
         name = f"Wave {w['wave']}"
         crit = [e for e in w["entry_criteria"] if e.get("status") != "done"
-                and (e.get("closes") or {}).get("kind") not in ("approval", "gate")]
+                and (e.get("closes") or {}).get("kind") not in ("approval", "gate")
+                and (e.get("closes") or {}).get("field") not in later]
         gates = [e["closes"]["wave"] for e in w["entry_criteria"] if e.get("status") != "done"
                  and (e.get("closes") or {}).get("kind") == "gate"]
         ks = {(e.get("closes") or {}).get("field") for e in crit}
@@ -60,6 +63,8 @@ def status_of(brief: dict) -> dict:
         n_hold = sum(x.get("lines", 1) for x in entries if set(x["members"]) & blocking or x["id"].startswith("estate."))
     add = (f" and add {len(package)} missing piece{'s' if len(package) != 1 else ''} of code to the package"
            if package else "")
+    wave_time = (f" {len(later)} more {'is' if len(later) == 1 else 'are'} asked when {'its' if len(later) == 1 else 'their'} "
+                 "wave is converted (`waves:` in answers.yaml)." if later else "")
     order = " ".join(f"{w} starts once {_and(ds)} {'is' if len(ds) == 1 else 'are'} done." for w, ds in after.items())
     if (brief.get("recommendation") or {}).get("verdict") == "needs a model":
         line = ("Next step: run it again with a model. This run had none, so what each workflow does, its possible "
@@ -81,14 +86,16 @@ def status_of(brief: dict) -> dict:
     elif not signed:
         line = ("Ready to sign." + (f" Once signed, {_and(start)} can start." if start else "")
                 + (f" {order}" if order else "")
-                + (f" {n_open} open question{'s' if n_open != 1 else ''} block nothing." if n_open else ""))
+                + (f" {n_open} open question{'s' if n_open != 1 else ''} block nothing." if n_open else "") + wave_time)
     else:
         scope = "the full plan" if sign.get("scope") == "full" else "Wave 1"
         line = (f"Ready: {_and(start)} can start." if start else f"Signed for {scope}. Ready to convert.") \
             + (f" {order}" if order else "") + (" The signature covers Wave 1 only." if start and scope == "Wave 1"
                                                 and len(brief["plan"]["waves"]) > 1 else "")
+    if wave_time and not line.endswith(wave_time) and not line.startswith("Next step: run it again with a model"):
+        line += wave_time
     return {"line": line, "blocking": sorted(blocking), "open": n_open, "holding": n_hold, "package": sorted(package), "blocks": blocks, "after": after,
-            "start": start, "order": order, "signed": signed}
+            "start": start, "order": order, "signed": signed, "later": len(later)}
 
 
 def _and(xs: list[str]) -> str:

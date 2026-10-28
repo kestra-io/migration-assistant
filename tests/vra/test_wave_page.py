@@ -61,15 +61,17 @@ def _waves() -> tuple[str, str]:
 def test_the_waves_page_counts_defects_and_questions_and_shows_no_ids(estate):
     page, text = _waves()
     assert not re.search(r"\b(defect|question)\.[a-z0-9-]+\.", page)              # no internal ID, anywhere
-    assert "2 of 2 possible defects still to decide" in text
+    # possible defects are kept as today unless one fails every time or is a security problem: decided already
+    assert "2 possible defects, decided" in text and "still to decide" not in text
     assert "1 of 1 question from reading the workflows still to answer" in text
     assert text.count("possible defect") == 1                                      # one line for the wave
-    assert re.search(r'possible defects still to decide.{0,200}<a href="workflows/web-provision-host\.html">', page,
-                     re.S)
+    assert re.search(r'possible defects, decided.{0,200}<a href="workflows/web-provision-host\.html">', page, re.S)
     appendix = open(C.BRIEF_MD).read().split("## Appendix B", 1)[1]
-    assert "- open: 2 of 2 possible defects still to decide" in appendix
+    assert "possible defects still to decide" not in appendix
     assert not re.search(r"\b(defect|question)\.[a-z0-9-]+\.", appendix)
-    estate("defects.web-provision-host", "keep them all")
+    # fixing one is an answer of its own: still decided
+    from kestra_migration_assistant.vra.stages import brief as B
+    estate(B.run()["suspected_defects"][0]["decision"], "fix")
     page, text = _waves()
     assert "2 possible defects, decided (listed on the pages of Web - Provision Host (2))" in text
     assert "still to decide" not in text
@@ -98,14 +100,14 @@ def test_only_open_criteria_are_listed_and_the_met_ones_fold_into_one_line(estat
     m = re.search(r"<details class='met'><summary>(\d+) of (\d+) met</summary>", w1)
     assert m and 0 < int(m.group(1)) < int(m.group(2))
     assert w1.index("<span class='status wait'>open</span>") < w1.index("<details")
-    assert "<code>defects.web-provision-host</code>" in w1                        # the entry that closes it
+    assert "<code>typed-inputs.wave-1</code>" in w1                               # the entry that closes it
     met = w1.split("<details", 1)[1]
     assert "Kestra Enterprise Edition" in met and "Kestra Enterprise Edition" not in w1.split("<details", 1)[0]
     assert "status wait" not in met
     md = open(C.BRIEF_MD).read().split("## Appendix B", 1)[1]
     md1 = md.split("### Wave 1", 1)[1].split("### Wave", 1)[0]
     assert f"\n{m.group(1)} of {m.group(2)} met.\n" in md1 and "- open: " in md1 and "- met" not in md1
-    assert "`edition`" not in md1 and "`defects.web-provision-host`" in md1
+    assert "`edition`" not in md1 and "`typed-inputs.wave-1`" in md1
 
     # fully met (Wave 1): nothing listed, one folded line; Wave 2 still waits on Wave 1's exit
     for _ in range(2):
