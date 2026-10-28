@@ -111,8 +111,11 @@ def pending(its: list[dict], entries: dict, done: dict) -> dict[str, str]:
     from . import interview
     from . import your_input as Y
     trial = dict(entries)
+    import os
+    no_model = bool(os.environ.get("VRO_NO_MODEL"))
     open_est = [it for it in its if it.get("family") == "estate" and it.get("suggested")
                 and interview.answer_of(it, entries.get(it["key"])) is None]
+    del no_model
     for it in open_est:
         trial[it["key"]] = {"answer": it["suggested"]}
     if not open_est:
@@ -173,7 +176,7 @@ def questions(loaded: dict | None = None) -> list[dict]:
     rew = Y.registry().get("_rewords") or {}
     out = []
     for k, e, _ea in Y.estate_rows(its, loaded):
-        if not k.startswith("estate.") or not Y.is_open(e.get("answer")):
+        if not k.startswith("estate.") or "answer" not in e or not Y.is_open(e.get("answer")):
             continue
         est = by_key[k]
         opts, default = _options_of(est, None, e, loaded)

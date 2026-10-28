@@ -180,3 +180,31 @@ def test_a_module_missing_three_calls_deep_is_listed_with_how_to_add_it(run_patt
     page = open(os.path.join(r["stages"], "report", "BRIEF.md"), encoding="utf-8").read() if os.path.exists(
         os.path.join(r["stages"], "report", "BRIEF.md")) else ""
     assert "deepHelper" in page
+
+
+def test_a_vro_only_estate_is_asked_once_who_starts_its_workflows(run_pattern):
+    r = run_pattern("vault")                     # no vRA export in this tree
+    est = {e["id"]: e for e in _file(r)["estate"]}
+    q = est["estate.started-by"]
+    assert q["question"].startswith("There is no vRA export. Who starts these")
+    assert q["options"][0] == "an external platform, through the vRO API" and "q2-external-callers" in q["settles"]
+    before = _read(r, "3-brief", "brief.json")
+    assert before["retire_candidates"]           # nothing in the export starts these workflows
+    b = _answer_and_rebrief(r, "estate.started-by", "1")
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    assert Y.state("q2-external-callers")["answer"] == "an external platform, through the vRO API"
+    assert b["started_outside"] == {"answer": "an external platform, through the vRO API", "all": True}
+    assert b["retire_candidates"] == []          # any of them may be started through the API: history decides
+    from kestra_migration_assistant.vra.stages import visuals as V
+    _use(r)
+    a = _read(r, "1-assess", "assess.json")
+    page = V.workflow_page(next(iter(a["workflows"])), a, b)
+    assert "an external platform, through the vRO API (your answer about the estate)" in page
+
+
+def test_out_of_scope_names_are_old_copies_and_tests_not_environments():
+    from kestra_migration_assistant.vra.stages.patterns import SCOPE_NAME
+    assert all(SCOPE_NAME.search(n) for n in ("OLD_Resize VM Disk", "test_REST_call", "Copy of Provision Linux VM",
+                                              "Create AD User (vRO 7)", "Cleanup - deprecated"))
+    assert not any(SCOPE_NAME.search(n) for n in ("Register VM in CMDB - Test", "Register VM in CMDB - Production",
+                                                  "Rotate Old Keys", "Provision Linux VM - DR-Site"))

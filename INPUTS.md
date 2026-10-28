@@ -113,6 +113,24 @@ the only file in `your-input/`. It looks like this:
 ```yaml
 # Answer what's open, then run: kestra-migrate vra run acme
 
+estate:
+  - id: estate.config
+    question: 36 workflows call modules named getEndpoint and getDatacenterSettings, which pick a configuration element at run time (under Infra/Endpoints and Infra/Datacenters). Where should those settings live in Kestra?
+    options:
+      - Kestra's KV store, one entry per element, read by the same name
+      - namespace variables, one set per environment
+      - the system they come from today, which the flows call
+    suggested: Kestra's KV store, one entry per element, read by the same name
+    answer: 1
+    closes:
+      - question.create-dns-record.endpoint-identity
+      - question.provision-linux-vm-dr-site.endpoint-identity
+  - id: assume.trust-store
+    assumed: Kestra checks each system's certificate against the CAs in its trust store. The CAs vRO imported go there once, in the Kestra setup, not in each flow.
+    answer:
+    closes:
+      - tls.f5-bigip
+
 open:
   - id: suggested
     question: 'Accept every suggested answer below? (yes; to change one, add answer: under it)'
@@ -136,11 +154,27 @@ answered:
 signed_for: full plan
 ```
 
+`estate` comes first: the questions about the whole estate (at most eight, built from what the code shows: what
+starts the workflows, where settings and secrets come from, which systems have a non-production instance, calls to
+other vRO clusters, workflows that look out of scope, a module many workflows call), and the vRO mechanics the tool
+assumes instead of asking (certificates and the trust store, host verification, retries and counters, REST hosts made
+in code). An estate answer is one of its `options`, its number, `yes` for the suggested one, or your own words. It
+applies to every workflow: `closes` lists the items it settled, and those are not asked again. While an estate
+question is open, `settles` lists what its suggested answer would settle, and those are not asked one by one either.
+Change an answer and what it closed is asked again. An assumption holds while its `answer` is empty (or `yes`); any
+other answer overrides it, and what it settled is asked again. You can fill this section in before the first run.
+
 `open` lists what is still unanswered, with what a wave waits on first, and `answered` lists what already has an
 answer. Each entry has an `id`, one plain
 `question`, a `suggested` value when the code points to one, and an `answer`. Write `yes` to take the
 suggested value; any other answer is the answer itself. A remark goes in the answer too. `signed_for` is
 `wave 1` or `full plan`, and stays empty until you sign.
+
+A question that repeats is asked once: a possible defect or a question about an action several workflows share, or
+the same one on near-duplicate workflows, is one entry `same.<defect or question>.<what>.<kind>`, with its items
+under `each:`. In an interactive run, the planning after each round can also merge questions into one `same.<what>`
+entry, close a question with an answer already given (listed under that answer's `closes`), reword one, or add one
+(`added.<what>`); the IDs still say what a question is about, never its place.
 
 What is settled together is one entry, with its items under `each:`. `suggested` holds every value the code
 suggests: `yes` takes them all, and any one can still be given its own `answer:`. `defects.<workflow>` takes

@@ -43,8 +43,10 @@ TRUST = re.compile(r"\bimportCertificate|SSLCertificateManager|trustStore|\.impo
                    r"KeystoreManager", re.I)
 HOST_VERIFICATION = re.compile(r"hostVerification\s*=")
 RETRY = re.compile(r"\b(?:retr(?:y|ies)|attempts?|maxTries|tries)\b\s*(?:[<>]=?|\+\+|\+=|-=|=)", re.I)
+# A name that says old, copy or test. "test" counts only at the start (test_REST_call): at the end it is usually an
+# environment ("Register VM in CMDB - Test", next to "- Production"), not a test.
 SCOPE_NAME = re.compile(r"^(?:old|test|tmp|temp|copy of|deprecated|backup|bak)(?:[\s_-]|$)|[\s_-](?:old|deprecated|"
-                        r"backup|copy|test)$|\(copy\)|\bvro[\s_-]?7\b", re.I)
+                        r"backup|copy)$|\(copy\)|\bvro[\s_-]?7\b", re.I)
 SCOPE_FOLDER = {"test", "tests", "old", "archive", "archived", "deprecated", "sandbox", "backup", "trash", "tmp"}
 
 

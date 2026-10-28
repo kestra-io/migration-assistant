@@ -2,6 +2,70 @@
 
 Every release of the Kestra Migration Assistant for vRA. Versions follow [semantic versioning](https://semver.org).
 
+## Unreleased
+
+Questions that fit real estates: asked in the terminal, about the whole estate first, once per pattern, and counted
+the same way in the brief and in `answers.yaml`. Re-running on a folder that 1.1.0 assessed keeps every answer you
+gave.
+
+### What's new
+
+- **`kestra-migrate vra run` asks its questions in the terminal.** After reading the export, it asks five to eight
+  questions about the whole estate, built from what the code shows (what starts the workflows, where settings and
+  secrets come from, which systems have a non-production instance, calls to other vRO clusters, what is out of
+  scope, a module many workflows call). The model then reads the workflows with those answers as context, and the
+  questions left come in rounds of three to five, the one that settles the most first. After each round, one model
+  call plans the rest again with your answers: it can close, merge, reword or add questions. Without a model, the
+  rounds still run on fixed rules. Each question has numbered choices, the suggestion first and your own words last;
+  `s` skips a question, `q` saves and stops. Every answer is saved at once. `--batch` asks nothing, and a run with no
+  terminal never asks.
+- **One question per pattern.** A possible defect or a question about an action several workflows share, or the same
+  one on near-duplicate workflows, is asked once for all of them.
+- **What the tool assumes instead of asking.** Certificates and the trust store, host verification, retries and
+  counters, and REST hosts made in code have a Kestra equivalent. The brief lists each assumption under "Applied to
+  the whole estate", and you can override any of them in `answers.yaml`.
+- **What to add to the package.** When a workflow calls code the export does not hold (an action module at any
+  depth, a workflow on another vRO cluster, the configuration elements a module reads at run time), the brief lists
+  it under "Add to the package", with what calls it and how to add it. It is no longer a question.
+- **vRO-only estates.** With no vRA export, the tool asks once what starts the workflows. If it's an external
+  platform on the vRO API, or people in the vRO client, that applies to every workflow nothing in the export starts,
+  and none is listed as a retire candidate from the call graph alone.
+
+### Fixes
+
+- The brief could say 8 questions while `answers.yaml` held hundreds. The brief counted the file's entries, where a
+  group of questions is one entry, while the file listed every question in it (83 spec questions in one entry on a
+  46-workflow estate) and "decide each" opened every workflow's possible defects. The brief and the status line now
+  count the empty answers in the file, so they always agree.
+- An answered group carried into a fresh folder covered only the questions the first stage to run knew about. It now
+  covers the questions the file lists under it, so the same `answers.yaml` gives the same brief anywhere.
+- Every file the tool writes is written whole or not at all, so a run stopped half way never leaves `answers.yaml`
+  cut short.
+
+### Output changes
+
+- `answers.yaml`: a new `estate` section at the top (estate questions with `options`, assumptions with `assumed`).
+  Entries can carry `closes` (what an answer settled) and `settles` (what an open estate question's suggestion would
+  settle). New IDs: `estate.<topic>`, `assume.<topic>`, `same.<defect or question>.<what>.<kind>` (a pattern asked
+  once), and from re-planning `same.<what>` and `added.<what>`. A defect or question that is now part of a pattern
+  keeps its own ID, under the pattern's entry. `missing.<code>` is no longer asked; an answer to it moves to
+  `no_longer_asked`. A 1.1.0 file loads as before, and `your_input.load`, `items`, `state` and `signature` keep their
+  signatures; `state` now also reports an item another answer settled as answered.
+- `data/3-brief/brief.json`: new `questions` (the counts the file shows), `estate_answers`, `assumptions`,
+  `package_additions` and `started_outside`. A wave's criterion for missing code closes by `package` (adding it), not
+  by a decision.
+- `data/1-assess/patterns.json`: new, the patterns the estate questions are built from.
+- The status line reads "answer N questions" and counts answers, not entries.
+
+### Behavior changes you will notice
+
+- **A run in a terminal asks questions.** To run it unattended, add `--batch`.
+- **Fewer questions.** On the 46-workflow test estate, a first run waits on 106 answers instead of 149, and on the
+  load balancer sample on 18 instead of 19. Answering the estate questions settles many more.
+- **Answering the estate questions writes the specs again, billed.** The answers are part of each workflow's prompt.
+  The cost estimate shows it before the first call. A run with no estate answers sends the same prompts as 1.1.0,
+  so its cached replies still count.
+
 ## 1.1.0 (2026-10-24)
 
 Fixes found by running the assistant on a 46-workflow test estate, five more systems named, and one change to how

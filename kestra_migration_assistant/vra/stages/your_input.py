@@ -69,7 +69,7 @@ def header() -> str:
     return HEADER + C.run_command()
 GROUPS = ("confirm", "answer", "review", "sign")
 YES = ("yes", "y", "true", "confirmed", "confirm", "ok", "x")
-TOOL_FIELDS = ("id", "question", "options", "suggested", "assumed", "answer", "closes", "settles", "each")
+TOOL_FIELDS = ("id", "question", "options", "suggested", "assumed", "answer", "needs", "closes", "settles", "each")
 OLD_SECTIONS = ("blocking", "open", "done", "confirm", "answer", "review", "no_longer_asked")
 OLD_FIELDS = ("answer", "confirmed", "by", "date", "note", "spec")    # the old format's own fields
 GONE = "No longer asked: "
@@ -416,7 +416,7 @@ def _field(name: str, v, first: bool) -> list[str]:
 
 def _entry(k: str, e: dict, each: list[tuple[str, dict]] | None = None) -> list[str]:
     L = _field("id", k, True)
-    for f in ("question", "assumed", "options", "suggested", "answer"):
+    for f in ("question", "assumed", "options", "suggested", "answer", "needs"):
         if f in e and (f == "answer" or e[f] not in (None, "", [])):
             L += _field(f, e[f], False)
     for f, v in e.items():                           # a field of the person's own
@@ -489,11 +489,27 @@ def groups(its: list[dict], loaded: dict | None = None) -> dict[str, list[str]]:
         if it.get("pattern"):
             pats.setdefault(it["pattern"], []).append(it["key"])
     merged = {k: g for g, ks in merges(loaded).items() for k in ks}
+    per_wf: dict[str, int] = {}
+    for it in its:
+        if it.get("family") == "defect" and it["key"].count(".") >= 2:
+            per_wf[it["key"].split(".")[1]] = per_wf.get(it["key"].split(".")[1], 0) + 1
+
+    def worth(p: str) -> bool:
+        """A pattern is its own entry when it saves answers: a spec question always (each is answered alone), a
+        possible defect when three or more workflows share it, or when it is all a workflow has (one entry fewer)."""
+        ks = pats[p]
+        if not is_open((entries.get(p) or {}).get("answer")):
+            return True
+        if len(ks) < 2:
+            return False
+        if not p.startswith("same.defect."):
+            return True
+        return len(ks) >= 3 or any(per_wf.get(k.split(".")[1]) == 1 for k in ks)
     for it in its:
         if it.get("family") in ESTATE_FAMILIES:
             continue
         p = it.get("pattern")
-        use_p = p and (len(pats[p]) > 1 or not is_open((entries.get(p) or {}).get("answer")))
+        use_p = bool(p) and worth(str(p))
         g = merged.get(it["key"]) or (p if use_p else None) or group_of(it)
         if g:
             out.setdefault(g, []).append(it["key"])
@@ -769,11 +785,16 @@ def estate_rows(its: list[dict], loaded: dict) -> list[tuple]:
                     e["options"] = list(it["options"])
                 if it.get("suggested"):
                     e["suggested"] = it["suggested"]
-            e["answer"] = old.get("answer")
+            later = sorted(x for x, by in (loaded.get("pending") or {}).items() if by == k)
+            if (fam == "estate" and it.get("needs_model") and os.environ.get("VRO_NO_MODEL") and not later
+                    and is_open(old.get("answer"))):
+                # with no model and nothing on record for it to settle, only a model's reading would use it
+                e["needs"] = "a model: this run has none, so it is not asked (you can still answer it here)"
+            else:
+                e["answer"] = old.get("answer")
             e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
             if shut.get(k):
                 e["closes"] = shut[k]
-            later = sorted(x for x, by in (loaded.get("pending") or {}).items() if by == k)
             if later:
                 e["settles"] = later
             rows.append((k, e, []))
@@ -795,7 +816,7 @@ def count(loaded: dict | None = None) -> dict:
     its = items()
     opened, _a, _g = plan(its, loaded)
     est = [r for r in estate_rows(its, loaded) if r[0].startswith("estate.")]
-    est_open = sum(1 for _k, e, _ea in est if is_open(e.get("answer")))
+    est_open = sum(1 for _k, e, _ea in est if "answer" in e and is_open(e.get("answer")))
     assumed = sum(1 for it in its if it.get("family") == "assume"
                   and str(_text((loaded["entries"].get(it["key"]) or {}).get("answer"))).strip().lower() in
                   ("", "yes", "y", "keep", "keep it", "ok", "agreed", "true"))
@@ -814,7 +835,8 @@ def shown(loaded: dict | None = None) -> list[dict]:
     gs = groups(its, loaded)
     opened, _a, _g = plan(its, loaded)
     est = [{"id": k, "members": [k], "blocks": False, "lines": 1}
-           for k, e, _ea in estate_rows(its, loaded) if k.startswith("estate.") and is_open(e.get("answer"))]
+           for k, e, _ea in estate_rows(its, loaded) if k.startswith("estate.") and "answer" in e
+           and is_open(e.get("answer"))]
     return est + [{"id": k, "members": gs.get(k) or [k], "lines": _lines(e, ea),
                    "blocks": any(blocks_a_wave(by_key[m]) for m in (gs.get(k) or [k]) if m in by_key)}
                   for k, e, ea in opened]

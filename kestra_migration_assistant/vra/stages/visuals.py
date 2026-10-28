@@ -866,7 +866,9 @@ def workflow_page(u: str, assess: dict, brief: dict) -> str:
     eps = "; ".join(C.esc(f"{e['kind']} {e['name']}" + (f" on {e['event_topic']}" if e.get("event_topic") else "")
                           + (" (blocking)" if e.get("blocking") else "")
                           + (f", when {e['condition']}" if e.get("condition") else ""))
-                    for e in w_eps(w)) or "none on record"
+                    for e in w_eps(w)) or (f"{(brief.get('started_outside') or {}).get('answer')} (your answer about "
+                                           "the estate)" if (brief.get("started_outside") or {}).get("all")
+                                           else "none on record")
     doc_note = ""
     if w["doc_order_would_mislead"]:
         doc_note = (f"<div class='note'>The first task in the file is <code>{C.esc(w['first_task_in_doc_order'])}</code>, "

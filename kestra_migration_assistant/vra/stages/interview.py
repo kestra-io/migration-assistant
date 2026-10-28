@@ -47,6 +47,11 @@ def _names(xs: list[str], k: int = 3) -> str:
     return ", ".join(xs[:k]) + f" and {len(xs) - k} more"
 
 
+# Estate questions whose answers only settle what the model writes (its specs' questions and defects), or only
+# guide its reading: without a model they are left out, and marked in answers.yaml as needing one.
+FOR_THE_MODEL = ("config", "secrets", "remote", "module", "scope")
+
+
 def _q(key: str, question: str, options: list[str], *, why: str, needs_model: bool = False,
        topic: str | None = None, about: dict | None = None) -> dict:
     from . import your_input as Y
@@ -56,7 +61,7 @@ def _q(key: str, question: str, options: list[str], *, why: str, needs_model: bo
     it["family_title"] = "About the estate"
     it["topic"] = topic or key.split(".", 1)[1]
     it["about"] = about or {}
-    it["needs_model"] = needs_model
+    it["needs_model"] = needs_model or it["topic"] in FOR_THE_MODEL
     return it
 
 
@@ -404,6 +409,23 @@ def scope_outcomes(by_short: dict[str, str] | None = None) -> dict[str, dict]:
     by_short = by_short or {}
     return {by_short.get(s, s): {"outcome": "Retire", "reason": "out of scope: the owner left it out (estate.scope)"}
             for s in (it.get("about") or {}).get("shorts") or []}
+
+
+def started_by() -> dict | None:
+    """What the owner said starts the workflows nothing in the export starts (estate.started-by), when it covers
+    every one of them: {"answer", "all": True}. An external platform on the vRO API, or people in the vRO client, can
+    start any workflow, so the call graph cannot say which are unused (run history can, Q7)."""
+    from . import your_input as Y
+    loaded = Y.load()
+    it = (loaded.get("items") or {}).get("estate.started-by")
+    if not it:
+        return None
+    ans = answer_of(it, loaded["entries"].get("estate.started-by"))
+    if ans is None:
+        return None
+    opt = picked(it, ans)
+    covers = (opt in (1, 2) and "no vRA" in (it.get("ask") or "")) or (opt == 2 and "no vRA" not in (it.get("ask") or ""))
+    return {"answer": ans, "all": bool(covers)}
 
 
 def context() -> str:

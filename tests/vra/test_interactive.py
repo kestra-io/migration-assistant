@@ -69,7 +69,7 @@ def _open_lines(doc: dict) -> int:
     from kestra_migration_assistant.vra.stages import your_input as Y
     n = 0
     for e in doc.get("estate") or []:
-        n += str(e["id"]).startswith("estate.") and Y.is_open(e.get("answer"))
+        n += str(e["id"]).startswith("estate.") and "answer" in e and Y.is_open(e.get("answer"))
     for e in doc.get("open") or []:
         n += "answer" in e and Y.is_open(e.get("answer"))
         n += sum(1 for m in e.get("each") or [] if "answer" in m and Y.is_open(m.get("answer")))

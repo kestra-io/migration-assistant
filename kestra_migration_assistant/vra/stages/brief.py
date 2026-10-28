@@ -95,6 +95,9 @@ def run() -> dict:
     attach_covers(plan, cover, wf)
 
     retire = [x for x in (TR.retire_candidate(w, eff[u]) for u, w in wf.items()) if x]
+    outside = interview.started_by()
+    if outside and outside["all"]:
+        retire = []                     # anything may be started from outside: run history tells which are unused
     retire_actions = [a["key"] for a in assess["actions"] if not a["called"]]
     defects = suspected_defects(assess, specs)
     asked_now = G.entries(plan)
@@ -125,6 +128,7 @@ def run() -> dict:
         "retire_candidates": retire, "retire_candidate_actions": retire_actions,
         "plan": plan, "recommendation": rec, "walkthroughs": flows, "trigger_plan": trigger_plan,
         "open_preflight_items": answers["open"],
+        "started_outside": outside,
         "stale_specs": stale,
         "open_questions": {"asked": sum(len(g["workflows"]) for g in qgroups), "grouped": len(qgroups),
                            "groups": qgroups,

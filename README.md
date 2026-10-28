@@ -56,6 +56,17 @@ kestra-migrate vra run ~/exports/acme
 
 If Claude Code is installed and you're logged in, the tool uses that login by default. Otherwise, it checks for an Anthropic API key. If neither is available, the assessment runs without a model. Before its first billed model call, it shows an estimated cost. See [Choose a model](#choose-a-model) for other options.
 
+In a terminal, the run asks its questions as it goes:
+
+1. **Inventory.** It reads the export. No model.
+2. **About the estate.** Five to eight questions about the whole estate, built from what the code shows: what starts the workflows, where settings and secrets come from, whether workflows call other vRO clusters, what is out of scope. For example: "36 workflows call modules named getEndpoint and getDatacenterSettings, which pick a configuration element at run time. Where should those settings live in Kestra?" One answer settles every question it covers.
+3. **Analysis.** The model reads each workflow, with your answers about the estate as context.
+4. **Rounds.** The questions left, three to five at a time, the one that settles the most first. After each round, the rest is planned again with your answers.
+
+Each question lists numbered choices. The first is what the code or the model suggests, and Enter takes it. The last is always "None of these, enter my own answer". Type `s` to leave a question for someone else, or `q` to save and stop. Every answer is saved in `answers.yaml` as soon as you give it, and the tool tells you how many questions it settled.
+
+To answer only in the file, add `--batch`. A run with no terminal attached never asks either.
+
 **Working with sensitive exports?** Run the command with `--no-model` first. You can then inspect the redaction report and sanitized copy before running it with an external model. The [data handling section](#what-is-sent-to-the-model) explains what to look for.
 
 No export at hand? Download the [sample load balancer export](https://kestra.io/kestra-migration-assistant-sample-vra-load-balancer.zip) (a vRA catalog item and four vRO workflows), unzip it into a folder, and run the tool on that.
@@ -78,7 +89,7 @@ acme/kestra-assessment/
 
 ### 4. Answer the open questions and run again
 
-Open `kestra-assessment/your-input/answers.yaml` and answer the questions that need an owner's input. Then rerun the same command:
+Whatever you skipped or left for someone else stays in `kestra-assessment/your-input/answers.yaml`. Answer it there, or run the command again in a terminal to be asked again:
 
 ```bash
 kestra-migrate vra run ~/exports/acme
@@ -102,7 +113,7 @@ Claude Code login isn't supported inside the container. You can use:
 - **OpenAI-compatible endpoint:** Pass `-e KESTRA_MIGRATE_PROVIDER=openai-compatible -e KESTRA_MIGRATE_BASE_URL -e KESTRA_MIGRATE_MODEL -e OPENAI_API_KEY`. If the endpoint runs on your host machine, use `http://host.docker.internal:<port>/v1`. On Linux, add `--add-host=host.docker.internal:host-gateway`.
 - **No model:** Add `--no-model` to the command.
 
-On Linux, add `--user "$(id -u):$(id -g)"` so the generated files belong to your user. Keep `-it` when using a model: if the estimated cost exceeds the configured threshold, the tool asks for confirmation. Without an interactive terminal, it stops instead unless you pass `--yes`.
+On Linux, add `--user "$(id -u):$(id -g)"` so the generated files belong to your user. Keep `-it`: with it, the run asks its questions in your terminal, and asks before going over the cost threshold. Without an interactive terminal, it asks nothing, and a run over the threshold stops unless you pass `--yes`.
 
 ## Choose a model
 
@@ -178,7 +189,7 @@ Before sending an assessment to an external model, we recommend running with `--
 | Command | What it does |
 |---|---|
 | `kestra-migrate init` | Create the model configuration file |
-| `kestra-migrate vra run <export folder> [--out <folder>] [--no-model] [--provider ...] [--model ...] [--base-url ...] [--yes]` | Run Sanitize, Preflight, Assess, Understand, Brief, and report generation. With `--no-model`, use cached model responses where available, but make no new model calls; identify what still needs model analysis |
+| `kestra-migrate vra run <export folder> [--out <folder>] [--no-model] [--batch] [--provider ...] [--model ...] [--base-url ...] [--yes]` | Run Sanitize, Preflight, Assess, the questions about the estate, Understand, Brief, and report generation. In a terminal, ask the questions there. With `--batch`, ask nothing and read `answers.yaml` only. With `--no-model`, use cached model responses where available, but make no new model calls; identify what still needs model analysis |
 | `kestra-migrate vra status <export folder> [--out <folder>]` | Show the status of each stage and the next action |
 | `kestra-migrate vra check-intake <path>` | Check an incoming export for secret-shaped values; exit with code 1 and a masked report if any are detected |
 
@@ -196,9 +207,14 @@ Open `kestra-assessment/index.html` to review the assessment offline. The brief 
 
 ### Answer questions and approve the plan
 
-`your-input/answers.yaml` holds two lists, `open` and `answered`, plus a `signed_for` field. Open questions are ordered by what the migration waves depend on. Each item includes an `id`, a plain-language `question`, an `answer`, and, when the tool can recommend one, a `suggested` value.
+`your-input/answers.yaml` starts with an `estate` section, then two lists, `open` and `answered`, plus a `signed_for` field. Each item includes an `id`, a plain-language `question`, an `answer`, and, when the tool can recommend one, a `suggested` value.
 
-To accept a suggestion, write `yes` as the answer. Otherwise, provide your answer directly. On the next run, the tool moves answered items from `open` to `answered`, preserves your text, and keeps each question's ID. When you're ready to approve the plan, set `signed_for` to `wave 1` or `full plan`.
+- **`estate`** holds the questions about the whole estate, with their `options`, and what the tool assumes instead of asking (`assumed`). If you know your estate, you can fill this section in before the first run: every run applies it everywhere and asks nothing it settles. An answer can be an option's number. Under each answer, `closes` lists the questions it settled; under an open one, `settles` lists what its suggestion would settle. Change an answer, and the questions it closed are asked again. Leave an assumption's `answer` empty to keep it, or write what to do instead.
+- **`open`** lists what is still unanswered, ordered by what the migration waves depend on. A question that repeats across workflows, such as a possible defect in an action several workflows share, is one entry for all of them.
+
+To accept a suggestion, write `yes` as the answer. Otherwise, provide your answer directly. On the next run, the tool moves answered items from `open` to `answered`, preserves your text, and keeps each question's ID. The number of questions the brief shows is the number of empty answers in this file. When you're ready to approve the plan, set `signed_for` to `wave 1` or `full plan`.
+
+Code that the workflows call but the export does not hold, such as an action module, a workflow on another vRO cluster, or the configuration elements a module reads at run time, is not a question. The brief lists each one under "Add to the package", with what calls it and how to add it.
 
 If the assessment misidentifies a domain, cluster, integration reach, wrapper, or workflow outcome, add `your-input/corrections.yaml` with the corrections. [INPUTS.md](https://github.com/kestra-io/migration-assistant/blob/main/INPUTS.md) documents the expected format.
 
