@@ -183,6 +183,13 @@ def _options_of(it: dict | None, gid: str | None, entry: dict, loaded: dict) -> 
         rec = (Y.registry().get("_merges") or {}).get(gid) or {}
         if rec.get("options"):
             return _yes_no([str(o) for o in rec["options"]]), str(rec["options"][0])
+        if kind == "same":
+            # the same question asked of several workflows: the choices of the first that has any
+            its = loaded.get("items") or {}
+            first = next((its[m] for m in (loaded.get("groups") or {}).get(gid) or [] if (its.get(m) or {}).get("options")),
+                         None)
+            if first:
+                return _options_of(first, None, entry, loaded)
     if it is None:
         return [], None
     if it.get("family") == "defect":

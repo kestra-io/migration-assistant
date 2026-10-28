@@ -44,6 +44,10 @@ SECURITY = re.compile(r"(password|credential|secret|token|api ?key)s?\b.{0,80}\b
 TODAY_KINDS = {"error-semantics", "timing", "unverified-reuse", "missing-validation", "unused-value", "outputs",
                "message-content", "external-side-effect", "concurrency", "notification", "retries"}
 
+# A choice that keeps what the workflow does today, in the words the sorting call uses for it.
+AS_TODAY = re.compile(r"\bas (?:it is |it does |vRO does |the workflow does |the \w+ does )?(?:today|now)\b|"
+                      r"\bas (?:it is|it does|vRO does)\b(?! not)|\bas today\b|\bunchanged\b", re.I)
+
 # The assumptions this module adds, in the order answers.yaml lists them.
 ASSUMPTIONS = {
     "assume.defects": "Possible defects are kept: the converted flows do what the workflows do today, so one can be "
@@ -75,7 +79,8 @@ For each QUESTION, give `kind`:
   address, what a name stands for). The real value is in the export and the conversion restores it.
 - "wave": a detail of how one flow is built that changes neither which workflows move nor the order they move in:
   which servers or vCenters a flow targets, the shape or format of an input, the name of a key, a list kept in the
-  flow or moved to settings. It is asked when that workflow's wave is converted.
+  flow or moved to settings, how a system is signed in to, which Kestra store or file keeps a record. It is asked when
+  that workflow's wave is converted.
 - "ask": the answer changes the plan or the recommendation: whether a workflow can be converted at all, which wave it
   belongs in, or what the migration must build that does not exist today. Then give `question`: the question in
   plain words for a vRO administrator, without the workflow's name; `options`: two to four short choices, first the
@@ -83,6 +88,8 @@ For each QUESTION, give `kind`:
   question, and never a choice Kestra cannot do as written;
   `why_kestra`: when vRO did this without being told, one sentence on why Kestra needs the answer, else "".
 Prefer "today", "placeholder" or "wave" whenever they fit: "ask" is for the few questions only the owner can settle.
+A question whose likely answer is "as the workflow does today" is "today", even when Kestra needs the choice written
+down: the converted flow writes down what vRO did.
 
 For each DEFECT, give `today`: what it does today, in plain words a vRO administrator knows, saying the effect, not
 the code (for example "the ServiceNow request is closed without its work notes"); `always_fails`: true only when it
@@ -177,12 +184,24 @@ def sort(items: list[dict], wf: dict) -> None:
     if not os.environ.get("VRO_NO_MODEL"):
         from .. import model as M
         M_ = C.model()
-        for b in batches(items):
-            try:
-                v = M_.ask("stages-questions", C.ESTATE, prompt_for(b), SCHEMA)
-            except (M.ModelError, M.SchemaError) as e:
-                C.progress(f"sorting the questions fell back to the rules: {e}")
+        jobs: list[dict] = [{"id": f"batch-{i}", "items": b} for i, b in enumerate(batches(items))]
+        done = {"n": 0}
+
+        def one(job: dict) -> dict:
+            v = M_.ask("stages-questions", C.ESTATE, prompt_for(job["items"]), SCHEMA)
+            done["n"] += 1
+            C.tick("questions", done["n"], len(jobs))
+            return v
+        if jobs:
+            C.tick("questions", 0, len(jobs))
+        # in parallel, like the specs: one after the other, eight of them took five minutes
+        got, errs = M.run_parallel(jobs, one) if jobs else ({}, {})
+        for e in errs.values():
+            C.progress(f"sorting the questions fell back to the rules: {e}")
+        for job in jobs:
+            if job["id"] not in got:
                 continue
+            v, b = got[job["id"]], job["items"]
             ids = {it["key"] for it in b}
             for q in v.get("questions") or []:
                 if q.get("id") in ids:
@@ -208,6 +227,9 @@ def sort(items: list[dict], wf: dict) -> None:
                 opts = [C.no_em_dashes(str(o)).strip() for o in r.get("options") or [] if str(o).strip()]
                 s.update(question=C.no_em_dashes(str(r.get("question") or "")).strip(), options=opts[:4],
                          why_kestra=C.no_em_dashes(str(r.get("why_kestra") or "")).strip())
+                if opts and AS_TODAY.search(opts[0]):
+                    # its suggestion keeps what the workflow does today: that is assumed, not asked
+                    s = {"kind": "today", "today": opts[0], "by": "model, suggestion keeps today's behavior"}
             it["sort"] = s
         it.pop("_workflow", None)
         _apply(it)

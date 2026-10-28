@@ -442,7 +442,8 @@ class ProgressLine:
     terminal; elsewhere written once at the start and once at the end. What each step did in detail goes to the
     run's log file instead (RunLog)."""
 
-    WHAT = {"workflows": "Analyzing {total} workflows: {done} done."}
+    WHAT = {"workflows": "Analyzing {total} workflows: {done} done.",
+            "questions": "Sorting what the analysis found: {done} of {total} parts done."}
 
     def __init__(self) -> None:
         self.out: Any = None
@@ -529,14 +530,22 @@ def _minutes(sec: float) -> str:
     return f"{int(sec // 60)}m {int(sec % 60)}s" if sec >= 60 else f"{sec:.0f}s"
 
 
-def _rerun_brief(log: RunLog) -> None:
-    """The brief again, after answers: Assess first when the specs changed under it."""
+def _rerun_brief(log: RunLog, quiet: bool = False) -> None:
+    """The brief again, after answers: Assess first when the specs changed under it. `quiet`: between two
+    questions, no progress line."""
     import contextlib
 
     from kestra_migration_assistant.vra.stages import assess
-    with contextlib.redirect_stdout(log):
-        assess.load()
-    _run_stage_logged("brief", log)
+    tick = C._TICK
+    if quiet:
+        C.set_tick(None)
+    try:
+        with contextlib.redirect_stdout(log):
+            assess.load()
+        _run_stage_logged("brief", log)
+    finally:
+        C.set_tick(tick)
+        PROGRESS.clear()
 
 
 def _run_interactive(term) -> int:
@@ -589,7 +598,7 @@ def _run_interactive(term) -> int:
         if time.monotonic() - t0 > STARTED_AFTER:
             term.say(f"Analysis done in {_minutes(time.monotonic() - t0)}.")
         if not getattr(term, "stopped", False):
-            I.after_analysis(term, use_model, lambda: _rerun_brief(log))
+            I.after_analysis(term, use_model, lambda: _rerun_brief(log, quiet=True))
         for s in ("migrate-input", "visuals"):
             _run_stage_logged(s, log)
         from kestra_migration_assistant.vra.stages import status
