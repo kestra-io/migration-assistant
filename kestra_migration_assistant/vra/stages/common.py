@@ -440,19 +440,32 @@ def read_json(path: str):
         return json.load(f)
 
 
-def write_json(path: str, obj) -> str:
+def _atomic(path: str, write) -> str:
+    """Write a file whole or not at all: into a temporary file next to it, then moved over it in one step, so a
+    run stopped half way (a crash, Ctrl-C) never leaves a file cut short."""
     ensure(os.path.dirname(path))
-    with open(path, "w") as f:
+    tmp = f"{path}.tmp-{os.getpid()}"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            write(f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return path
+
+
+def write_json(path: str, obj) -> str:
+    def w(f):
         json.dump(obj, f, indent=1, sort_keys=False, default=str)
         f.write("\n")
-    return path
+    return _atomic(path, w)
 
 
 def write_text(path: str, text: str) -> str:
-    ensure(os.path.dirname(path))
-    with open(path, "w") as f:
-        f.write(text if text.endswith("\n") else text + "\n")
-    return path
+    return _atomic(path, lambda f: f.write(text if text.endswith("\n") else text + "\n"))
 
 
 def write_csv(path: str, rows: list[dict], fields: list[str]) -> str:
