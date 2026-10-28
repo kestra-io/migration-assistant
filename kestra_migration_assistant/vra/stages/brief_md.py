@@ -95,8 +95,10 @@ def defects_appendix(r: dict, assess: dict) -> list[str]:
             a = str(d.get("answer") or "")
             how = ("kept, as today" if d.get("assumed") or a.startswith("keep") else
                    "fixed in the conversion" if a.startswith("fix") else
-                   ("to decide: " + ("it fails every time or is a security problem" if d.get("asked") else "open"))
-                   if not a else a)
+                   a if a else
+                   "settled with the certificate checks" if d.get("covered_by") else
+                   "its workflow is in no wave: nothing to decide" if not d.get("in_plan", True) else
+                   "to decide: " + ("it fails every time or is a security problem" if d.get("asked") else "open"))
             L.append(f"- {today[:1].upper()}{today[1:]}. ({how})")
         L.append("")
     return L

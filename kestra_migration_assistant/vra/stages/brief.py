@@ -170,6 +170,7 @@ def run() -> dict:
         st = Y.state(d["decision"], loaded, it) if it else {"state": "open", "answer": None}
         d["today"] = it.get("today") or d["what"]
         d["asked"] = defaults.asked(it) if it else False
+        d["in_plan"] = bool(it)                     # its workflow is in a wave: the conversion decides it
         d["answer"] = st["answer"] if st["state"] == "answered" else None
         d["assumed"] = st["state"] == "answered" and "(assumed" in str((loaded.get("closed") or {}).get(
             d["decision"], {}).get("answer") or "")
