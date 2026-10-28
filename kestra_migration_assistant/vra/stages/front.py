@@ -533,8 +533,23 @@ def needs(assess: dict, brief: dict, st: dict) -> list[str]:
         return bool(set(x["members"]) & blocking)
 
     out: list[tuple[bool, str]] = []
-    defects = [x for x in shown if x["id"].startswith(("defects.", "defect."))]
+    adds = brief.get("package_additions") or []
+    if adds:
+        said = [f"{a['what']} (called by {_and(a['called_by'][:2])})" for a in adds[:4]]
+        out.append((True, f"**{cap(word(len(adds)))} {_s(len(adds), 'piece')} of code the export does not have**: "
+                          f"{_and(said + ([f'{len(adds) - 4} more'] if len(adds) > 4 else []))}. Add "
+                          f"{_s(len(adds), 'it', 'them')} to the package and run again: \"Add to the package\" "
+                          "below says how."))
+    est = [x for x in shown if x["id"].startswith("estate.")]
+    if est:
+        topics = [EST_TOPIC.get(x["id"].split(".")[1], "a module many workflows call") for x in est]
+        out.append((True, f"**{cap(word(len(est)))} {_s(len(est), 'question')} about the whole estate**, under "
+                          f"`estate:` at the top of `answers.yaml`: {_and(list(dict.fromkeys(topics)))}. Each answer "
+                          "settles many questions at once."))
+    shown = [x for x in shown if not x["id"].startswith("estate.")]
+    defects = [x for x in shown if x["id"].startswith(("defects.", "defect.", "same.defect."))]
     missing = [x for x in shown if x["id"].startswith("missing.")]
+    sq = [x for x in shown if x["id"].startswith("same.") and x not in defects]
     asked = {it["key"]: (it.get("ask") or "") + " " + (it.get("question") or "") for it in Y.items()} if missing else {}
     for x in shown:
         k, ms = x["id"], x["members"]
@@ -557,11 +572,21 @@ def needs(assess: dict, brief: dict, st: dict) -> list[str]:
             if x is not defects[0]:
                 continue
             total = sum(len(d["members"]) for d in defects)
-            nw = len({d["id"].split(".")[1] for d in defects})
+            ne = sum(d.get("lines", 1) for d in defects)
             out.append((any(holds(d) for d in defects),
                         f"**{cap(word(total)) if total <= 10 else total} possible {_s(total, 'defect')}** in "
-                        f"{word(nw)} {_s(nw, 'workflow')}, one entry per workflow: keep them, fix them, or decide "
-                        "each. They are on [each workflow's page](workflows/index.html)."))
+                        f"{word(ne)} {_s(ne, 'answer')}, one per workflow and one per action several workflows "
+                        "share: keep them, fix them, or decide each. They are on [each workflow's "
+                        "page](workflows/index.html)."))
+            continue
+        if x in sq:
+            if x is not sq[0]:
+                continue
+            n_sq = sum(d.get("lines", 1) for d in sq)
+            n_it = sum(len(d["members"]) for d in sq)
+            out.append((any(holds(d) for d in sq),
+                        f"**{cap(word(n_sq)) if n_sq <= 10 else n_sq} {_s(n_sq, 'question')} asked once for "
+                        f"{n_it} places** where workflows ask the same thing."))
             continue
         if k == "suggested":
             says: list[str] = []
@@ -580,7 +605,8 @@ def needs(assess: dict, brief: dict, st: dict) -> list[str]:
         elif k == "specs":
             line = f"**One look at the {word(n)} specs**: are they right?"
         elif k == "questions":
-            line = f"**{cap(word(n)) if n <= 10 else n} questions from reading the workflows.**"
+            n = x.get("lines", n)
+            line = f"**{cap(word(n)) if n <= 10 else n} {_s(n, 'question')} from reading the workflows.**"
         elif k == "about-the-estate":
             ex = next((QUESTION[m] for m in ms if m in QUESTION and m != "q1-scope"), "")
             line = (f"**{cap(word(n))} questions about the estate** the export cannot answer"
@@ -596,6 +622,34 @@ def needs(assess: dict, brief: dict, st: dict) -> list[str]:
             line = f"**{cap(phrase.get(f, f.replace('-', ' ')))}.**"
         out.append((holds(x), line))
     return [line for h, line in out if h] + [line + " Nothing waits on these yet." for h, line in out if not h]
+
+
+EST_TOPIC = {"started-by": "what starts the workflows", "config": "where settings live", "secrets": "where secrets come "
+             "from", "non-production": "where flows run before production", "remote": "calls to other vRO clusters",
+             "scope": "what is out of scope"}
+
+
+def estate_lines(brief: dict) -> list[str]:
+    """The estate answers and the assumptions, for the brief: what applies estate-wide and how much it settled."""
+    out = []
+    for e in brief.get("estate_answers") or []:
+        if e.get("answer"):
+            out.append(f"{e['question']} **{e['answer']}**" + (f" (settled {e['settles']} {_s(e['settles'], 'question')})"
+                                                               if e.get("settles") else ""))
+    for a in brief.get("assumptions") or []:
+        if a["holds"]:
+            out.append(f"Assumed: {a['assumed']}" + (f" (settled {a['settles']} {_s(a['settles'], 'question')})"
+                                                      if a.get("settles") else ""))
+        else:
+            out.append(f"Not assumed, by your answer: {a['assumed']} Instead: **{a['instead']}**")
+    return out
+
+
+def package_lines(brief: dict) -> list[str]:
+    """What to add to the package, each with what calls it and how."""
+    return [f"**{a['what']}**, called by {_and(a['called_by'][:3])}"
+            + (f" and {len(a['called_by']) - 3} more" if len(a["called_by"]) > 3 else "") + f". {a['how']}."
+            for a in brief.get("package_additions") or []]
 
 
 def retire_line(assess: dict, brief: dict) -> str | None:
@@ -801,11 +855,18 @@ def _wave_bullet(w: dict, assess: dict, brief: dict, sn: dict) -> str:
 
 def _status(brief: dict, st: dict, num: dict) -> dict:
     sign = ((brief.get("input") or {}).get("sign") or brief.get("approval") or {})
-    if st["blocking"]:
-        k = st.get("holding") or len(st["blocking"])
-        head = f"Next step: answer {k} open {_s(k, 'item')}, then run `{C.run_command()}` again."
+    pk = len(st.get("package") or [])
+    add = f" and add {pk} missing {_s(pk, 'piece')} of code to the package" if pk else ""
+    if st["blocking"] and st.get("holding"):
+        k = st["holding"]
+        head = f"Next step: answer {k} {_s(k, 'question')}{add}, then run `{C.run_command()}` again."
         body = (f"{'They are' if k != 1 else 'It is'} in `your-input/answers.yaml`, with what the code suggests "
-                "where it can.")
+                "where it can" + (", and the pieces to add are listed below" if pk else "") + ".")
+        cls = "wait"
+    elif pk:
+        head = (f"Next step: add {pk} missing {_s(pk, 'piece')} of code to the package, then run "
+                f"`{C.run_command()}` again.")
+        body = "Each one is listed below with what calls it and how to add it."
         cls = "wait"
     elif not brief["plan"]["waves"]:
         nb = len(brief["plan"]["blocked"]) + len(brief["plan"].get("not_waved") or [])
@@ -1040,6 +1101,7 @@ def document_no_model(assess: dict, brief: dict) -> list[tuple]:
     rl = retire_line(assess, brief)
     if rl:
         B += ([] if nd else [("h2", "What we need from you")]) + [("p", rl)]
+    B += _estate_blocks(brief)
 
     B.append(("h2", "Where to check"))
     where = ([("vra.html", "The vRA flow", "how a request reaches each workflow")] if n_vra else []) + [
@@ -1096,13 +1158,14 @@ def document(assess: dict, brief: dict) -> list[tuple]:
     B.append(("h2", "What we need from you"))
     if nd:
         B.append(("ul", nd))
-        B.append(("p", "Each is one entry in `your-input/answers.yaml`."))
+        B.append(("p", "Each is an entry in `your-input/answers.yaml`, except the code to add to the package."))
     else:
         B.append(("p", "Nothing is open. " + ("Sign in `your-input/answers.yaml` when the plan reads right."
                                               if not st["signed"] else "The plan is signed.")))
     rl = retire_line(assess, brief)
     if rl:
         B.append(("p", rl))
+    B += _estate_blocks(brief)
     warn = (brief.get("input") or {}).get("warnings")
     if warn:
         B.append(("sub", "Problems in your-input/answers.yaml: " + "; ".join(warn)))
@@ -1168,6 +1231,22 @@ def _how_class(shown: str) -> str:
         if shown in (how, HOW_SHOWN.get(how)):
             return cls
     return "wait" if shown in WAITS.values() else "todo"
+
+
+def _estate_blocks(brief: dict) -> list[tuple]:
+    """The estate answers and assumptions, and what to add to the package, each under its own heading."""
+    B: list[tuple] = []
+    pl = package_lines(brief)
+    if pl:
+        B += [("h2", "Add to the package"),
+              ("p", "These are called by the workflows but are not in the export. No question is asked about them: "
+                    "add each one and run again, and its calls are read like the rest."), ("ul", pl)]
+    el = estate_lines(brief)
+    if el:
+        B += [("h2", "Applied to the whole estate"),
+              ("p", "Your answers under `estate:` in `your-input/answers.yaml`, and what the tool assumes instead of "
+                    "asking. Change an answer, or override an assumption, there."), ("ul", el)]
+    return B
 
 
 def _second_kpi(brief: dict, st: dict, num: dict, sp: dict) -> tuple[str, str]:

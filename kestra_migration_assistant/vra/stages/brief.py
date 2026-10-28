@@ -60,7 +60,8 @@ def run() -> dict:
     answers = preflight.load_answers()
     wf = assess["workflows"]
     by_short = {w["short"]: u for u, w in wf.items()}
-    overrides = corrections.outcomes(by_short)
+    from . import interview
+    overrides = {**interview.scope_outcomes(by_short), **corrections.outcomes(by_short)}
 
     fok = {c["cluster_id"]: c["first_of_a_kind"] for c in assess["clusters"]}
     specs = {u: C.spec(u) for u in wf}
@@ -135,8 +136,10 @@ def run() -> dict:
 
     # everything a person answers goes in your-input/answers.yaml; register it, then read it back
     asked = G.entries(plan)
-    Y.register("brief", G.input_items(asked) + spec_question_items(qgroups, wf, tri, qkeys, asked)
-               + RV.input_items(specs, wf))
+    from . import planner
+    registered = G.input_items(asked) + spec_question_items(qgroups, wf, tri, qkeys, asked) + RV.input_items(specs, wf)
+    planner.assign_patterns(registered, assess, tri)
+    Y.register("brief", registered)
     Y.register_unblocks(preflight_unblocks(plan))
     loaded = Y.load()
     reviews = RV.load(specs, wf, loaded)
@@ -154,6 +157,7 @@ def run() -> dict:
     translate.ready(assess, result, translation)
     result["translation"] = translation
     result["input"] = input_summary(loaded)
+    result.update(estate_summary(loaded))
     from . import front
     rec["produced_by"] = front.recommendation_text(assess, result)
     C.write_json(os.path.join(C.BRIEF, "brief.json"), result)
@@ -364,6 +368,31 @@ def input_summary(loaded: dict) -> dict:
         out[g] = {"open": sum(len(f["open"]) for f in fam.values()), "done": sum(f["done"] for f in fam.values()),
                   "families": fam}
     return out
+
+
+def estate_summary(loaded: dict) -> dict:
+    """What applies estate-wide, for the pages: the counts answers.yaml shows (your_input.count, so the brief and the
+    file always agree), the estate answers and what each settled, the assumptions and whether each holds, and what to
+    add to the package (patterns.py)."""
+    from . import interview, patterns
+    from . import your_input as Y
+    its = Y.items()
+    shut = Y.closers(loaded)
+    estate, assumed = [], []
+    for it in its:
+        k = it["key"]
+        e = loaded["entries"].get(k) or {}
+        if it.get("family") == "estate":
+            estate.append({"id": k, "question": it.get("question") or it["ask"],
+                           "answer": interview.answer_of(it, e), "settles": len(shut.get(k) or [])})
+        elif it.get("family") == "assume":
+            over = interview.answer_of(it, e)
+            assumed.append({"id": k, "assumed": it.get("assumed"), "holds": over is None, "instead": over,
+                            "where": it.get("where") or [], "settles": len(shut.get(k) or [])})
+    pj, aj = os.path.join(C.ASSESS, "patterns.json"), os.path.join(C.ASSESS, "assess.json")
+    pat = patterns.run() if not os.path.exists(pj) or C.mtime(pj) < C.mtime(aj) else patterns.load()
+    return {"questions": Y.count(loaded), "estate_answers": estate, "assumptions": assumed,
+            "package_additions": pat.get("missing") or []}
 
 
 def _write_csv(assess, tri, act_tri, specs):

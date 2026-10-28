@@ -330,12 +330,8 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                                                      why="a blocking question in the workflow's spec; the "
                                                          "decision is the answer")})
             for x in ev.get("missing", []):
-                crit.append({"criterion": f"Owner supplies {x}, called by {_nm(wf, u)}, or says what it does (not in the export)",
-                             "source": "unexported calls",
-                             "closes": G.by_decision(f"missing.{G.key_part(x)}",
-                                                     f"{x} is called by {wf[u].get('name') or u} but is not in the export. "
-                                                     "Add it to the export folder and run again, or say what it does.",
-                                                     ["exported", "described in the answer", "not needed"])})
+                crit.append({"criterion": f"{x}, called by {_nm(wf, u)}, is added to the package (it is not in the "
+                                          "export)", "source": "unexported calls", "closes": G.by_package(x)})
         for u in spec_review:
             crit.append({"criterion": f"Owner reviews the spec for {_nm(wf, u)} (spec confidence medium)",
                          "source": "spec review" if u in reviewed else "spec", "closes": G.by_review(u, _sh(wf, u))})

@@ -40,6 +40,7 @@ def _answers(path: str) -> dict[str, dict[str, str]]:
                 walk(it.get("each"))
         walk(doc.get(section))
     out["signed_for"] = doc.get("signed_for")
+    out["estate"] = {e["id"]: e for e in doc.get("estate") or []}
     return out
 
 
@@ -90,5 +91,21 @@ def test_only_what_is_new_is_asked_and_the_signature_stays(upgraded):
     assert not before["unanswered"]
     new = after["unanswered"]
     assert new and not new & set(before["answered"])        # nothing 1.0.0 had answered is asked again
-    assert {"endpoint.ansible-tower", "endpoint.ms-teams", "endpoint.slack", "missing.purgeorphanedvolumes"} <= new
+    # 1.2.0: the new systems' endpoints wait on one estate question, and missing code is not asked: it is listed
+    est = after["estate"]
+    assert {"endpoint.ansible-tower", "endpoint.ms-teams", "endpoint.slack"} <= set(
+        est["estate.non-production"].get("settles") or [])
+    assert "missing.purgeorphanedvolumes" not in new
     assert after["signed_for"] == "full plan"
+
+
+def test_a_1_1_0_file_still_loads_through_the_public_functions(upgraded):
+    """The closed half reads answers.yaml through your_input.load, items, state and signature: their signatures and
+    their reading of a file written before 1.2.0 hold."""
+    import inspect
+
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    assert list(inspect.signature(Y.load).parameters) == ["path"]
+    assert list(inspect.signature(Y.items).parameters) == []
+    assert list(inspect.signature(Y.state).parameters) == ["key", "loaded", "it"]
+    assert list(inspect.signature(Y.signature).parameters) == ["loaded"]

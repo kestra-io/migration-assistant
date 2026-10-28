@@ -224,7 +224,24 @@ def spec_prompt(m: dict, callees: list[dict], acts: list[dict], omitted: list[di
         model_json=safety.wrap("workflow", json.dumps(_trim_model(m), indent=1)),
         callee_block=_callee_block(callees),
         action_block=_action_block(acts, omitted) + _entry_block(entry or []) + _elements_block(elements or [])
-        + _sharing_block(sharing or [])))
+        + _sharing_block(sharing or []) + (_owner_block(owner_context()) if estate else "")))
+
+
+def owner_context() -> str:
+    """What the owner said about the whole estate (interview.context(), sanitized). Empty when nothing is answered,
+    so the prompt is the same as before and its cached reply still counts."""
+    from kestra_migration_assistant.vra.stages import common as C
+    if not C.ESTATE or not C.ANSWERS:
+        return ""
+    from kestra_migration_assistant.vra.stages import interview
+    return interview.context()
+
+
+def _owner_block(text: str) -> str:
+    if not text:
+        return ""
+    return ("\nWHAT THE OWNER SAID ABOUT THE WHOLE ESTATE (context for every workflow: do not ask again what it "
+            "settles):\n" + safety.wrap("estate answers", text) + "\n")
 
 
 # Elements a prompt shows: every element in a category the workflow or an action it reaches opens. A text

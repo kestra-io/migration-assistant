@@ -207,7 +207,7 @@ def test_3_a_question_asked_for_several_workflows_of_one_group_is_listed_once(es
 def test_3_suspected_defects_are_their_own_list_and_a_decision_each(estate):
     d = estate["brief"]["suspected_defects"]
     assert [(x["workflow"], x["n"]) for x in d] == [(CREATE, 1), (DELETE, 1), (DELETE, 2)]
-    assert "possible defects** in two workflows, one entry per workflow" in estate["md"]
+    assert "possible defects** in two answers, one per workflow and one per action several workflows share" in estate["md"]
     assert "## Suspected defects" in estate["oq"]
     dec = _decisions(estate)
     k = d[1]["decision"]

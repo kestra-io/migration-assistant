@@ -32,7 +32,7 @@ def status_of(brief: dict) -> dict:
     inp = brief.get("input") or {}
     keys_open = {it["key"] for g in ("confirm", "answer", "review") for f in ((inp.get(g) or {}).get("families") or {}).values()
                  for it in f["open"]}
-    blocks, blocking, after, start = [], set(), {}, []
+    blocks, blocking, after, start, package = [], set(), {}, [], set()
     for w in brief["plan"]["waves"]:
         name = f"Wave {w['wave']}"
         crit = [e for e in w["entry_criteria"] if e.get("status") != "done"
@@ -40,6 +40,7 @@ def status_of(brief: dict) -> dict:
         gates = [e["closes"]["wave"] for e in w["entry_criteria"] if e.get("status") != "done"
                  and (e.get("closes") or {}).get("kind") == "gate"]
         ks = {(e.get("closes") or {}).get("field") for e in crit}
+        package |= {(e.get("closes") or {}).get("what") for e in crit if (e.get("closes") or {}).get("kind") == "package"}
         if crit:
             blocks.append(name)
             blocking |= {k for k in ks if k in keys_open}
@@ -51,21 +52,28 @@ def status_of(brief: dict) -> dict:
     sign = (inp.get("sign") or brief.get("approval") or {})
     signed = bool(sign.get("signed"))
     n_open = len(keys_open)
-    # a person counts the entries of answers.yaml, where a group of items is one entry
+    # a person counts the empty answer lines of answers.yaml (your_input.count), never the items behind them
     entries = inp.get("shown")
     n_hold = len(blocking)
     if entries is not None:
-        n_open = len(entries)
-        n_hold = sum(1 for x in entries if set(x["members"]) & blocking)
+        n_open = sum(x.get("lines", 1) for x in entries)
+        n_hold = sum(x.get("lines", 1) for x in entries if set(x["members"]) & blocking or x["id"].startswith("estate."))
+    add = (f" and add {len(package)} missing piece{'s' if len(package) != 1 else ''} of code to the package"
+           if package else "")
     order = " ".join(f"{w} starts once {_and(ds)} {'is' if len(ds) == 1 else 'are'} done." for w, ds in after.items())
     if (brief.get("recommendation") or {}).get("verdict") == "needs a model":
         line = ("Next step: run it again with a model. This run had none, so what each workflow does, its possible "
                 "defects, and whether to convert or rebuild it are not judged yet.")
-    elif blocking:
+    elif blocking and n_hold:
         k = n_hold
-        line = (f"Next step: answer {k} open item{'s' if k != 1 else ''}, then run `{C.run_command()}` again. "
-                f"{'They hold' if k != 1 else 'It holds'} {_and(blocks)}"
+        line = (f"Next step: answer {k} question{'s' if k != 1 else ''}{add}, then run `{C.run_command()}` again. "
+                f"{'They hold' if k != 1 or add else 'It holds'} {_and(blocks)}"
                 + (f"; {n_open - k} more block nothing" if n_open > k else "") + ".")
+    elif package:
+        line = (f"Next step: add {len(package)} missing piece{'s' if len(package) != 1 else ''} of code to the package "
+                f"(the brief lists how), then run `{C.run_command()}` again. {'They hold' if len(package) != 1 else 'It holds'} "
+                f"{_and(blocks)}" + (f"; {n_open} open question{'s' if n_open != 1 else ''} block nothing" if n_open else "")
+                + ".")
     elif blocks:
         line = f"Next step: nothing from you yet. {_and(blocks)} cannot start until the earlier waves have run."
     elif not brief["plan"]["waves"]:
@@ -79,7 +87,7 @@ def status_of(brief: dict) -> dict:
         line = (f"Ready: {_and(start)} can start." if start else f"Signed for {scope}. Ready to convert.") \
             + (f" {order}" if order else "") + (" The signature covers Wave 1 only." if start and scope == "Wave 1"
                                                 and len(brief["plan"]["waves"]) > 1 else "")
-    return {"line": line, "blocking": sorted(blocking), "open": n_open, "holding": n_hold, "blocks": blocks, "after": after,
+    return {"line": line, "blocking": sorted(blocking), "open": n_open, "holding": n_hold, "package": sorted(package), "blocks": blocks, "after": after,
             "start": start, "order": order, "signed": signed}
 
 

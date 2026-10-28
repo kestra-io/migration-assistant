@@ -65,6 +65,12 @@ def by_decision(key: str, question: str, options: list[str] | None = None, recom
             "plain": plain}
 
 
+def by_package(what: str) -> dict:
+    """Code the export does not have: closed by adding it to the package and running again, never by an answer."""
+    return {"kind": "package", "file": "the package", "field": f"package.{key_part(what)}", "key": f"package.{key_part(what)}",
+            "what": what, "when": "Add it to the package and run again (the brief lists how)"}
+
+
 def by_gate(wave: int) -> dict:
     """An earlier wave's exit: a gate the migration closes, not a question (no file a person edits)."""
     return {"kind": "gate", "file": None, "field": f"wave-exit.{wave}", "key": f"wave-exit.{wave}", "wave": wave,
@@ -224,7 +230,7 @@ def close(plan: dict, *, answers: dict, reviews: dict, decisions: dict, approval
                     e.update(status=BLOCKED, note=d["why"] + "; this stops the wave")
                 elif d.get("state") == "open" and d.get("why") != "not answered":
                     e["note"] = d["why"]
-            elif kind == "gate":
+            elif kind in ("gate", "package"):
                 e["note"] = c["when"]
 
 
@@ -248,6 +254,6 @@ def where(e: dict) -> str:
     c = e.get("closes") or {}
     if not c:
         return ""
-    if c.get("kind") == "gate":
+    if c.get("kind") in ("gate", "package"):
         return c["when"]
     return f"`{c['file']}` → `{c['field']}`"

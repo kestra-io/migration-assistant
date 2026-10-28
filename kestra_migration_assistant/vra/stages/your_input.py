@@ -69,11 +69,12 @@ def header() -> str:
     return HEADER + C.run_command()
 GROUPS = ("confirm", "answer", "review", "sign")
 YES = ("yes", "y", "true", "confirmed", "confirm", "ok", "x")
-TOOL_FIELDS = ("id", "question", "suggested", "answer", "each")
+TOOL_FIELDS = ("id", "question", "options", "suggested", "assumed", "answer", "closes", "settles", "each")
 OLD_SECTIONS = ("blocking", "open", "done", "confirm", "answer", "review", "no_longer_asked")
 OLD_FIELDS = ("answer", "confirmed", "by", "date", "note", "spec")    # the old format's own fields
 GONE = "No longer asked: "
-SECTIONS = ("open", "answered", "no_longer_asked")
+SECTIONS = ("estate", "open", "answered", "no_longer_asked")
+ESTATE_FAMILIES = ("estate", "assume")
 SIGN = {"full": "full plan", "wave-1": "wave 1"}
 
 
@@ -109,7 +110,8 @@ def items() -> list[dict]:
     reg = registry()
     extra = reg.get("_unblocks") or {}
     out, seen = [], set()
-    for section in ("preflight", "brief", *sorted(k for k in reg if k not in ("preflight", "brief") and not k.startswith("_"))):
+    for section in ("estate", "preflight", "brief",
+                    *sorted(k for k in reg if k not in ("estate", "preflight", "brief") and not k.startswith("_"))):
         for it in reg.get(section) or []:
             if it["key"] not in seen:
                 seen.add(it["key"])
@@ -161,7 +163,8 @@ def _renames(old: list[dict], new: list[dict]) -> dict[str, str]:
 def _memo(reg: dict | None = None) -> dict:
     m = (reg if reg is not None else registry()).get("_memo") or {}
     return {"confirmed": dict(m.get("confirmed") or {}), "reviewed": dict(m.get("reviewed") or {}),
-            "groups": dict(m.get("groups") or {}), "stand_in": bool(m.get("stand_in"))}
+            "groups": dict(m.get("groups") or {}), "stand_in": bool(m.get("stand_in")),
+            "closures": dict(m.get("closures") or {})}
 
 
 # ------------------------------------------------------------------ reading
@@ -228,6 +231,9 @@ def load(path: str | None = None) -> dict:
                     continue
                 each = e.get("each")
                 subs: list = each if isinstance(each, list) else []
+                if subs and str(e["id"]).strip().startswith("same."):
+                    out.setdefault("file_groups", {})[str(e["id"]).strip()] = [
+                        str(x["id"]).strip() for x in subs if isinstance(x, dict) and str(x.get("id") or "").strip()]
                 for sub in [e, *subs]:
                     if not isinstance(sub, dict) or not str(sub.get("id") or "").strip():
                         out["warnings"].append(f"an item under `{sec}:` has no `id:`, so it is not read")
@@ -244,6 +250,8 @@ def load(path: str | None = None) -> dict:
     out["items"] = {it["key"]: it for it in its}
     out["groups"] = groups(its, out)
     out["group_of"] = {k: g for g, ks in out["groups"].items() for k in ks}
+    from . import planner
+    out["closed"] = planner.closed(its, out)
     return out
 
 
@@ -302,7 +310,14 @@ def state(key: str, loaded: dict | None = None, it: dict | None = None) -> dict:
     memo = loaded.get("memo") or {}
     rec = {"state": "open", "answer": ans or None, "by": None, "date": None, "note": None, "why": "not answered"}
     if is_open(ans):
+        shut = (loaded.get("closed") or {}).get(key)
+        if shut:
+            rec.update(state="answered", answer=shut["answer"], why=f"settled by {shut['by']}: {shut['answer']}")
         return rec
+    opts = it.get("options") or []
+    if ans.strip().isdigit() and 1 <= int(ans.strip()) <= len(opts):
+        ans = str(opts[int(ans.strip()) - 1])                # an option, by its number
+        rec["answer"] = ans
     sug = _text(it.get("suggested"))
     if it.get("group") == "confirm" and sug and _yes(ans):
         took = (memo.get("confirmed") or {}).get(key) or _text(e.get("suggested")) or sug
@@ -401,12 +416,15 @@ def _field(name: str, v, first: bool) -> list[str]:
 
 def _entry(k: str, e: dict, each: list[tuple[str, dict]] | None = None) -> list[str]:
     L = _field("id", k, True)
-    for f in ("question", "suggested", "answer"):
-        if f in e and (f == "answer" or e[f] not in (None, "")):
+    for f in ("question", "assumed", "options", "suggested", "answer"):
+        if f in e and (f == "answer" or e[f] not in (None, "", [])):
             L += _field(f, e[f], False)
     for f, v in e.items():                           # a field of the person's own
         if f not in TOOL_FIELDS:
             L += _field(f, v, False)
+    for f in ("closes", "settles"):
+        if e.get(f):
+            L += _field(f, e[f], False)
     if each:
         L.append("    each:")
         for sk, se in each:
@@ -426,7 +444,7 @@ def _entry(k: str, e: dict, each: list[tuple[str, dict]] | None = None) -> list[
 # A group's answer counts for the members the file showed when it was given (the memo keeps them), never for an
 # item that appears later: that one is asked on its own. Every stage still reads each item by its own id (state).
 
-SETTLED_BY_ONE = ("suggested", "defects", "specs")
+SETTLED_BY_ONE = ("suggested", "defects", "specs", "same")
 DEFECT_ANSWERS = {"keep all": "keep", "keep them all": "keep", "keep": "keep", "keep each": "keep",
                   "fix all": "fix", "fix them all": "fix", "fix": "fix", "fix each": "fix"}
 
@@ -448,11 +466,34 @@ def group_of(it: dict) -> str | None:
     return None
 
 
-def groups(its: list[dict], loaded: dict | None = None) -> dict[str, list[str]]:
-    """Group id -> member keys, in the order asked: groups of two or more, and a group already answered."""
+def merges(loaded: dict | None = None) -> dict[str, list[str]]:
+    """Groups the re-planning made (`same.<what>`), from the registry and from the file itself (so a file replayed
+    in a fresh folder keeps them): group id -> member keys."""
     out: dict[str, list[str]] = {}
+    for gid, rec in ((registry().get("_merges") or {}).items()):
+        out[gid] = list(rec.get("members") or [])
+    for gid, ms in ((loaded or {}).get("file_groups") or {}).items():
+        out[gid] = list(dict.fromkeys(out.get(gid, []) + ms))
+    return out
+
+
+def groups(its: list[dict], loaded: dict | None = None) -> dict[str, list[str]]:
+    """Group id -> member keys, in the order asked: groups of two or more, and a group already answered. One
+    question per pattern first (`same.<what>`: a shared action's possible defect, the same question of near-duplicate
+    workflows, a group the re-planning made), then the groups by kind."""
+    out: dict[str, list[str]] = {}
+    entries = (loaded or {}).get("entries") or {}
+    pats: dict[str, list[str]] = {}
     for it in its:
-        g = group_of(it)
+        if it.get("pattern"):
+            pats.setdefault(it["pattern"], []).append(it["key"])
+    merged = {k: g for g, ks in merges(loaded).items() for k in ks}
+    for it in its:
+        if it.get("family") in ESTATE_FAMILIES:
+            continue
+        p = it.get("pattern")
+        use_p = p and (len(pats[p]) > 1 or not is_open((entries.get(p) or {}).get("answer")))
+        g = merged.get(it["key"]) or (p if use_p else None) or group_of(it)
         if g:
             out.setdefault(g, []).append(it["key"])
     answered = {g for g in out if loaded and not is_open((loaded["entries"].get(g) or {}).get("answer"))}
@@ -482,12 +523,22 @@ def via_group(key: str, loaded: dict) -> str | None:
         return "yes" if _yes(ga) else None
     if kind == "defects":
         return DEFECT_ANSWERS.get(ga.lower().rstrip("."))
+    if kind == "same":
+        if _all_defects(gid, loaded):
+            return DEFECT_ANSWERS.get(ga.lower().rstrip("."))
+        return ga
     # specs: yes, or a remark for the workflows it names (all of them when it names none)
     if _yes(ga):
         return "yes"
     its = loaded.get("items") or {}
     named = [k for k in covered(gid, loaded) if _names_workflow(ga, str((its.get(k) or {}).get("workflow") or ""))]
     return ga if not named or key in named else "yes"
+
+
+def _all_defects(gid: str, loaded: dict) -> bool:
+    its = loaded.get("items") or {}
+    ms = covered(gid, loaded)
+    return bool(ms) and all((its.get(m) or {}).get("family") == "defect" for m in ms)
 
 
 def _names_workflow(text: str, name: str) -> bool:
@@ -505,13 +556,25 @@ def _expands(gid: str, loaded: dict) -> bool:
     ga = _text((loaded["entries"].get(gid) or {}).get("answer"))
     if is_open(ga) or _kind(gid) == "specs":
         return False
-    return (_kind(gid) == "suggested" and not _yes(ga)) or (_kind(gid) == "defects" and
-                                                            ga.lower().rstrip(".") not in DEFECT_ANSWERS)
+    return (_kind(gid) == "suggested" and not _yes(ga)) or ((_kind(gid) == "defects" or (
+        _kind(gid) == "same" and _all_defects(gid, loaded))) and ga.lower().rstrip(".") not in DEFECT_ANSWERS)
 
 
 def group_question(gid: str, its: list[dict]) -> str:
     n = len(its)
     kind = _kind(gid)
+    if kind == "same":
+        rec = (registry().get("_merges") or {}).get(gid) or {}
+        if rec.get("question"):
+            return str(rec["question"])
+        wfs = list(dict.fromkeys(w for w in (_workflow_of(it) for it in its) if w))
+        where = (f"{len(wfs)} workflows ({', '.join(wfs[:3])}{f' and {len(wfs) - 3} more' if len(wfs) > 3 else ''})"
+                 if len(wfs) > 1 else f"{n} places")
+        q = _member_question(its[0])
+        if all(it.get("family") == "defect" for it in its):
+            q = re.sub(r"\s*Keep the current behavior, or fix it\?$", "", q)
+            return f"The same possible defect in {where}: {q} Keep it everywhere, fix it everywhere, or decide each?"
+        return f"Asked of {where}, one answer for all: {q}"
     if kind == "suggested":
         return "Accept every suggested answer below? (yes; to change one, add answer: under it)"
     if kind == "defects":
@@ -570,6 +633,13 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
     gs = groups(its, loaded)
     gof = {k: g for g, ks in gs.items() for k in ks}
     states = {it["key"]: state(it["key"], loaded, it) for it in its}
+    shut = closers(loaded)
+
+    def closed(k: str) -> bool:
+        """Settled by another answer (estate, assumption, re-planning) and not answered on its own: listed under
+        the answer that settled it (`closes:`), not asked."""
+        return (k in (loaded.get("closed") or {}) or k in (loaded.get("pending") or {})) and is_open(
+            (loaded["entries"].get(k) or {}).get("answer"))
 
     def single(it: dict, qtext: str | None = None) -> dict:
         k = it["key"]
@@ -583,6 +653,8 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
             e["suggested"] = st["answer"] if st["state"] == "answered" and _yes(old.get("answer")) else sug
         e["answer"] = old.get("answer")
         e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
+        if shut.get(k):
+            e["closes"] = shut[k]
         return e
 
     def done(k: str) -> bool:
@@ -592,15 +664,19 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
     seen: set[str] = set()
     for it in its:
         k = it["key"]
-        if k in seen:
+        if k in seen or it.get("family") in ESTATE_FAMILIES:
             continue
         gid = gof.get(k)
         if not gid:
             seen.add(k)
+            if closed(k):
+                continue
             units.append((k, single(it), [], not done(k), blocks_a_wave(it)))
             continue
-        members = [by_key[m] for m in gs[gid]]
+        members = [by_key[m] for m in gs[gid] if not closed(m)]
         seen |= set(gs[gid])
+        if not members and is_open((loaded["entries"].get(gid) or {}).get("answer")):
+            continue
         kind = _kind(gid)
         gold = loaded["entries"].get(gid) or {}
         ga = _text(gold.get("answer"))
@@ -618,11 +694,13 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
         if kind in SETTLED_BY_ONE or not is_open(gold.get("answer")):      # a line of the person's own is kept
             e["answer"] = gold.get("answer")
         e.update({f: v for f, v in gold.items() if f not in TOOL_FIELDS})
+        if shut.get(gid):
+            e["closes"] = shut[gid]
         each = []
         for m in inside:
             mk = m["key"]
             own = not is_open((loaded["entries"].get(mk) or {}).get("answer"))
-            show = (kind == "suggested" or kind not in SETTLED_BY_ONE or own
+            show = (kind in ("suggested", "same") or kind not in SETTLED_BY_ONE or own
                     or (expand and kind == "defects"))
             if not show:
                 continue
@@ -634,6 +712,8 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
             is_open_ = is_open(ga) or (expand and any(not done(m["key"]) for m in inside))
         else:
             is_open_ = any(not done(m["key"]) for m in inside)
+        if not members:
+            is_open_ = False
         units.append((gid, e, each, is_open_, any(blocks_a_wave(m) and not done(m["key"]) for m in members)))
         for m in alone:
             units.append((m["key"], single(m), [], True, blocks_a_wave(m)))
@@ -655,6 +735,71 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
     return opened, answered, sorted(gone, key=lambda x: x[0])
 
 
+def closers(loaded: dict) -> dict[str, list[str]]:
+    """Answer id -> the items its answer settled, as answers.yaml lists them under it (`closes:`)."""
+    out: dict[str, list[str]] = {}
+    for k, c in sorted((loaded.get("closed") or {}).items()):
+        if is_open((loaded["entries"].get(k) or {}).get("answer")):
+            out.setdefault(c["by"], []).append(k)
+    return out
+
+
+def estate_rows(its: list[dict], loaded: dict) -> list[tuple]:
+    """The `estate:` section: the estate questions, then the assumptions, each with what its answer settles."""
+    shut = closers(loaded)
+    rows: list[tuple] = []
+    for fam in ESTATE_FAMILIES:
+        for it in its:
+            if it.get("family") != fam:
+                continue
+            k = it["key"]
+            old = loaded["entries"].get(k) or {}
+            e: dict[str, Any] = {}
+            if fam == "assume":
+                e["assumed"] = it.get("assumed") or it["ask"]
+            else:
+                e["question"] = it.get("question") or it["ask"]
+                if it.get("options"):
+                    e["options"] = list(it["options"])
+                if it.get("suggested"):
+                    e["suggested"] = it["suggested"]
+            e["answer"] = old.get("answer")
+            e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
+            if shut.get(k):
+                e["closes"] = shut[k]
+            later = sorted(x for x, by in (loaded.get("pending") or {}).items() if by == k)
+            if later:
+                e["settles"] = later
+            rows.append((k, e, []))
+    return rows
+
+
+def _lines(e: dict, each: list) -> int:
+    """How many answers an entry still waits for: its own answer line, and each member's."""
+    return int("answer" in e and is_open(e.get("answer"))) + sum(
+        1 for _k, me in each if "answer" in me and is_open(me.get("answer")))
+
+
+def count(loaded: dict | None = None) -> dict:
+    """What answers.yaml waits for, counted the way the file shows it: `open` is the number of empty answer lines
+    a person can fill (an estate question, an entry, a member listed under a group), `entries` the open entries,
+    `closed` the items another answer settled, `assumed` the assumptions in force. The brief and the terminal
+    show these numbers, so they always match the file."""
+    loaded = loaded if loaded is not None else load()
+    its = items()
+    opened, _a, _g = plan(its, loaded)
+    est = [r for r in estate_rows(its, loaded) if r[0].startswith("estate.")]
+    est_open = sum(1 for _k, e, _ea in est if is_open(e.get("answer")))
+    assumed = sum(1 for it in its if it.get("family") == "assume"
+                  and str(_text((loaded["entries"].get(it["key"]) or {}).get("answer"))).strip().lower() in
+                  ("", "yes", "y", "keep", "keep it", "ok", "agreed", "true"))
+    return {"open": est_open + sum(_lines(e, ea) for _k, e, ea in opened),
+            "entries": est_open + len(opened), "estate_open": est_open,
+            "closed": len([k for k in (loaded.get("closed") or {})
+                           if is_open((loaded["entries"].get(k) or {}).get("answer"))]),
+            "assumed": assumed}
+
+
 def shown(loaded: dict | None = None) -> list[dict]:
     """The open entries of the file as a person sees them: {"id", "members", "blocks"}; a group counts once."""
     loaded = loaded if loaded is not None else load()
@@ -662,15 +807,19 @@ def shown(loaded: dict | None = None) -> list[dict]:
     by_key = {it["key"]: it for it in its}
     gs = groups(its, loaded)
     opened, _a, _g = plan(its, loaded)
-    return [{"id": k, "members": gs.get(k) or [k],
-             "blocks": any(blocks_a_wave(by_key[m]) for m in (gs.get(k) or [k]) if m in by_key)} for k, _e, _ea in opened]
+    est = [{"id": k, "members": [k], "blocks": False, "lines": 1}
+           for k, e, _ea in estate_rows(its, loaded) if k.startswith("estate.") and is_open(e.get("answer"))]
+    return est + [{"id": k, "members": gs.get(k) or [k], "lines": _lines(e, ea),
+                   "blocks": any(blocks_a_wave(by_key[m]) for m in (gs.get(k) or [k]) if m in by_key)}
+                  for k, e, ea in opened]
 
 
 def render(its: list[dict], loaded: dict) -> str:
     opened, answered, gone = plan(its, loaded)
     L = [header(), ""]
-    for sec, rows in (("open", opened), ("answered", answered), ("no_longer_asked", gone)):
-        if not rows and sec == "no_longer_asked":
+    est = estate_rows(its, loaded)
+    for sec, rows in (("estate", est), ("open", opened), ("answered", answered), ("no_longer_asked", gone)):
+        if not rows and sec in ("estate", "no_longer_asked"):
             continue
         if not rows:
             L += [f"{sec}: []", ""]
@@ -721,6 +870,8 @@ def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
                 memo["reviewed"].pop(k, None)
             elif not then or then.get("answer") != ans:
                 memo["reviewed"][k] = {"spec": now, "answer": ans}
+    from . import planner
+    planner.remember(loaded, memo)
     if json.dumps(memo, sort_keys=True) == before:
         return False
     reg["_memo"] = memo
@@ -826,6 +977,8 @@ def summary(loaded: dict | None = None) -> dict:
     loaded = loaded if loaded is not None else load()
     out: dict[str, Any] = {g: {"open": [], "done": [], "stale": []} for g in GROUPS[:3]}
     for it in items():
+        if it["group"] not in out:
+            continue                                          # an assumption: nothing to answer
         st = state(it["key"], loaded, it)
         bucket = "done" if st["state"] in ("answered", "reviewed") else ("stale" if st["state"] == "stale" else "open")
         out[it["group"]][bucket].append({**it, "status": st})

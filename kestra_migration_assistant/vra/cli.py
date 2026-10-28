@@ -28,7 +28,7 @@ from kestra_migration_assistant.vra import outdir
 from kestra_migration_assistant.vra.stages import common as C
 
 COMMANDS_SHOWN = ["run", "status", "check-intake"]
-STAGES = ["preflight", "sanitize", "assess", "understand", "brief", "visuals", "status", "all", "run"]
+STAGES = ["preflight", "sanitize", "assess", "interview", "understand", "brief", "visuals", "status", "all", "run"]
 COMMANDS = frozenset(["check-intake", *STAGES])
 
 
@@ -90,6 +90,19 @@ def run_stage(s: str) -> str:
         c = r["counts"]
         return (f"{_n(c['workflows'], 'workflow')}, {_n(c['actions'], 'action')}, {_n(c['targets'], 'target')}, "
                 f"{_n(c['entry_points'], 'entry point')}")
+    elif s == "interview":
+        from kestra_migration_assistant.vra.stages import interview
+        from kestra_migration_assistant.vra.stages import your_input as Y
+        pat = interview.register()
+        loaded = Y.load()
+        est = [it for it in Y.items() if it.get("family") == "estate"]
+        n_open = sum(1 for it in est if interview.answer_of(it, loaded["entries"].get(it["key"])) is None)
+        n_as = sum(1 for it in Y.items() if it.get("family") == "assume")
+        miss = len(pat.get("missing") or [])
+        print(f"[interview] {C.ESTATE}: {len(est)} estate questions ({n_open} open), {n_as} assumptions, "
+              f"{miss} missing pieces to add to the package")
+        return (f"{_n(len(est), 'estate question')}, {n_open} open; {_n(n_as, 'assumption')}"
+                + (f"; {_n(miss, 'piece')} of code to add to the package" if miss else ""))
     elif s == "understand":
         from kestra_migration_assistant.vra import understand
         r = understand.run_estate()
@@ -255,9 +268,10 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
             os.replace(old_ep, C.ENTRY_POINTS)
             print(f"  - moved entry-points.yaml to {C.rel(C.ENTRY_POINTS)}")
     if args.cmd == "run":
-        stages = ["sanitize", "preflight", "assess", "understand", "brief", "migrate-input", "visuals", "summary"]
+        stages = ["sanitize", "preflight", "assess", "interview", "understand", "brief", "migrate-input", "visuals",
+                  "summary"]
     elif args.cmd == "all":
-        stages = ["sanitize", "preflight", "assess", "brief", "migrate-input", "visuals", "status"]
+        stages = ["sanitize", "preflight", "assess", "interview", "brief", "migrate-input", "visuals", "status"]
     else:
         stages = [args.cmd]
     from kestra_migration_assistant.vra import model
@@ -334,7 +348,8 @@ def _n(k: int, word: str) -> str:
     return f"{k} {word}{'' if k == 1 else 's'}"
 
 
-RUN_NAMES = {"sanitize": "Sanitize", "preflight": "Preflight", "assess": "Assess", "understand": "Understand",
+RUN_NAMES = {"sanitize": "Sanitize", "preflight": "Preflight", "assess": "Assess", "interview": "Estate",
+             "understand": "Understand",
              "brief": "Brief", "migrate-input": "Your input", "visuals": "Pages", "summary": "Status"}
 
 
