@@ -231,7 +231,7 @@ def load(path: str | None = None) -> dict:
                     continue
                 each = e.get("each")
                 subs: list = each if isinstance(each, list) else []
-                if subs and str(e["id"]).strip().startswith("same."):
+                if subs:
                     out.setdefault("file_groups", {})[str(e["id"]).strip()] = [
                         str(x["id"]).strip() for x in subs if isinstance(x, dict) and str(x.get("id") or "").strip()]
                 for sub in [e, *subs]:
@@ -473,7 +473,8 @@ def merges(loaded: dict | None = None) -> dict[str, list[str]]:
     for gid, rec in ((registry().get("_merges") or {}).items()):
         out[gid] = list(rec.get("members") or [])
     for gid, ms in ((loaded or {}).get("file_groups") or {}).items():
-        out[gid] = list(dict.fromkeys(out.get(gid, []) + ms))
+        if gid.startswith("same."):
+            out[gid] = list(dict.fromkeys(out.get(gid, []) + ms))
     return out
 
 
@@ -507,7 +508,12 @@ def _kind(gid: str) -> str:
 def covered(gid: str, loaded: dict) -> list[str]:
     """The members a group's answer counts for: those the file showed when it was answered."""
     rec = ((loaded.get("memo") or {}).get("groups") or {}).get(gid) or {}
-    return list(rec["members"]) if rec.get("members") is not None else list(loaded["groups"].get(gid) or [])
+    if rec.get("members") is not None:
+        return list(rec["members"])
+    shown = (loaded.get("file_groups") or {}).get(gid)          # a file replayed in a fresh folder: what it lists
+    if shown and not is_open((loaded["entries"].get(gid) or {}).get("answer")):
+        return list(dict.fromkeys(shown + list(loaded["groups"].get(gid) or [])))
+    return list(loaded["groups"].get(gid) or [])
 
 
 def via_group(key: str, loaded: dict) -> str | None:
@@ -841,13 +847,19 @@ def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
     memo["stand_in"] = bool(loaded.get("memo", {}).get("stand_in") or memo["stand_in"])
     for k, v in (loaded.get("memo", {}).get("reviewed") or {}).items():
         memo["reviewed"].setdefault(k, v)
+    for gid, shown in (loaded.get("file_groups") or {}).items():
+        # an answered group as the file lists it, kept before a stage that does not ask it yet rewrites the file
+        ga = _text((loaded["entries"].get(gid) or {}).get("answer"))
+        if not is_open(ga) and gid not in memo["groups"]:
+            memo["groups"][gid] = {"members": list(shown), "answer": ga}
     for gid, members in groups(its, loaded).items():
         ga = _text((loaded["entries"].get(gid) or {}).get("answer"))
         rec = memo["groups"].get(gid)
         if is_open(ga):
             memo["groups"][gid] = {"members": members, "answer": None}      # what the file shows now
         elif not rec:
-            memo["groups"][gid] = {"members": members, "answer": ga}
+            shown = (loaded.get("file_groups") or {}).get(gid) or []
+            memo["groups"][gid] = {"members": list(dict.fromkeys(shown + members)), "answer": ga}
         elif rec.get("answer") != ga:
             memo["groups"][gid] = {**rec, "answer": ga}
     loaded["memo"] = {**(loaded.get("memo") or {}), "groups": memo["groups"]}
@@ -906,7 +918,7 @@ def write(renames: dict[str, str] | None = None) -> dict:
         if b is None:
             return {"written": False, "warnings": loaded["warnings"] + [f"answers.yaml was not rewritten: {k} would be lost"]}
         for f, v in e.items():
-            if f not in ("question", "suggested") and not _same(b.get(f), v):
+            if (f == "answer" or f not in TOOL_FIELDS) and not _same(b.get(f), v):
                 return {"written": False, "warnings": loaded["warnings"] + [
                     f"answers.yaml was not rewritten: {k}.{f} would not read back the same"]}
     if old is not None:

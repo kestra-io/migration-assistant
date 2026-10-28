@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workflow xmlns="http://vmware.com/vco/workflow" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://vmware.com/vco/workflow http://vmware.com/vco/workflow/Workflow-v4.xsd" root-name="item1" object-name="workflow:name=generic" id="e7000001-0000-4000-8000-000000000002" version="1.0.0" api-version="6.0.0" allowed-operations="vef" restartMode="1" resumeFromFailedMode="0">
+  <display-name><![CDATA[Config - Power Off VM]]></display-name>
+  <position y="50.0" x="100.0"></position>
+  <input>
+    <param name="region" type="string"></param>
+    <param name="cluster" type="string"></param>
+    <param name="vmName" type="string"></param>
+  </input>
+  <output>
+  </output>
+  <workflow-item name="item0" type="end" end-mode="0">
+    <position y="45.0" x="384.5"></position>
+  </workflow-item>
+  <workflow-item name="item1" out-name="item0" type="task">
+    <display-name><![CDATA[Run]]></display-name>
+    <script encoded="false"><![CDATA[var host = System.getModule("com.example.config").getRuntimeConfig(region, cluster, "vcenterHost");
+System.log("Power Off on " + host + ": " + vmName);]]></script>
+    <in-binding><bind name="region" type="string" export-name="region"></bind><bind name="cluster" type="string" export-name="cluster"></bind><bind name="vmName" type="string" export-name="vmName"></bind></in-binding>
+    <out-binding></out-binding>
+    <position y="55.0" x="204.5"></position>
+  </workflow-item>
+  <presentation>
+  </presentation>
+</workflow>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workflow xmlns="http://vmware.com/vco/workflow" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://vmware.com/vco/workflow http://vmware.com/vco/workflow/Workflow-v4.xsd" root-name="item1" object-name="workflow:name=generic" id="e7000003-0000-4000-8000-000000000001" version="1.0.0" api-version="6.0.0" allowed-operations="vef" restartMode="1" resumeFromFailedMode="0">
+  <display-name><![CDATA[Rest - Sync Tickets]]></display-name>
+  <position y="50.0" x="100.0"></position>
+  <input>
+    <param name="baseUrl" type="string"></param>
+  </input>
+  <output>
+  </output>
+  <workflow-item name="item0" type="end" end-mode="0">
+    <position y="45.0" x="384.5"></position>
+  </workflow-item>
+  <workflow-item name="item1" out-name="item0" type="task">
+    <display-name><![CDATA[Run]]></display-name>
+    <script encoded="false"><![CDATA[var prototype = RESTHostManager.createHost("tickets");
+prototype.url = baseUrl;
+prototype.hostVerification = false;
+var host = RESTHostManager.createTransientHostFrom(prototype);
+var response = null;
+for (var attempt = 0; attempt < 3; attempt++) {
+    response = host.createRequest("GET", "/api/tickets", null).execute();
+    if (response.statusCode == 200) {
+        break;
+    }
+}
+System.log(response.contentAsString);]]></script>
+    <in-binding><bind name="baseUrl" type="string" export-name="baseUrl"></bind></in-binding>
+    <out-binding></out-binding>
+    <position y="55.0" x="204.5"></position>
+  </workflow-item>
+  <presentation>
+  </presentation>
+</workflow>

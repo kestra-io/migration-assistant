@@ -187,10 +187,11 @@ def find(assess: dict | None = None, idx: dict | None = None, models: dict | Non
     shared: list[dict] = []
     for a in sorted(acts, key=lambda a: (-len(reach[(a["module"], a["name"])]), a["key"])):
         n = len(reach[(a["module"], a["name"])])
-        if n < max(3, len(wf) // 5) or len(shared) >= 5:
+        if n < max(5, len(wf) // 5) or len(shared) >= 5:
             continue
         shared.append({"module": label((a["module"], a["name"])), "name": a["name"], "workflows": users(
-            (a["module"], a["name"])), "targets": sorted(set(a.get("targets") or [])),
+            (a["module"], a["name"])), "targets": sorted({str((assess.get("targets") or {}).get(t, {}).get("name") or t)
+                                                         for t in a.get("targets") or []}),
             "ops": sorted({o.get("op") for o in a.get("all_ops") or a.get("ops") or [] if o.get("op")})[:6]})
 
     # what to add to the package, and how

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties>
+<comment></comment>
+<entry key="categoryPath">Example.Multinode</entry>
+<entry key="name">Remote - Rebuild Cache On Cluster B</entry>
+<entry key="type">Workflow</entry>
+<entry key="id">e7000004-0000-4000-8000-000000000001</entry>
+</properties>

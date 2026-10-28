@@ -1,0 +1,8 @@
+{
+  "workflow_uid": "nested-Nested---Run",
+  "purpose": "Nested - Run, for the nested pattern fixture.",
+  "confidence": "high",
+  "open_questions": [],
+  "suspected_defects": [],
+  "external_systems": []
+}

@@ -182,7 +182,7 @@ def questions(pat: dict, assess: dict, has_vra: bool, systems: list[str]) -> lis
             what.append(f"calls {_names(s['targets'])}" + (f" ({_names(s['ops'], 2)})" if s.get("ops") else ""))
         out.append(_q(f"estate.module.{I.slug(s['name'])}",
                       f"{_n(len(s['workflows']), 'workflow calls', 'workflows call')} a module named {s['name']}. "
-                      "What does it do?",
+                      "What does it do?" + ("" if what else " (Needs a model to read its code and suggest an answer.)"),
                       what + [],
                       why="one answer for every workflow that calls it", needs_model=not what,
                       topic="module", about={"module": s["name"], "workflows": s["workflows"]}))
@@ -458,7 +458,8 @@ def register() -> dict:
     assess = C.read_json(f"{C.ASSESS}/assess.json")
     f = preflight.facts(assess=assess)
     systems = [n for n, _ in f.get("systems") or []]
-    any_calls = bool(systems) or bool((pat.get("rest_in_code") or {}).get("modules"))
+    rest = pat.get("rest_in_code") or {}
+    any_calls = bool(systems) or bool(rest.get("modules")) or bool(rest.get("workflows"))
     items: list[dict[str, Any]] = questions(pat, assess, bool(f.get("vra")), systems) + assumptions(pat, any_calls)
     Y.register("estate", items)
     return pat

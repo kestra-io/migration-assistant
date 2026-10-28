@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="getRuntimeConfig" result-type="string" api-version="6.0.0" id="a7000001-0000-4000-8000-000000000001" version="1.0.0" allowed-operations="vef"><description/><param n="region" t="string"/><param n="cluster" t="string"/><param n="key" t="string"/><script encoded="false"><![CDATA[var category = Server.getConfigurationElementCategoryWithPath("Settings/" + region);
+if (!category) {
+    throw "no settings for region " + region;
+}
+for each (var e in category.configurationElements) {
+    if (e.name === cluster) {
+        return e.getAttributeWithKey(key).value;
+    }
+}
+throw "no settings for cluster " + cluster;]]></script></dunes-script-module>

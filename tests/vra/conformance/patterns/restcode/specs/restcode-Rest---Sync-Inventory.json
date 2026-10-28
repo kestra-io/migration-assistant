@@ -1,0 +1,20 @@
+{
+  "workflow_uid": "restcode-Rest---Sync-Inventory",
+  "purpose": "Rest - Sync Inventory, for the restcode pattern fixture.",
+  "confidence": "high",
+  "open_questions": [
+    {
+      "question": "How many retries should the inventory call get, and how long between attempts?",
+      "why_it_matters": "error handling",
+      "theme": "error semantics"
+    }
+  ],
+  "suspected_defects": [
+    {
+      "what": "TLS certificate verification is off (hostVerification = false)",
+      "evidence": "prototype.hostVerification = false",
+      "question": "Should the converted flow check the certificate?"
+    }
+  ],
+  "external_systems": []
+}
