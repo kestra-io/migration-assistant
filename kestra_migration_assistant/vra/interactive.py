@@ -288,12 +288,17 @@ def _plan_questions(use_model: bool, skipped: set[str]) -> list[dict]:
 
 
 def _strip_name(q: dict) -> dict:
-    """The question without the workflow's name: the header says which workflows it is about."""
+    """The question as the terminal asks it: without the workflow's name (the header says which workflows it is
+    about), and without its choices in brackets when they are listed under it."""
     text = q["question"]
     for w in q.get("about") or []:
         if text.startswith(w + ": "):
             text = text[len(w) + 2:]
             text = text[:1].upper() + text[1:]
+    m = re.search(r"\s*\(([^()]*)\)\s*$", text)
+    if m and q.get("options") and " or " in m.group(1) and all(
+            o.split(":")[0].strip().lower() in m.group(1).lower() for o in q["options"][:2]):
+        text = text[:m.start()]
     return {**q, "question": text}
 
 

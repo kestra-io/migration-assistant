@@ -63,9 +63,20 @@ from . import outdir, safety
 
 CATEGORIES = ["HOST", "IP", "URL", "EMAIL", "USER", "SECRET", "IDENTITY", "NETWORK"]
 
-# Public schema and namespace hosts that appear in every vRO file. Not customer data; kept.
+# Public schema and namespace hosts that appear in vRO files and the payloads they build (a Teams MessageCard's
+# "@context": "https://schema.org/extensions"). They identify nothing; kept.
 PUBLIC_HOSTS = {"www.w3.org", "w3.org", "java.sun.com", "vmware.com", "www.vmware.com", "www.apache.org",
-                "apache.org", "schemas.xmlsoap.org", "schemas.microsoft.com", "json-schema.org"}
+                "apache.org", "schemas.xmlsoap.org", "schemas.microsoft.com", "json-schema.org", "schema.org",
+                "www.schema.org", "purl.org", "www.purl.org", "schemas.openxmlformats.org", "xmlns.com"}
+# The documented API paths of the systems vRO workflows call. In a URL to a customer's own server, only the host
+# says whose it is: the host is replaced and a path that starts like one of these is kept, so the code still says
+# which API it calls. A webhook's path is its secret, so a webhook URL is never kept this way.
+API_PATHS = re.compile(r"^/(?:api/now/|mgmt/tm/|mgmt/shared/|wapi/v\d|api/v2/(?:job_templates|jobs|inventories|hosts)|"
+                       r"api/(?:pool|virtualservice|vsvip|healthmonitor|cloud|tenant|serviceengine)\b|"
+                       r"rest/(?:vcenter|com/vmware)|api/vcenter/|sdk\b|v1/(?:secret|kv|auth|sys)/|nuage/api/|"
+                       r"api/v\d/(?:deployments|requests|catalog|blueprints|resources))")
+WEBHOOK_HOST = re.compile(r"(^|\.)(hooks\.slack\.com|webhook\.office\.com|outlook\.office\.com|"
+                          r"logic\.azure\.com|discord(?:app)?\.com)$")
 TLDS = ("com|net|org|io|local|lan|corp|internal|intra|intranet|int|localdomain|home|arpa|edu|gov|mil|"
         "eu|uk|de|fr|nl|us|ca|au|br|jp|ch|se|no|dk|fi|es|it|be|at|pl|pt|ie|cz|cloud")
 
@@ -193,6 +204,11 @@ class Redactor:
         if host in PUBLIC_HOSTS:
             self.kept_public[host] += 1
             return m.group(0)
+        mm = re.match(r"^([a-z][a-z0-9+.-]*://)([^/?#]+)(/[^?#]*)?", u, re.I)
+        if mm and mm.group(3) and API_PATHS.match(mm.group(3)) and not WEBHOOK_HOST.search(host) \
+                and "@" not in mm.group(2):
+            # a documented API path on the customer's host: only the host is replaced
+            return mm.group(1) + self._seen(self.ph("HOST", mm.group(2)), host) + u[len(mm.group(1)) + len(mm.group(2)):] + tail
         return self._seen(self.ph("URL", u), host) + tail
 
     def _seen(self, placeholder: str, host: str) -> str:

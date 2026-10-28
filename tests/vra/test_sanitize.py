@@ -6,6 +6,7 @@ The fixture tests/vra/conformance/sanitize/planted-secrets/ holds invented value
 from __future__ import annotations
 
 import os
+import re
 import sys
 import zipfile
 
@@ -72,7 +73,8 @@ def test_placeholders_are_stable_across_files(planted):
     # vc01 appears in the description, an attribute value and a presentation default: one placeholder
     import re
     phs = re.findall(r"<HOST-\d+>", wf)
-    assert len(phs) == 3 and len(set(phs)) == 1
+    vc01 = [p for p in phs if p != re.search(r'"https://(<HOST-\d+>)/api/pool\?name="', wf).group(1)]
+    assert len(vc01) == 3 and len(set(vc01)) == 1          # the Avi controller's host is the other one
     # the IP in the script header and in dunes-meta-inf's build host are the same placeholder
     ip_script = re.search(r'"X-Backup", "(<IP-\d+>)"', wf).group(1)
     assert ip_script.strip("<>") in files["planted-secrets/META-INF/dunes-meta-inf.xml"]
@@ -239,3 +241,20 @@ def test_webhook_systems_recorded_never_their_values(planted, tmp_path):
     out = json.dumps({k: v for k, v in rep.items() if k != "_masked"})
     for value in ("hooks.slack.com", "webhook.office.com", "not-a-real-hook", "PLANTED/FAKE"):
         assert value not in out
+
+
+def test_well_known_public_values_are_kept_and_a_documented_api_path_keeps_its_path():
+    """A value that identifies nothing (a schema URL, a vendor's documented API path) is kept; the customer's host
+    in front of an API path is still replaced, and a webhook URL, whose path is its secret, is replaced whole."""
+    from kestra_migration_assistant.vra.sanitize import Redactor
+    r = Redactor()
+    out = r.text('card["@context"] = "https://schema.org/extensions"; '
+                 'u = "https://snow.corp.example.com/api/now/table/sc_req_item?sysparm_limit=1"; '
+                 'f = "https://bigip01.corp.example.com/mgmt/tm/ltm/pool"; '
+                 'h = "https://hooks.slack.com' '/services/T00000000/B00000000/abcdefghijklmnopqrstuvwx"; '
+                 'o = "https://intranet.corp.example.com/team/acme-payments/runbook"')
+    assert '"https://schema.org/extensions"' in out
+    assert re.search(r'"https://<HOST-\d+>/api/now/table/sc_req_item\?sysparm_limit=1"', out), out
+    assert re.search(r'"https://<HOST-\d+>/mgmt/tm/ltm/pool"', out), out
+    assert "corp.example.com" not in out and "hooks.slack.com" not in out and "acme-payments" not in out
+    assert out.count("<URL-") == 2                    # the webhook and the page with a name in its path

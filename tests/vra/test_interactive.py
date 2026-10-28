@@ -212,6 +212,10 @@ def test_a_question_in_the_terminal_is_numbered_choices_ending_with_the_persons_
     out = io.StringIO()
     interactive.Terminal(io.StringIO("1\n"), out).pose(one, "Question 2 of 3")
     assert "Question 2 of 3, about Create DNS Record\n  Should it retry?" in out.getvalue()
+    # its choices are listed under it, not repeated in brackets
+    q9 = interactive._strip_name({"question": "Will vRA stay? (keep, replace, or replace with a bridge until then)",
+                                  "options": ["keep", "replace", "replace with a bridge until then"]})
+    assert q9["question"] == "Will vRA stay?"
 
 
 def test_every_yes_or_no_question_offers_yes_and_no_and_none_has_one_choice(tmp_path, monkeypatch):
