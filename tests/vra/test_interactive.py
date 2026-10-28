@@ -216,6 +216,14 @@ def test_a_question_in_the_terminal_is_numbered_choices_ending_with_the_persons_
     q9 = interactive._strip_name({"question": "Will vRA stay? (keep, replace, or replace with a bridge until then)",
                                   "options": ["keep", "replace", "replace with a bridge until then"]})
     assert q9["question"] == "Will vRA stay?"
+    # a defect several workflows share: the header counts them, the question says what it does once
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    shared = Y.group_question("same.defect.join.other", [
+        {"key": "defect.a.join.other", "family": "defect", "ask": "A: x", "question": "The join fails. Keep it as today, or fix it?"},
+        {"key": "defect.b.join.other", "family": "defect", "ask": "B: x", "question": "The join fails. Keep it as today, or fix it?"}])
+    assert shared.count("Keep") == 1, shared
+    asked = interactive._strip_name({"question": shared, "options": ["keep them all, as today"], "about": ["A", "B"]})
+    assert asked["question"] == "The join fails. Keep it everywhere, fix it everywhere, or decide each?", asked
 
 
 def test_every_yes_or_no_question_offers_yes_and_no_and_none_has_one_choice(tmp_path, monkeypatch):
@@ -449,3 +457,22 @@ def test_a_merge_already_made_is_not_made_again(tmp_path, monkeypatch):
     again = {**m, "about": "other words"}
     assert planner.apply({"close": [], "merge": [again], "reword": [], "add": []}, Y.load(), qs)["merged"] == 0
     assert list(Y.registry()["_merges"]) == ["same.first-words"]
+
+
+def test_a_question_the_re_planning_added_survives_a_replay_in_a_fresh_folder(tmp_path, monkeypatch):
+    export = _export(tmp_path)
+    _run(monkeypatch, export, None)
+    from kestra_migration_assistant.vra.stages import planner
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    qs = [q for q in planner.questions() if not q.get("estate")]
+    planner.apply({"close": [], "merge": [], "reword": [], "add": [
+        {"about": "ca files", "question": "Can you supply the CA files?", "options": ["yes", "no"],
+         "why": "raised"}]}, Y.load(), qs)
+    _run(monkeypatch, export, None, "--batch")
+    again = _export(tmp_path, "again")
+    os.makedirs(os.path.join(again, "kestra-assessment", "your-input"))
+    shutil.copy(os.path.join(export, "kestra-assessment", "your-input", "answers.yaml"),
+                os.path.join(again, "kestra-assessment", "your-input", "answers.yaml"))
+    _run(monkeypatch, again, None, "--batch")
+    assert _brief(export)["questions"] == _brief(again)["questions"]
+    assert "added.ca-files" in {m for x in _brief(again)["input"]["shown"] for m in x["members"]}

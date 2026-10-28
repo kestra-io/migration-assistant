@@ -597,7 +597,7 @@ def group_question(gid: str, its: list[dict]) -> str:
                  if len(wfs) > 1 else f"{n} places")
         q = _member_question(its[0])
         if all(it.get("family") == "defect" for it in its):
-            q = re.sub(r"\s*Keep the current behavior, or fix it\?$", "", q)
+            q = re.sub(r"\s*Keep (?:the current behavior|it as today), or fix it\?$", "", q)
             return f"The same possible defect in {where}: {q} Keep it everywhere, fix it everywhere, or decide each?"
         return f"Asked of {where}, one answer for all: {q}"
     if kind == "suggested":
@@ -1002,6 +1002,20 @@ def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
             adopted = True
     if adopted:
         reg["_merges"] = merged
+    # a question the re-planning added, read from a file replayed in a fresh folder: kept, answered or not
+    have = {it["key"] for it in its}
+    added = list(reg.get("replan") or [])
+    for k, e in (loaded.get("entries") or {}).items():
+        q = str(e.get("question") or "").strip()
+        if k.startswith("added.") and k not in have and q and not q.startswith(GONE.strip()):
+            sug = _text(e.get("suggested")) or None
+            it = item(k, "confirm" if sug else "answer", q, question=q, suggested=sug, family="added",
+                      unblocks=["raised by an earlier answer"])
+            it["family_title"] = "Raised by your answers"
+            added.append(it)
+            adopted = True
+    if len(added) != len(reg.get("replan") or []):
+        reg["replan"] = added
     if json.dumps(memo, sort_keys=True) == before and not adopted:
         return False
     reg["_memo"] = memo

@@ -490,7 +490,8 @@ PLAN = {"cancel": "what a cancelled request should undo", "timeout": "how long a
         "failure": "what a failed step does", "lifecycle": "whether the lifecycle converts together",
         "writes": "which calls write", "state-store": "where the state lives", "edition": "which Kestra edition you run",
         "q3-non-production-targets": "whether non-production systems exist",
-        "q4-off-limits": "whether anything is off limits", "q9-vra-front-end": "whether vRA stays"}
+        "q4-off-limits": "whether anything is off limits", "q9-vra-front-end": "whether vRA stays",
+        "added": "a question your answers raised"}
 REACH = {"tls": "whether the flows check certificates", "auth": "how the flows sign in",
          "client-route": "how the flows call each system", "reads-only": "which systems are read only"}
 QUESTION = {"q1-scope": "which vRO nodes are in scope", "q2-external-callers": "who else calls these workflows",

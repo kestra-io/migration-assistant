@@ -58,12 +58,15 @@ If Claude Code is installed and you're logged in, the tool uses that login by de
 
 In a terminal, the run asks its questions as it goes:
 
-1. **Inventory.** It reads the export. No model.
-2. **About the estate.** Five to eight questions about the whole estate, built from what the code shows: what starts the workflows, where settings and secrets come from, whether workflows call other vRO clusters, what is out of scope. For example: "36 workflows call modules named getEndpoint and getDatacenterSettings, which pick a configuration element at run time. Where should those settings live in Kestra?" One answer settles every question it covers.
-3. **Analysis.** The model reads each workflow, with your answers about the estate as context.
-4. **Rounds.** The questions left, three to five at a time, the one that settles the most first. After each round, the rest is planned again with your answers.
+1. **The model.** It says which model it uses. Press Enter to go on, or `c` to choose another (the cheaper ones show their cost compared with it). The choice is kept for this export.
+2. **What it read.** Each file and what is in it (workflows, actions, configuration and resource elements, catalog items, subscriptions), and the code the workflows call that is not in the package, with how to add it. The assessment only reads these files: it never connects to or runs anything on your systems. Press Ctrl+C at any time to stop: finished work is kept.
+3. **About the estate.** The few questions the analysis needs, built from what the code shows: what starts the workflows, where the converted flows read their settings and get their secrets, whether workflows call other vRO clusters, what looks out of scope. Each choice says what a Kestra term means in vRO's terms.
+4. **Analysis.** It says how many model calls this takes and what they cost, and asks before it spends anything. Then one line shows how far it is. What each step did in detail goes to `kestra-assessment/data/run.log`.
+5. **Questions for the plan.** It says how many there are, then asks them one at a time.
 
-Each question lists numbered choices. The first is what the code or the model suggests, and Enter takes it. The last is always "None of these, enter my own answer". Type `s` to leave a question for someone else, or `q` to save and stop. Every answer is saved in `answers.yaml` as soon as you give it, and the tool tells you how many questions it settled.
+Each question lists numbered choices. The first is what the code or the model suggests, and Enter takes it. The last is always "None of these, enter my own answer". When the choices are not exclusive, type several numbers, like `2, 4`. Type `s` to leave a question for someone else, or `q` to save and stop. Every answer is saved in `answers.yaml` as soon as you give it.
+
+What keeps today's behavior is not asked: the converted flows do what the workflows do today, so one can be tested against the other, and fixes come afterwards. Possible defects are kept, unless one makes its workflow fail every time or is a security problem. vRA's timeouts and failure handling are kept. A question about a value the sanitized copy hides is not asked: the real value is in the export. A detail of how one flow is built waits for the wave that converts it. Each of these is written in `answers.yaml` with the answer it takes, and you can change any of them there.
 
 To answer only in the file, add `--batch`. A run with no terminal attached never asks either.
 
@@ -209,8 +212,9 @@ Open `kestra-assessment/index.html` to review the assessment offline. The brief 
 
 `your-input/answers.yaml` starts with an `estate` section, then two lists, `open` and `answered`, plus a `signed_for` field. Each item includes an `id`, a plain-language `question`, an `answer`, and, when the tool can recommend one, a `suggested` value.
 
-- **`estate`** holds the questions about the whole estate, with their `options`, and what the tool assumes instead of asking (`assumed`). If you know your estate, you can fill this section in before the first run: every run applies it everywhere and asks nothing it settles. An answer can be an option's number. Under each answer, `closes` lists the questions it settled; under an open one, `settles` lists what its suggestion would settle. Change an answer, and the questions it closed are asked again. Leave an assumption's `answer` empty to keep it, or write what to do instead.
+- **`estate`** holds the questions about the whole estate, with their `options`, and what the tool assumes instead of asking (`assumed`). If you know your estate, you can fill this section in before the first run: every run applies it everywhere and asks nothing it settles. An answer can be an option's number, or several numbers when the choices are not exclusive. Under each answer, `closes` lists the questions it settled; under an open one, `settles` lists what its suggestion would settle. Change an answer, and the questions it closed are asked again. Each assumption lists the items it settles under `each:`, with the answer each takes (`assumed:`). To change one, write `answer:` under it. Leave an assumption's own `answer` empty to keep it, or write what to do instead.
 - **`open`** lists what is still unanswered, ordered by what the migration waves depend on. A question that repeats across workflows, such as a possible defect in an action several workflows share, is one entry for all of them.
+- **`waves`** lists, per wave, what is asked when that wave is converted: details of how its flows are built, and the review of a spec the model was less sure of. Answer them then, or now.
 
 To accept a suggestion, write `yes` as the answer. Otherwise, provide your answer directly. On the next run, the tool moves answered items from `open` to `answered`, preserves your text, and keeps each question's ID. The number of questions the brief shows is the number of empty answers in this file. When you're ready to approve the plan, set `signed_for` to `wave 1` or `full plan`.
 
