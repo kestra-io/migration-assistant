@@ -78,8 +78,9 @@ For each QUESTION, give `kind`:
   flow or moved to settings. It is asked when that workflow's wave is converted.
 - "ask": the answer changes the plan or the recommendation: whether a workflow can be converted at all, which wave it
   belongs in, or what the migration must build that does not exist today. Then give `question`: the question in
-  plain words for a vRO administrator, without the workflow's name; `options`: two to four short choices, the most
-  likely first, "yes" and "no" first for a yes-or-no question, and never a choice Kestra cannot do as written;
+  plain words for a vRO administrator, without the workflow's name; `options`: two to four short choices, first the
+  one that keeps what the workflow does today when one does (else the most likely), "yes" and "no" for a yes-or-no
+  question, and never a choice Kestra cannot do as written;
   `why_kestra`: when vRO did this without being told, one sentence on why Kestra needs the answer, else "".
 Prefer "today", "placeholder" or "wave" whenever they fit: "ask" is for the few questions only the owner can settle.
 

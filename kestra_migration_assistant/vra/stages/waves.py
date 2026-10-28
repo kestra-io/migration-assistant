@@ -68,7 +68,8 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
     specs: uid -> spec (each suspected defect is a preserve-or-fix decision); question_keys: (uid, question) ->
     the answers.yaml key of the grouped question (one key for a question several workflows ask)."""
     from . import triggers as TG
-    reviewed = (reviews or {}).get("by_uid") or {}
+    # a review on record (answered, or stale since): whether the file listed the item before does not count
+    reviewed = {u for u, r in ((reviews or {}).get("by_uid") or {}).items() if r.get("state") != "open"}
     front = (trigger_plan or {}).get("front_end")
     replacing = front in TG.REPLACING and bool(
         ((assess.get("entry_points") or {}).get("model") or {}).get("cloud_templates"))

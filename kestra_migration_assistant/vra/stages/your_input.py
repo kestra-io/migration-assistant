@@ -953,9 +953,15 @@ def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
         ga = _text((loaded["entries"].get(gid) or {}).get("answer"))
         if not is_open(ga) and gid not in memo["groups"]:
             memo["groups"][gid] = {"members": list(shown), "answer": ga}
+    # a member another answer settles, or that waits for its wave, is not shown under its group: the group's answer
+    # never counts for it
+    by_key = {it["key"]: it for it in its}
+    hidden = {k for k in by_key if (k in (loaded.get("closed") or {}) or k in (loaded.get("pending") or {})
+                                    or waits(by_key[k])) and is_open((loaded["entries"].get(k) or {}).get("answer"))}
     for gid, members in groups(its, loaded).items():
         ga = _text((loaded["entries"].get(gid) or {}).get("answer"))
         rec = memo["groups"].get(gid)
+        members = [m for m in members if m not in hidden]
         if is_open(ga):
             memo["groups"][gid] = {"members": members, "answer": None}      # what the file shows now
         elif not rec:

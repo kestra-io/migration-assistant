@@ -73,11 +73,11 @@ def status_of(brief: dict) -> dict:
         k = n_hold
         line = (f"Next step: answer {k} question{'s' if k != 1 else ''}{add}, then run `{C.run_command()}` again. "
                 f"{'They hold' if k != 1 or add else 'It holds'} {_and(blocks)}"
-                + (f"; {n_open - k} more block nothing" if n_open > k else "") + ".")
+                + (f"; {n_open - k} more {'blocks' if n_open - k == 1 else 'block'} nothing" if n_open > k else "") + ".")
     elif package:
         line = (f"Next step: add {len(package)} missing piece{'s' if len(package) != 1 else ''} of code to the package "
                 f"(the brief lists how), then run `{C.run_command()}` again. {'They hold' if len(package) != 1 else 'It holds'} "
-                f"{_and(blocks)}" + (f"; {n_open} open question{'s' if n_open != 1 else ''} block nothing" if n_open else "")
+                f"{_and(blocks)}" + (f"; {n_open} open question{'s block' if n_open != 1 else ' blocks'} nothing" if n_open else "")
                 + ".")
     elif blocks:
         line = f"Next step: nothing from you yet. {_and(blocks)} cannot start until the earlier waves have run."
@@ -86,7 +86,7 @@ def status_of(brief: dict) -> dict:
     elif not signed:
         line = ("Ready to sign." + (f" Once signed, {_and(start)} can start." if start else "")
                 + (f" {order}" if order else "")
-                + (f" {n_open} open question{'s' if n_open != 1 else ''} block nothing." if n_open else "") + wave_time)
+                + (f" {n_open} open question{'s block' if n_open != 1 else ' blocks'} nothing." if n_open else "") + wave_time)
     else:
         scope = "the full plan" if sign.get("scope") == "full" else "Wave 1"
         line = (f"Ready: {_and(start)} can start." if start else f"Signed for {scope}. Ready to convert.") \
