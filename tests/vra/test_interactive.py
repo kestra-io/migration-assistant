@@ -249,3 +249,20 @@ def test_a_re_planning_closure_and_merge_survive_a_replay_in_a_fresh_folder(tmp_
     assert Y.load()["closed"][plain[-1]]["by"] == by
     if len(plain) >= 3:
         assert "same.two-in-one" in Y.load()["groups"]
+
+
+def test_a_merge_already_made_is_not_made_again(tmp_path, monkeypatch):
+    export = _export(tmp_path)
+    _run(monkeypatch, export, None)
+    from kestra_migration_assistant.vra.stages import planner
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    qs = [q for q in planner.questions() if not q.get("estate")]
+    groups = Y.load()["groups"]
+    plain = [q["id"] for q in qs if q["id"] not in groups]
+    if len(plain) < 2:
+        pytest.skip("needs two plain questions")
+    m = {"ids": plain[:2], "about": "first words", "question": "Both?", "options": ["yes"]}
+    assert planner.apply({"close": [], "merge": [m], "reword": [], "add": []}, Y.load(), qs)["merged"] == 1
+    again = {**m, "about": "other words"}
+    assert planner.apply({"close": [], "merge": [again], "reword": [], "add": []}, Y.load(), qs)["merged"] == 0
+    assert list(Y.registry()["_merges"]) == ["same.first-words"]

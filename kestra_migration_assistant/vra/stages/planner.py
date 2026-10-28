@@ -350,8 +350,8 @@ def apply(reply: dict, loaded: dict, open_qs: list[dict]) -> dict:
     for m in reply.get("merge") or []:
         ids = [str(x) for x in m["ids"] if str(x) in open_ids and not str(x).startswith(("estate.", "same."))]
         ks = [k for x in ids for k in members(x) if k in its]
-        if len(ids) < 2 or not ks:
-            continue
+        if len(ids) < 2 or not ks or any(set(ks) <= set(rec.get("members") or []) for rec in merged.values()):
+            continue                    # nothing to merge, or already merged together (an earlier round did it)
         gid = "same." + (I.slug(m["about"])[:40] or "group")
         if gid in merged and sorted(merged[gid]["members"]) != sorted(ks) or gid in its:
             gid += "-" + fingerprint(" ".join(sorted(ks)))[:6]
