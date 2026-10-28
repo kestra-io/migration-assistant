@@ -204,9 +204,21 @@ def _export_args(p: argparse.ArgumentParser, model: bool = True) -> None:
         p.add_argument("--base-url", help="openai-compatible only: the server's address, ending in /v1")
         p.add_argument("--yes", action="store_true",
                        help="go ahead without asking when the cost estimate is above max_cost_usd (default $20)")
+        p.add_argument("--batch", action="store_true",
+                       help="ask nothing in the terminal: read the answers in answers.yaml and write the questions "
+                            "left there (the default when no terminal is attached)")
 
 
-def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kestra-migrate vra") -> int:
+def is_terminal() -> bool:
+    """A person at a terminal: both standard input and output are one."""
+    return bool(sys.stdin and sys.stdin.isatty() and sys.stdout and sys.stdout.isatty())
+
+
+def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kestra-migrate vra",
+         interactive: bool = False) -> int:
+    """The `kestra-migrate vra` command line. `interactive`: the command was typed by a person (the console script
+    says so); only then, and only in a terminal and without --batch, does `run` ask its questions there. A program
+    calling this function never waits for input."""
     from kestra_migration_assistant import config as K
     note = K.CONTAINER_HELP if K.in_container() else None
     ap = argparse.ArgumentParser(
@@ -267,9 +279,10 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
             C.ensure(C.INPUT)
             os.replace(old_ep, C.ENTRY_POINTS)
             print(f"  - moved entry-points.yaml to {C.rel(C.ENTRY_POINTS)}")
+    asking = bool(interactive and args.cmd == "run" and not getattr(args, "batch", False) and is_terminal())
     if args.cmd == "run":
-        stages = ["sanitize", "preflight", "assess", "interview", "understand", "brief", "migrate-input", "visuals",
-                  "summary"]
+        stages = ["sanitize", "preflight", "assess", "interview", *(["ask-estate"] if asking else []), "understand",
+                  "brief", *(["ask-rounds"] if asking else []), "migrate-input", "visuals", "summary"]
     elif args.cmd == "all":
         stages = ["sanitize", "preflight", "assess", "interview", "brief", "migrate-input", "visuals", "status"]
     else:
@@ -279,13 +292,16 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
         model.GATE = cost_gate(yes=bool(getattr(args, "yes", False)))
     try:
         if args.cmd == "run":
-            return _run_with_progress(stages)
+            return _run_with_progress(stages, ask=_asker() if asking else None)
         for s in stages:
             run_stage(s)
         return 0
     except model.CostNotApproved as e:
         print(str(e), file=sys.stderr)
         return 3
+    except KeyboardInterrupt:
+        print(f"\nStopped. Every answer given so far is saved in {C.rel(C.ANSWERS)}.", file=sys.stderr)
+        return 130
     finally:
         model.GATE = None
 
@@ -386,7 +402,38 @@ def _model_words(m: dict) -> str:
 STARTED_AFTER = 1.0          # seconds: a stage still running by then says it started
 
 
-def _run_with_progress(stages: list[str]) -> int:
+def _asker():
+    from kestra_migration_assistant.vra import interactive
+    return interactive.Terminal()
+
+
+def _ask(s: str, term) -> None:
+    """The interactive steps: the estate interview before the analysis, the rounds after it."""
+    import contextlib
+    import io
+
+    from kestra_migration_assistant.vra import interactive
+    from kestra_migration_assistant.vra.stages import estimate
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    use_model = not os.environ.get("VRO_NO_MODEL")
+    # the cost estimate counts one re-planning call per round the questions open now would take
+    estimate.REPLAN_CALLS = min(20, -(-Y.count()["open"] // 5)) if use_model else 0
+    if s == "ask-estate":
+        if not interactive.interview(term, use_model):
+            term.stopped = True
+        return
+    if getattr(term, "stopped", False):
+        return                                  # save and quit in the interview: nothing more is asked this run
+
+    def rerun_brief() -> None:
+        from kestra_migration_assistant.vra.stages import assess
+        with contextlib.redirect_stdout(io.StringIO()):
+            assess.load()
+            run_stage("brief")
+    interactive.rounds(term, use_model, rerun_brief)
+
+
+def _run_with_progress(stages: list[str], ask=None) -> int:
     """
     `run`: one line per stage as it goes (its name, what it found, its model calls, how long it took), the
     stage's own details indented under it, and a last line with the total time, whether the model results
@@ -404,6 +451,9 @@ def _run_with_progress(stages: list[str]) -> int:
     out = sys.stdout
     lock = threading.Lock()
     for s in stages:
+        if s.startswith("ask-"):
+            _ask(s, ask)
+            continue
         before, _ = _calls_since(0)
         t0 = time.monotonic()
         buf = io.StringIO()

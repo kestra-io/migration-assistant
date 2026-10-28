@@ -39,6 +39,7 @@ def init(force: bool) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     from kestra_migration_assistant import config as K
+    typed = argv is None
     argv = sys.argv[1:] if argv is None else list(argv)
     ap = argparse.ArgumentParser(
         prog="kestra-migrate",
@@ -61,7 +62,8 @@ def main(argv: list[str] | None = None) -> int:
     ns = ap.parse_args(argv[:1] if argv and not argv[0].startswith("-") else argv)
     if ns.tool == "vra":
         from kestra_migration_assistant.vra import cli
-        return cli.main(argv[1:])
+        # typed by a person (the console script passes no argv): `run` may ask its questions in the terminal
+        return cli.main(argv[1:], interactive=typed)
     return 2
 
 

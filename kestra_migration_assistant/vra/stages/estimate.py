@@ -72,11 +72,20 @@ def _summary_calls(written: set[str]) -> list[dict]:
             for g in groups if set(g["members"]) & written]
 
 
+# An interactive run re-plans the questions after each round with one call of about this size; cli.py sets how many
+# rounds it expects (REPLAN_CALLS) before the first billed call.
+REPLAN_CHARS = 9000
+REPLAN_CALLS = 0
+
+
 def planned(current: dict) -> list[dict]:
     """The calls this run will make from `current` (the first one not in the cache) on."""
     missing = _missing_specs()
     step = current["purpose"]
     calls: list[dict] = [] if step == "understand" else [current]
+    calls += [{"purpose": "replan", "chars": REPLAN_CHARS}] * max(0, REPLAN_CALLS - (step == "replan"))
+    if step == "replan":
+        return calls
     if missing and step in ("stages-domain-names", "understand"):
         calls += _spec_calls(missing)
         calls += _summary_calls(set(missing))

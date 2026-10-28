@@ -31,7 +31,9 @@ QUESTIONS: list[dict[str, Any]] = [
     {"id": "Q1", "topic": "scope",
      "question": "Is this export the whole vRO estate? If not, what is missing, and how many vRO nodes or clusters does the estate run on?",
      "why": "Every count in Assess and Brief is only as complete as the export. A partial export hides callers and callees.",
-     "read_by": ["assess: unexported calls", "brief: retire candidates, waves"]},
+     "read_by": ["assess: unexported calls", "brief: retire candidates, waves"],
+     "options": ["yes, the whole estate, from one vRO cluster", "the whole estate, from several clusters: I will name them",
+                 "only part of it: I will say what is missing"]},
     {"id": "Q2", "topic": "external callers",
      "question": "What starts these workflows from outside vRO? Two ways to answer, and they can be combined: put the vRA content export (a .vra-ng from Build Tools) in the export folder, and the tool reads its catalog items, cloud templates and event broker subscriptions; and list in your-input/entry-points.yaml whatever that export does not hold, or everything if there is no export: vRO scheduled tasks and policies, the ITSM (for example ServiceNow), and scripts calling the vRO REST API. Set complete: true there once the list is whole.",
      "why": "None of these are in a vRO package. Without them every workflow nobody calls in the export looks like an entry point or dead code, and the two cannot be told apart.",
@@ -44,11 +46,13 @@ QUESTIONS: list[dict[str, Any]] = [
      "question": "Is anything in this export off limits for this migration (owned by another team, frozen, vendor supplied, or due to be replaced)?",
      "why": "Off-limits workflows are dropped from the waves, and whatever calls them keeps a dependency on vRO.",
      "read_by": ["brief: waves, blocked list"],
+     "options": ["nothing is off limits", "some of it is: I will name it"],
      "plain": "Is any of it off limits (another team's, frozen, vendor supplied, or being replaced)?"},
     {"id": "Q5", "topic": "prior attempts",
      "question": "Has anyone tried to migrate or rewrite any of this before? What happened?",
      "why": "A previous attempt usually found the hard part already. It belongs in the brief's risks.",
      "read_by": ["brief: risks"],
+     "options": ["no earlier attempt", "yes: I will say what happened"],
      "plain": "Has anyone tried to migrate or rewrite any of it before? What happened?"},
     {"id": "Q6", "topic": "owners",
      "question": "Who owns each functional area (for example load balancing, network provisioning, tenant onboarding)? Name a person or team per area.",
@@ -59,6 +63,7 @@ QUESTIONS: list[dict[str, Any]] = [
      "question": "Can you export twelve months of workflow run history (vRO workflow tokens, or the vRA deployment history), with workflow ID, start time and result?",
      "why": "The retire rule is 'no executions in twelve months'. Without history it cannot be tested, only guessed from the call graph.",
      "read_by": ["brief: retire pass"],
+     "options": ["yes, I will put it in the export folder", "no, there is no history to export"],
      "plain": "Can you export twelve months of run history: workflow, start time and result?"},
     {"id": "Q8", "topic": "plugin inventory",
      "question": "Which vRO plugins and versions are installed on each node, and are any custom or in-house plugins in use?",
@@ -68,6 +73,7 @@ QUESTIONS: list[dict[str, Any]] = [
      "question": "If vRA starts any of these workflows: will it stay as the front end, with its catalog items and subscriptions calling Kestra, or be replaced, with Kestra Apps and flows taking over its catalog items, cloud templates and subscriptions? Answer keep, replace, or replace with a bridge until then (vRA's subscriptions call Kestra through webhooks while the Apps and flows are built, then vRA is switched off).",
      "why": "The trigger plan differs: kept, every subscription calls a Kestra webhook (and a blocking one waits for the result); replaced, each catalog item becomes a Kestra App and each cloud template a flow whose steps are the old lifecycle events; replaced with a bridge, the converted flows run behind webhooks first and vRA goes once the replacement is ready. Unanswered, the brief shows both.",
      "read_by": ["brief: trigger plan, wave entry criteria"],
+     "options": ["keep", "replace", "replace with a bridge until then"],
      "plain": "Will vRA stay as the front end and call Kestra, or will Kestra replace it? (keep, replace, or replace "
               "with a bridge until then)"},
 ]
@@ -433,7 +439,7 @@ def input_items(f: dict) -> list[dict]:
                           f"{q['id']}. {q['question']}", title=f"{q['id']} {q['topic']}", why=q["why"],
                           unblocks=list(q.get("read_by") or []), suggested=q.get("suggested"),
                           found=q.get("found"), family="preflight", link="report/readiness.html",
-                          question=q.get("plain"), systems=q.get("systems")))
+                          question=q.get("plain"), systems=q.get("systems"), options=q.get("options")))
     for it in out:
         it["family_title"] = "Preflight: what the export cannot say"
     return out

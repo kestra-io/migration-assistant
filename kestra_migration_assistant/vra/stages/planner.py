@@ -21,8 +21,6 @@ interactive run with their re-planning.
 from __future__ import annotations
 
 import hashlib
-import json
-import re
 from typing import Any
 
 from .. import safety
@@ -184,6 +182,7 @@ def questions(loaded: dict | None = None) -> list[dict]:
                     "group": None, "estate": True})
     gs = loaded.get("groups") or {}
     opened, _a, _g = Y.plan(its, loaded)
+    still = {k for k in by_key if Y.state(k, loaded, by_key[k])["state"] in ("open", "stale")}
     for n, (k, e, each) in enumerate(opened):
         rows = [(k, e, k in gs)] + [(mk, me, False) for mk, me in each]
         for rk, re_, is_group in rows:
@@ -194,7 +193,7 @@ def questions(loaded: dict | None = None) -> list[dict]:
             opts, default = _options_of(it, gid, re_, loaded)
             members = gs.get(rk) or [rk]
             out.append({"id": rk, "question": rew.get(rk) or re_["question"], "options": opts, "default": default,
-                        "settles": len(members), "order": n,
+                        "settles": max(1, len([m for m in members if m in still])), "order": n,
                         "blocks": any(Y.blocks_a_wave(by_key[m]) for m in members if m in by_key),
                         "needs_model": bool((it or {}).get("needs_model")), "group": gid, "estate": False})
     out.sort(key=lambda q: (not q.get("estate"), -q["settles"], not q["blocks"], q.get("order", 0)))
@@ -387,10 +386,18 @@ def states() -> dict[str, str]:
     return out
 
 
+# A choice whose words are not the answer the file takes: label -> what is written.
+VALUES = {"yes, accept every suggested answer": "yes", "go through them one by one": "decide each"}
+
+
+def value_of(answer: str) -> str:
+    return VALUES.get(answer, answer)
+
+
 def record(question: dict, answer: str) -> None:
     """Write one answer into answers.yaml as the person gave it, at once (the file is written whole or not at all)."""
     from . import your_input as Y
-    Y.set_answer(question["id"], answer)
+    Y.set_answer(question["id"], value_of(answer))
     Y.write()
 
 
@@ -399,9 +406,3 @@ def summary_line(c: dict) -> str:
             + (f", {c['closed']} settled by other answers" if c.get("closed") else "")
             + (f", {c['assumed']} assumption{'s' if c['assumed'] != 1 else ''}" if c.get("assumed") else ""))
 
-
-def dumps(x: Any) -> str:
-    return json.dumps(x, indent=1, sort_keys=True)
-
-
-_WS = re.compile(r"\s+")
