@@ -154,6 +154,7 @@ def run() -> dict:
     defaults.wave_of(registered, plan, wf)
     Y.register("assumed", defaults.assumptions(registered), write=False)
     Y.register("brief", registered)
+    sorted_by_key = {it["key"]: it for it in registered}
     Y.register_unblocks(preflight_unblocks(plan))
     loaded = Y.load()
     reviews = RV.load(specs, wf, loaded)
@@ -163,6 +164,15 @@ def run() -> dict:
     result["approval"] = approval
     decisions = G.load(asked, loaded)
     G.close(plan, answers=answers, reviews=reviews, decisions=decisions, approval=approval)
+    for d in defects:
+        # each possible defect as it behaves today, and what the conversion does with it
+        it = sorted_by_key.get(d["decision"]) or {}
+        st = Y.state(d["decision"], loaded, it) if it else {"state": "open", "answer": None}
+        d["today"] = it.get("today") or d["what"]
+        d["asked"] = defaults.asked(it) if it else False
+        d["answer"] = st["answer"] if st["state"] == "answered" else None
+        d["assumed"] = st["state"] == "answered" and "(assumed" in str((loaded.get("closed") or {}).get(
+            d["decision"], {}).get("answer") or "")
     result["decisions"] = {"path": decisions["path"], "asked": asked, "by_key": decisions["by_key"],
                            "warnings": decisions["warnings"]}
     result["input"] = input_summary(loaded)

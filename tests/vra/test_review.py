@@ -223,6 +223,9 @@ def test_3_suspected_defects_are_their_own_list_and_kept_as_today(estate):
     st = Y.state(k)
     assert st["state"] == "answered" and st["answer"].startswith("keep")    # what the conversion reads
     assert "kept as they are today" in estate["md"]
+    # every one is listed in the brief, by what it does today, with what the conversion does with it
+    appendix = estate["md"].split("## Appendix C. Possible defects", 1)[1]
+    assert appendix.count("(kept, as today)") == len(d)
 
 
 # ------------------------------------------------------------ 4. stale specs reported by status and brief

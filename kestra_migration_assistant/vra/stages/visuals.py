@@ -851,7 +851,14 @@ def workflow_page(u: str, assess: dict, brief: dict) -> str:
                   + ", ".join(f"<code>{C.esc(c['key'])}</code>" for c in covered if c["question"] == q) + "</li>"
                   for q in sorted(cov_q))
     mine = [x for x in brief.get("suspected_defects") or [] if x["workflow"] == u]
-    defects = "".join(f"<li>{C.esc(x['what'])} <span class='muted'>Evidence: {C.esc(x.get('evidence') or '')}</span>"
+    def kept(x: dict) -> str:
+        a = str(x.get("answer") or "")
+        return (" <b>Kept, as today.</b>" if x.get("assumed") or a.startswith("keep") else
+                " <b>Fixed in the conversion.</b>" if a.startswith("fix") else "")
+    defects = "".join(f"<li>{C.esc(x.get('today') or x['what'])}{kept(x)}"
+                      + (f" <span class='muted'>Found in the code: {C.esc(x['what'])}</span>"
+                         if x.get("today") and x.get("today") != x["what"] else "")
+                      + f" <span class='muted'>Evidence: {C.esc(x.get('evidence') or '')}</span>"
                       + (f"<br>{C.esc(x['question'])}" if x.get("question") else "")
                       + (" <span class='muted'>Asked once, in the certificate decisions: "
                          + ", ".join(f"<code>{C.esc(k)}</code>" for k in x["covered_by"]) + "</span></li>"
