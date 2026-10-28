@@ -32,6 +32,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
@@ -48,7 +49,10 @@ from . import safety
 CACHE_DIR: str | None = None
 LOG_PATH: str | None = None
 LEGACY_BACKEND = "claude-code-headless"     # the cache key every call before the model settings used
-MAX_PARALLEL = 4
+# Calls in flight at once. A spec takes 20 to 115 seconds, and nearly all of it is the model writing its reply (measured
+# in 1.2.0: a claude process starts in about one second; Haiku writes about 230 tokens a second and thinks more,
+# Opus about 110 and thinks less, so both take about a minute), so a run's time is mostly how many run at once.
+MAX_PARALLEL = 8
 TIMEOUT_S = 2700                            # a whole flow of 80+ tasks takes longer than 15 minutes
 
 # USD per million tokens (input, output), for the call log when a provider reports tokens, not cost.
@@ -134,6 +138,38 @@ _quota_generation = 0
 
 class ModelError(RuntimeError):
     pass
+
+
+class Stopped(BaseException):
+    """The person stopped the run (Ctrl+C): no call starts after it, and the calls in flight are ended. A
+    BaseException, so a stage that falls back when a call fails does not swallow it."""
+
+
+# Set by stop(): every call checks it before it starts, and run_parallel starts no job after it.
+STOP = threading.Event()
+_procs: set = set()
+_procs_lock = threading.Lock()
+
+
+def stop() -> None:
+    """End the run's model calls at once: no new call starts, and every claude process still running is ended (each
+    runs in a session of its own, so the terminal's Ctrl+C does not reach it, and nothing is left running)."""
+    STOP.set()
+    with _procs_lock:
+        live = list(_procs)
+    for p in live:
+        try:
+            if hasattr(os, "killpg"):
+                os.killpg(p.pid, signal.SIGKILL)
+            else:
+                p.kill()
+        except (OSError, ProcessLookupError):
+            pass
+
+
+def _check_stop() -> None:
+    if STOP.is_set():
+        raise Stopped()
 
 
 class SchemaError(ValueError):
@@ -273,19 +309,29 @@ class ClaudeCodeProvider(Provider):
         args = [exe, "-p", prompt, *BASE_ARGS, "--json-schema", json.dumps(schema), "--model", self.cfg["model"]]
         workdir = tempfile.mkdtemp(prefix="kestra-migrate-call-")
         t0 = time.time()
+        _check_stop()
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                                text=True, cwd=workdir, start_new_session=True)
+        with _procs_lock:
+            _procs.add(proc)
         try:
-            proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout_of(self.cfg), cwd=workdir)
+            out, err = proc.communicate(timeout=timeout_of(self.cfg))
         except subprocess.TimeoutExpired as e:
+            proc.kill()
+            proc.communicate()
             raise ModelError(f"no reply within {timeout_of(self.cfg)} s (timeout_s in the config file)") from e
         finally:
+            with _procs_lock:
+                _procs.discard(proc)
             shutil.rmtree(workdir, ignore_errors=True)
+        _check_stop()                                   # ended by stop(): its reply, if any, is not used
         wall_ms = int((time.time() - t0) * 1000)
-        if proc.returncode != 0 and not proc.stdout.strip():
-            raise ModelError(f"claude exited {proc.returncode}: {proc.stderr[:400]}")
+        if proc.returncode != 0 and not out.strip():
+            raise ModelError(f"claude exited {proc.returncode}: {err[:400]}")
         try:
-            env = json.loads(proc.stdout)
+            env = json.loads(out)
         except json.JSONDecodeError as e:
-            raise ModelError(f"claude did not return JSON: {e}: {proc.stdout[:300]}") from e
+            raise ModelError(f"claude did not return JSON: {e}: {out[:300]}") from e
         env["_wall_ms"] = wall_ms
         return env
 
@@ -478,6 +524,17 @@ def estimate_words(est: dict, s: K.Settings) -> str:
     return f"{calls}, about ${est['usd']:.2f} at {name}'s API prices{cached}."
 
 
+def ask_words(est: dict, s: K.Settings) -> str:
+    """The estimate as the interactive run asks it: "87 model calls, about $15"."""
+    n = est["billed"]
+    calls = f"{n} model call{'s' if n != 1 else ''}"
+    if est["usd"] is None:
+        return f"{calls} (there is no price on record for {model_name(s.model or '')})"
+    usd = f"${est['usd']:.2f}" if est["usd"] < 10 else f"${est['usd']:.0f}"
+    plan = " (with your Claude Code login it counts against your Claude plan)" if s.provider == "claude-code" else ""
+    return f"{calls}, about {usd}{plan}"
+
+
 class CostNotApproved(BaseException):
     """The run stopped before its first billed call: the estimate was above max_cost_usd, and nobody said to go
     on. A BaseException, so a stage that falls back when a call fails does not swallow it."""
@@ -489,8 +546,10 @@ class Gate:
     (a question in, True to go on); None means there is no terminal to ask in, and the run stops. `yes` goes on
     without asking. Decided once per run: later calls wait for the decision, then follow it."""
 
-    def __init__(self, planner, say, *, yes: bool = False, confirm=None, max_usd: float | None = None):
+    def __init__(self, planner, say, *, yes: bool = False, confirm=None, max_usd: float | None = None,
+                 always: bool = False):
         self.planner, self.say, self.yes, self.confirm, self.max_usd = planner, say, yes, confirm, max_usd
+        self.always = always            # the interactive run: ask whatever the estimate (and --yes)
         self.lock = threading.Lock()
         self.decided: bool | None = None
         self.estimate: dict | None = None
@@ -511,6 +570,11 @@ class Gate:
             self.say(f"(the run's other calls could not be estimated: {type(e).__name__}: {e})")
         est = self.estimate = estimate(calls, s)
         self.say("Estimate: " + estimate_words(est, s))
+        if self.always and self.confirm is not None:
+            if self.confirm(f"This will make {ask_words(est, s)}. Continue? Enter or y to continue, n to stop: "):
+                return True
+            self.why = "Stopped before any billed call, as asked. Nothing was billed."
+            return False
         cap = s.max_cost_usd if self.max_usd is None else self.max_usd
         if est["usd"] is None or est["usd"] <= cap or self.yes:
             return True
@@ -555,8 +619,10 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
               "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
         return hit["value"]
 
+    _check_stop()
     if GATE is not None:
         GATE.before_billed(purpose, prompt, schema, cfg, s)
+    _check_stop()
     backend = provider_for(cfg, s)
     attempt_prompt = prompt
     last_errs: list[str] = []
@@ -566,7 +632,9 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
         while attempt <= retries:
             _quota_gate.wait()            # park while another thread backs off
             gen_before = _quota_generation
+            _check_stop()
             env = backend.invoke(attempt_prompt, schema)
+            _check_stop()
             cost = env.get("total_cost_usd") or 0.0
             ms = env.get("duration_api_ms") or env.get("_wall_ms") or 0
             text = env.get("result") or ""
@@ -686,19 +754,29 @@ def run_parallel(jobs, worker, max_workers: int = MAX_PARALLEL):
     def guarded(job):
         if quota_hit.is_set():
             raise QuotaError("skipped: batch stopped after a quota error")
+        _check_stop()
         try:
             return worker(job)
         except QuotaError:
             quota_hit.set()
             raise
 
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+    ex = ThreadPoolExecutor(max_workers=max_workers)
+    try:
         futs = {ex.submit(guarded, j): j for j in jobs}
         for fut, job in futs.items():
             try:
                 results[_job_key(job)] = fut.result()
+            except Stopped:
+                raise
             except Exception as e:
                 errors[_job_key(job)] = f"{type(e).__name__}: {e}"
+    except (KeyboardInterrupt, Stopped):
+        # Ctrl+C: the jobs not started never start, the calls in flight end now, and what finished is kept
+        stop()
+        ex.shutdown(wait=False, cancel_futures=True)
+        raise
+    ex.shutdown(wait=True)
     if quota_hit.is_set():
         errors["_quota"] = ("backend ran out of quota; the batch was stopped. "
                             "Rerun the same command once quota returns: finished "

@@ -546,9 +546,24 @@ def set_progress(fn) -> None:
 
 
 def progress(msg: str) -> None:
-    """One line on what a long stage is doing now (a spec written, with its time). Silent outside `run`."""
+    """One line on what a long stage is doing now (a spec written, with its time). Silent outside `run`, which
+    writes these lines to the run's log file (data/run.log), not to the terminal."""
     if _PROGRESS:
         _PROGRESS(msg)
+
+
+# How far a long step is, for the one progress line `run` shows ("Analyzing 46 workflows: 19 done.").
+_TICK = None
+
+
+def set_tick(fn) -> None:
+    global _TICK
+    _TICK = fn
+
+
+def tick(what: str, done: int, total: int) -> None:
+    if _TICK:
+        _TICK(what, done, total)
 
 
 def mtime(path: str) -> float:

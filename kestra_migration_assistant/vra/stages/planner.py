@@ -1,6 +1,6 @@
 """
-What answers.yaml asks, and in what order: one question per pattern, what each answer settles, and the rounds of the
-interactive run with their re-planning.
+What answers.yaml asks, and in what order: one question per pattern, what each answer settles, and the questions of
+the interactive run with their re-planning.
 
 - **One question per pattern** (`assign_patterns`): a possible defect of a shared action is asked once for every
   workflow that calls it (`same.defect.<action>.<kind>`), and the same defect or question of near-duplicate workflows
@@ -10,10 +10,11 @@ interactive run with their re-planning.
   re-planning closed. A re-planning closure keeps a fingerprint of the answer that closed it: when that answer
   changes, the items it closed are asked again. answers.yaml lists each closure under the answer that made it
   (`closes:`), and a file replayed in a fresh folder keeps them.
-- **The rounds** (`questions`, `rounds`): the open answer lines of the file as numbered-choice questions, the one that
-  settles the most first, three to five at a time.
-- **Re-planning** (`replan`): after each round, one model call reads the open questions and the round's answers and may
-  close, merge, reword or add questions. Its reply is validated against REPLAN_SCHEMA and then checked against the
+- **The questions** (`questions`): the open answer lines of the file as numbered-choice questions, the estate's first,
+  then what holds a wave.
+- **Re-planning** (`replan`): every few answers, one model call reads the open questions and the answers just given
+  and may close, merge, reword or add questions (an added one goes to the file; the terminal asks only what it
+  said it would). Its reply is validated against REPLAN_SCHEMA and then checked against the
   questions really open: an ID it invents, or a closure by an answer that does not exist, is dropped. Without a
   model, re-planning is the deterministic rules alone (estate answers, assumptions, patterns), applied on every
   load.
@@ -27,7 +28,7 @@ from .. import safety
 from . import common as C
 from . import ids as I
 
-ROUND_MIN, ROUND_MAX = 3, 5
+REPLAN_EVERY = 5                       # answers between two re-plannings of the questions still open
 REPLAN_LIMIT = 60                      # open questions shown to the re-planning call, biggest first
 NONE_OF_THESE = "None of these, enter my own answer"
 
@@ -163,36 +164,67 @@ def remember(loaded: dict, memo: dict) -> None:
 
 # ------------------------------------------------------------------ the questions, as asked in a terminal
 
+KEEP_ALL, FIX_ALL, DECIDE_EACH = "keep them all, as today", "fix them all", "decide each"
+YES_NO = ("yes", "no")
+
+
 def _options_of(it: dict | None, gid: str | None, entry: dict, loaded: dict) -> tuple[list[str], str | None]:
-    """The numbered choices of one question, the default first when there is one; the last, always, is the person's
-    own words (added by the terminal)."""
+    """The numbered choices of one question, the suggestion first when there is one; the last, always, is the
+    person's own words (added by the terminal). A yes-or-no question offers yes and no."""
     from . import your_input as Y
     if gid:
         kind = gid.split(".", 1)[0]
         if kind == "suggested":
-            return ["yes, accept every suggested answer", "go through them one by one"], "yes, accept every suggested answer"
+            return ["yes, accept them", "no, go through them one by one"], "yes, accept them"
         if kind == "defects" or (kind == "same" and Y._all_defects(gid, loaded)):
-            return ["keep all", "fix all", "decide each"], None
+            return [KEEP_ALL, FIX_ALL, DECIDE_EACH], KEEP_ALL
         if kind == "specs":
-            return ["yes"], None
+            return ["yes", "no: I will say which is wrong"], None
         rec = (Y.registry().get("_merges") or {}).get(gid) or {}
         if rec.get("options"):
-            return [str(o) for o in rec["options"]], str(rec["options"][0])
+            return _yes_no([str(o) for o in rec["options"]]), str(rec["options"][0])
     if it is None:
         return [], None
     if it.get("family") == "defect":
-        return ["keep", "fix"], None
+        return ["keep it, as today", "fix it"], "keep it, as today"
     opts = [str(o) for o in it.get("options") or []]
     sug = it.get("suggested")
+    if sug and not opts:
+        # a value the code suggests, and nothing else to choose from: yes takes it, no asks for the person's own
+        return ["yes", "no, enter my own answer"], "yes"
     if sug:
         rest = [o for o in opts if o.lower() != str(sug).lower() and o.lower() != "confirmed"]
-        return [str(sug), *rest], str(sug)
-    return opts, None
+        return _yes_no([str(sug), *rest]), str(sug)
+    return _yes_no(opts), None
+
+
+def _yes_no(opts: list[str]) -> list[str]:
+    """A question whose only choice is yes (or no) offers the other too."""
+    low = [o.lower() for o in opts]
+    if low == ["yes"]:
+        return [*opts, "no"]
+    if low == ["no"]:
+        return ["yes", *opts]
+    return opts
+
+
+def _about(members: list[str], by_key: dict) -> list[str]:
+    """The workflows a question is about, by name (a question names its workflow first: `<name>: ...`)."""
+    from . import your_input as Y
+    out: list[str] = []
+    for m in members:
+        it = by_key.get(m)
+        w = Y._workflow_of(it) if it else None
+        if w and w not in out:
+            out.append(w)
+    return out
 
 
 def questions(loaded: dict | None = None) -> list[dict]:
-    """Every empty answer line of answers.yaml as a question, the one that settles the most first:
-    {"id", "question", "options", "default", "settles", "blocks", "needs_model", "group"}."""
+    """Every empty answer line of answers.yaml as a question, estate questions first:
+    {"id", "question", "options", "default", "settles", "blocks", "needs_model", "group", "estate", "phase",
+    "several", "about" (the workflows it is about), "list" (a group of suggestions: [(question, suggested)]),
+    "defect"}."""
     from . import your_input as Y
     loaded = loaded if loaded is not None else Y.load()
     its = Y.items()
@@ -206,7 +238,8 @@ def questions(loaded: dict | None = None) -> list[dict]:
         opts, default = _options_of(est, None, e, loaded)
         out.append({"id": k, "question": rew.get(k) or e["question"], "options": opts, "default": default,
                     "settles": _would_settle(est, loaded), "blocks": True, "needs_model": bool(est.get("needs_model")),
-                    "group": None, "estate": True})
+                    "group": None, "estate": True, "phase": est.get("phase") or "interview",
+                    "several": bool(est.get("several")), "about": [], "defect": False})
     gs = loaded.get("groups") or {}
     opened, _a, _g = Y.plan(its, loaded)
     still = {k for k in by_key if Y.state(k, loaded, by_key[k])["state"] in ("open", "stale")}
@@ -219,11 +252,18 @@ def questions(loaded: dict | None = None) -> list[dict]:
             gid = rk if is_group else None
             opts, default = _options_of(it, gid, re_, loaded)
             members = gs.get(rk) or [rk]
-            out.append({"id": rk, "question": rew.get(rk) or re_["question"], "options": opts, "default": default,
-                        "settles": max(1, len([m for m in members if m in still])), "order": n,
-                        "blocks": any(Y.blocks_a_wave(by_key[m]) for m in members if m in by_key),
-                        "needs_model": bool((it or {}).get("needs_model")), "group": gid, "estate": False})
-    out.sort(key=lambda q: (not q.get("estate"), -q["settles"], not q["blocks"], q.get("order", 0)))
+            q = {"id": rk, "question": rew.get(rk) or re_["question"], "options": opts, "default": default,
+                 "settles": max(1, len([m for m in members if m in still])), "order": n,
+                 "blocks": any(Y.blocks_a_wave(by_key[m]) for m in members if m in by_key),
+                 "needs_model": bool((it or {}).get("needs_model")), "group": gid, "estate": False,
+                 "phase": "plan", "several": False, "about": _about(members, by_key),
+                 "defect": all((by_key.get(m) or {}).get("family") == "defect" for m in members)}
+            if gid == "suggested":
+                q["list"] = [(Y.question_of(by_key[m]), str(by_key[m].get("suggested") or ""))
+                             for m in members if m in by_key and m in still]
+                q["question"] = f"The code suggests these answers. Accept these {len(q['list'])}?"
+            out.append(q)
+    out.sort(key=lambda q: (not q.get("estate"), q["phase"] != "interview", not q["blocks"], q.get("order", 0)))
     return out
 
 
@@ -238,16 +278,6 @@ def _would_settle(est: dict, loaded: dict) -> int:
     its = [it for it in Y.items() if it.get("family") not in ("estate", "assume") or it["key"] == est["key"]]
     already = set(loaded.get("closed") or {})
     return 1 + sum(1 for k, c in interview.closures(its, entries).items() if c["by"] == est["key"] and k not in already)
-
-
-def rounds(qs: list[dict]) -> list[list[dict]]:
-    """The questions in rounds of three to five, biggest first."""
-    out, rest = [], list(qs)
-    while rest:
-        take = ROUND_MAX if len(rest) >= ROUND_MAX + ROUND_MIN or len(rest) <= ROUND_MAX else ROUND_MIN
-        out.append(rest[:take])
-        rest = rest[take:]
-    return out
 
 
 # ------------------------------------------------------------------ re-planning by the model
@@ -395,26 +425,9 @@ def apply(reply: dict, loaded: dict, open_qs: list[dict]) -> dict:
     return n
 
 
-def settled_by(before: dict[str, str], after: dict[str, str]) -> int:
-    """How many items an answer settled: open before, answered or closed after."""
-    return sum(1 for k, s in before.items() if s == "open" and after.get(k, "open") != "open")
-
-
-def states() -> dict[str, str]:
-    """Every item's state now: open, answered or closed."""
-    from . import your_input as Y
-    loaded = Y.load()
-    out = {}
-    for it in Y.items():
-        if it.get("family") == "assume":
-            continue
-        st = Y.state(it["key"], loaded, it)
-        out[it["key"]] = "open" if st["state"] in ("open", "stale") else "answered"
-    return out
-
-
 # A choice whose words are not the answer the file takes: label -> what is written.
-VALUES = {"yes, accept every suggested answer": "yes", "go through them one by one": "decide each"}
+VALUES = {"yes, accept them": "yes", "no, go through them one by one": "decide each", KEEP_ALL: "keep all",
+          "keep it, as today": "keep", "fix it": "fix"}
 
 
 def value_of(answer: str) -> str:
@@ -426,10 +439,3 @@ def record(question: dict, answer: str) -> None:
     from . import your_input as Y
     Y.set_answer(question["id"], value_of(answer))
     Y.write()
-
-
-def summary_line(c: dict) -> str:
-    return (f"{c['open']} question{'s' if c['open'] != 1 else ''} to answer"
-            + (f", {c['closed']} settled by other answers" if c.get("closed") else "")
-            + (f", {c['assumed']} assumption{'s' if c['assumed'] != 1 else ''}" if c.get("assumed") else ""))
-

@@ -198,8 +198,8 @@ def questions(pat: dict, assess: dict, has_vra: bool, systems: list[str]) -> lis
     if hv:
         out.append(_q("estate.host-verification",
                       f"{_n(len(hv), 'workflow turns', 'workflows turn')} off the check of the certificate and "
-                      "host name when they connect to a system, so a connection to the wrong server is not "
-                      "noticed. Should the converted flows check them?",
+                      f"host name when {'it connects' if len(hv) == 1 else 'they connect'} to a system, so a "
+                      "connection to the wrong server is not noticed. Should the converted flows check them?",
                       ["yes, check them: the certificate authorities go in Kestra's trust store once",
                        "no, leave the checks off, as today"],
                       why="a check turned off that protects a connection is the one change asked before the migration",
@@ -414,13 +414,15 @@ def closures(its: list[dict], entries: dict) -> dict[str, dict]:
     estate = [it for it in its if it.get("family") in ("estate", "assume")]
     others = [it for it in its if it.get("family") not in ("estate", "assume")
               and Y.is_open((entries.get(it["key"]) or {}).get("answer"))]
+    # a check vRO turned off that protects a connection is asked (estate.host-verification), never assumed
+    asks_checks = any(e.get("topic") == "host-verification" and e.get("family") == "estate" for e in estate)
     for est in estate:
         topic = est.get("topic") or est["key"].split(".", 1)[1]
         if est.get("family") == "assume":
             if answer_of(est, entries.get(est["key"])) is not None:
                 continue                                # overridden: nothing assumed
             rule = ASSUMED.get(topic)
-            if rule is None:
+            if rule is None or (topic == "trust-store" and asks_checks):
                 continue
             for it in others:
                 if it["key"] not in out and (a := rule(est, it)):

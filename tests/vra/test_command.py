@@ -274,7 +274,10 @@ def test_the_re_running_line_names_each_file_once(tmp_path, capsys):
     also sits in the spec folder: the line named it twice."""
     export = _export(tmp_path / "estate")
     assert _main("run", export, "--no-model") == 0
-    lines = [x for x in capsys.readouterr().out.splitlines() if "re-running: newer than" in x]
+    out = capsys.readouterr().out
+    assert "re-running: newer than" not in out                   # the terminal shows a line per stage, no more
+    log = open(os.path.join(export, "kestra-assessment", "data", "run.log"), encoding="utf-8").read()
+    lines = [x for x in log.splitlines() if "re-running: newer than" in x]
     assert lines, "a first run re-reads what Understand wrote"
     for line in lines:
         named = line.split("newer than assess.json: ")[1].split(", ")

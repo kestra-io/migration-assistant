@@ -72,10 +72,37 @@ def _summary_calls(written: set[str]) -> list[dict]:
             for g in groups if set(g["members"]) & written]
 
 
-# An interactive run re-plans the questions after each round with one call of about this size; cli.py sets how many
-# rounds it expects (REPLAN_CALLS) before the first billed call.
+# An interactive run re-plans the questions every few answers with one call of about this size; cli.py sets how many
+# it expects (REPLAN_CALLS) before the first billed call.
 REPLAN_CHARS = 9000
 REPLAN_CALLS = 0
+# Sorting what the analysis found (defaults.py): a batch of about forty questions and possible defects per call.
+SORT_CHARS = 16000
+
+
+def _workflow_count() -> int:
+    idx = os.path.join(C.WORK, "index.json")
+    return len(json.load(open(idx))["workflows"]) if os.path.exists(idx) else 0
+
+
+def _sort_calls(n_workflows: int) -> list[dict]:
+    from . import defaults
+    return [{"purpose": "stages-questions", "chars": SORT_CHARS}] * defaults.calls_expected(n_workflows)
+
+
+def reanalysis() -> dict:
+    """What analyzing every workflow again costs, as when an estate answer changes what every spec's prompt carries:
+    each spec, priced by its prompt today (the answers make it a new prompt, so none comes from the cache), the
+    group summaries, the domain names, the walkthroughs and the sorting of what is found."""
+    from kestra_migration_assistant.vra import model as M
+    idx = os.path.join(C.WORK, "index.json")
+    uids = sorted(w["uid"] for w in json.load(open(idx))["workflows"]) if os.path.exists(idx) else []
+    calls = [{"purpose": "understand", "chars": c.get("chars") or len(c["prompt"]) + len(json.dumps(c["schema"]))}
+             for c in _spec_calls(uids)] if uids else []
+    calls += _summary_calls(set(uids)) + _sort_calls(len(uids))
+    calls += [{"purpose": "stages-domain-names", "chars": DOMAIN_NAMES_CHARS},
+              {"purpose": "stages-walkthroughs", "chars": WALKTHROUGHS_CHARS}]
+    return M.estimate(calls, M.settings())
 
 
 def planned(current: dict) -> list[dict]:
@@ -90,6 +117,7 @@ def planned(current: dict) -> list[dict]:
         calls += _spec_calls(missing)
         calls += _summary_calls(set(missing))
         calls.append({"purpose": "stages-domain-names", "chars": DOMAIN_NAMES_CHARS})   # again, from the specs
+        calls += _sort_calls(len(missing))
     elif step == "cluster-summary":
         calls.append({"purpose": "stages-domain-names", "chars": DOMAIN_NAMES_CHARS})
     if step != "stages-walkthroughs":

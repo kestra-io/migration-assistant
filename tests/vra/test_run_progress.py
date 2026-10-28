@@ -31,7 +31,9 @@ def test_run_prints_a_line_per_stage_and_a_last_line(tmp_path, monkeypatch, caps
     assert "—" not in out
 
 
-def test_a_long_stage_says_it_started_and_what_it_is_doing(monkeypatch, capsys):
+def test_a_long_stage_says_it_started_and_one_line_how_far_it_is(tmp_path, monkeypatch, capsys):
+    """A long stage says it started and shows one progress line ("Analyzing 2 workflows: 1 done."); what it did in
+    detail (each spec written) goes to the run's log file, not the terminal."""
     import time
 
     from kestra_migration_assistant.vra import cli
@@ -40,18 +42,27 @@ def test_a_long_stage_says_it_started_and_what_it_is_doing(monkeypatch, capsys):
     def stage(s):
         if s == "understand":
             time.sleep(0.15)
+            C.tick("workflows", 0, 2)
             C.progress("wrote spec 1 of 2: A (0.1s)")
+            C.tick("workflows", 1, 2)
             C.progress("wrote spec 2 of 2: B (0.1s)")
+            C.tick("workflows", 2, 2)
             return "2 specs, 2 written this run"
         return "done at once"
     monkeypatch.setattr(cli, "run_stage", stage)
     monkeypatch.setattr(cli, "STARTED_AFTER", 0.05)
     monkeypatch.setattr(cli, "_calls_since", lambda n: (0, {"billed": 0, "cached": 0, "cost": 0.0}))
     monkeypatch.setattr(C, "INDEX", "index.html")
+    monkeypatch.setattr(C, "DATA", str(tmp_path / "data"))
+    monkeypatch.setattr(C, "run_command", lambda: "kestra-migrate vra run x")
     cli._run_with_progress(["preflight", "understand", "summary"])
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].startswith("Preflight   done at once;")                 # instant: one line
     assert lines[1] == "Understand  started"
-    assert lines[2] == "Understand  wrote spec 1 of 2: A (0.1s)" and lines[3] == "Understand  wrote spec 2 of 2: B (0.1s)"
+    # no terminal: the progress line is written when the step starts and when it ends, never once per spec
+    assert lines[2] == "Analyzing 2 workflows: 0 done." and lines[3] == "Analyzing 2 workflows: 2 done."
     assert lines[4].startswith("Understand  2 specs, 2 written this run;")
-    assert C._PROGRESS is None                                                 # nothing reports outside run
+    assert not any("wrote spec" in x for x in lines)
+    log = open(tmp_path / "data" / "run.log", encoding="utf-8").read()
+    assert "wrote spec 1 of 2: A (0.1s)" in log and "wrote spec 2 of 2: B (0.1s)" in log
+    assert C._PROGRESS is None and C._TICK is None                             # nothing reports outside run

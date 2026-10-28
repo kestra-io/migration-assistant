@@ -71,9 +71,13 @@ def _estimate_line(out: str) -> str:
 def test_the_estimate_counts_the_calls_the_run_makes_and_prices_them(stand_in, monkeypatch, capsys):
     monkeypatch.setattr(sys, "stdin", _Stdin("", tty=False))
     assert _main("run", stand_in["export"]) == 0
+    from kestra_migration_assistant.vra.stages import defaults
     line = _estimate_line(capsys.readouterr().out)
     n = int(line.split("Estimate: ", 1)[1].split(" ", 1)[0])
-    assert n == len(stand_in["calls"]) > 1, (line, len(stand_in["calls"]))
+    # the sorting of what the specs find is counted before the specs exist, by the estate's size: these stand-in
+    # specs find nothing, so the run makes none of those calls
+    sorting = defaults.calls_expected(2)
+    assert n - sorting == len(stand_in["calls"]) > 1, (line, len(stand_in["calls"]))
     usd = float(line.split("about $", 1)[1].split(" ", 1)[0])
     assert 0 < usd < 20
     assert "Claude Opus 5.5's API prices" in line and "Claude plan" not in line     # an API key: billed
@@ -153,9 +157,11 @@ def test_a_re_run_after_the_export_changed_counts_the_specs_it_regenerates(stand
     planned = E.planned
     monkeypatch.setattr(E, "planned", lambda current: plans.append(planned(current)) or plans[-1])
     first = len(stand_in["calls"])
+    run_log = os.path.join(stand_in["export"], "kestra-assessment", "data", "run.log")
+    os.remove(run_log)
     assert _main("run", stand_in["export"]) == 0
     out = capsys.readouterr().out
-    regenerated = out.count("regenerated: ")
+    regenerated = open(run_log, encoding="utf-8").read().count("regenerated: ")     # what each stage did: the log
     assert regenerated == 2 and len(plans) == 1 and plans[0][0]["purpose"] == "stages-domain-names"
     assert sum(c["purpose"] == "understand" for c in plans[0]) == regenerated
     assert sum(c["purpose"] == "cluster-summary" for c in plans[0]) == 1
