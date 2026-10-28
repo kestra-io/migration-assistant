@@ -75,6 +75,8 @@ def _body(r: dict, assess: dict) -> str:
 
 def closes_key(e: dict) -> str:
     c = e.get("closes") or {}
+    if c.get("kind") == "package":
+        return ""                       # closed by adding code to the package, not by an answer
     k = str(c.get("field") or c.get("key") or "")
     return k if k and c.get("kind") != "approval" else ("signed_for" if c.get("kind") == "approval" else k)
 

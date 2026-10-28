@@ -161,7 +161,7 @@ def run() -> dict:
     translate.ready(assess, result, translation)
     result["translation"] = translation
     result["input"] = input_summary(loaded)
-    result.update(estate_summary(loaded))
+    result.update(estate_summary(loaded, {wf[u]["name"] for u, t in tri.items() if t["outcome"] == "Retire"}))
     from . import front
     rec["produced_by"] = front.recommendation_text(assess, result)
     C.write_json(os.path.join(C.BRIEF, "brief.json"), result)
@@ -374,7 +374,7 @@ def input_summary(loaded: dict) -> dict:
     return out
 
 
-def estate_summary(loaded: dict) -> dict:
+def estate_summary(loaded: dict, retired: set[str] | None = None) -> dict:
     """What applies estate-wide, for the pages: the counts answers.yaml shows (your_input.count, so the brief and the
     file always agree), the estate answers and what each settled, the assumptions and whether each holds, and what to
     add to the package (patterns.py)."""
@@ -395,8 +395,9 @@ def estate_summary(loaded: dict) -> dict:
                             "where": it.get("where") or [], "settles": len(shut.get(k) or [])})
     pj, aj = os.path.join(C.ASSESS, "patterns.json"), os.path.join(C.ASSESS, "assess.json")
     pat = patterns.run() if not os.path.exists(pj) or C.mtime(pj) < C.mtime(aj) else patterns.load()
+    adds = [a for a in pat.get("missing") or [] if not set(a["called_by"]) <= (retired or set())]
     return {"questions": Y.count(loaded), "estate_answers": estate, "assumptions": assumed,
-            "package_additions": pat.get("missing") or []}
+            "package_additions": adds}
 
 
 def _write_csv(assess, tri, act_tri, specs):

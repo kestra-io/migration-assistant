@@ -609,7 +609,7 @@ def needs(assess: dict, brief: dict, st: dict) -> list[str]:
             line = f"**{cap(word(n)) if n <= 10 else n} {_s(n, 'question')} from reading the workflows.**"
         elif k == "about-the-estate":
             ex = next((QUESTION[m] for m in ms if m in QUESTION and m != "q1-scope"), "")
-            line = (f"**{cap(word(n))} questions about the estate** the export cannot answer"
+            line = (f"**{cap(word(n))} more {_s(n, 'question')}** the export cannot answer"
                     + (f", such as {ex}." if ex else "."))
         elif k == "edition":
             line = "**Your Kestra edition**: is Enterprise Edition available?"

@@ -557,7 +557,7 @@ def criteria_lines(w: dict, assess: dict) -> list[tuple[str, str, str, str]]:
             g["per"][short] = g["per"].get(short, 0) + 1
             if e["status"] != "done":
                 g["keys"].append(I.entry_key(key))
-        elif c.get("kind") == "gate":
+        elif c.get("kind") in ("gate", "package"):
             pass                                     # its label says it all
         elif key and key not in g["keys"]:
             g["keys"].append(key)
