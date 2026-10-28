@@ -860,7 +860,13 @@ def shown(loaded: dict | None = None) -> list[dict]:
     est = [{"id": k, "members": [k], "blocks": False, "lines": 1}
            for k, e, _ea in estate_rows(its, loaded) if k.startswith("estate.") and "answer" in e
            and is_open(e.get("answer"))]
-    return est + [{"id": k, "members": gs.get(k) or [k], "lines": _lines(e, ea),
+    gone = set(loaded.get("closed") or {}) | set(loaded.get("pending") or {})
+
+    def still(k: str) -> list[str]:
+        """An entry's members another answer has not settled (those are not asked, and not counted)."""
+        return [m for m in gs.get(k) or [k] if m not in gone or not is_open((loaded["entries"].get(m) or {}).get(
+            "answer"))] or [k]
+    return est + [{"id": k, "members": still(k), "lines": _lines(e, ea),
                    "blocks": any(blocks_a_wave(by_key[m]) for m in (gs.get(k) or [k]) if m in by_key)}
                   for k, e, ea in opened]
 
@@ -929,7 +935,18 @@ def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
                 memo["reviewed"][k] = {"spec": now, "answer": ans}
     from . import planner
     planner.remember(loaded, memo)
-    if json.dumps(memo, sort_keys=True) == before:
+    merged = reg.get("_merges") or {}
+    adopted = False
+    for gid, shown in (loaded.get("file_groups") or {}).items():
+        # a group the re-planning made, read from a file replayed in a fresh folder: kept before a stage that does
+        # not ask its members yet rewrites the file
+        if gid.startswith("same.") and gid not in merged and not any(it.get("pattern") == gid for it in its):
+            e = loaded["entries"].get(gid) or {}
+            merged[gid] = {"members": list(shown), "question": e.get("question"), "options": []}
+            adopted = True
+    if adopted:
+        reg["_merges"] = merged
+    if json.dumps(memo, sort_keys=True) == before and not adopted:
         return False
     reg["_memo"] = memo
     return True

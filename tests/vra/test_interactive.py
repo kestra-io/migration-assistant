@@ -218,3 +218,34 @@ def test_the_re_planning_reply_is_checked_and_a_changed_answer_reopens_what_it_c
     Y.set_answer(by, "fix all")
     Y.write()
     assert a not in Y.load()["closed"]
+
+
+def test_a_re_planning_closure_and_merge_survive_a_replay_in_a_fresh_folder(tmp_path, monkeypatch):
+    """The stages before the brief rewrite answers.yaml before the brief's items exist: what the re-planning closed
+    and merged must still be there when the brief asks them (the file is the only record)."""
+    export = _export(tmp_path)
+    _run(monkeypatch, export, None)
+    from kestra_migration_assistant.vra.stages import planner
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    qs = [q for q in planner.questions() if not q.get("estate")]
+    groups = Y.load()["groups"]
+    plain = [q["id"] for q in qs if q["id"] not in groups]
+    by = qs[0]["id"]
+    Y.set_answer(by, "keep all")
+    Y.write()
+    loaded = Y.load()
+    planner.apply({"close": [{"id": plain[-1], "by": by, "answer": "as for the first", "why": "same"}],
+                   "merge": [{"ids": plain[:2], "about": "two in one", "question": "Both at once?",
+                              "options": ["yes"]}] if len(plain) >= 3 else [],
+                   "reword": [], "add": []}, loaded, qs)
+    _run(monkeypatch, export, None, "--batch")
+    again = _export(tmp_path, "again")
+    os.makedirs(os.path.join(again, "kestra-assessment", "your-input"))
+    shutil.copy(os.path.join(export, "kestra-assessment", "your-input", "answers.yaml"),
+                os.path.join(again, "kestra-assessment", "your-input", "answers.yaml"))
+    assert _run(monkeypatch, again, None, "--batch")[0] == 0
+    a, b = _brief(export), _brief(again)
+    assert a["questions"] == b["questions"]
+    assert Y.load()["closed"][plain[-1]]["by"] == by
+    if len(plain) >= 3:
+        assert "same.two-in-one" in Y.load()["groups"]

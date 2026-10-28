@@ -128,7 +128,18 @@ def pending(its: list[dict], entries: dict, done: dict) -> dict[str, str]:
 def remember(loaded: dict, memo: dict) -> None:
     """Keep, for each re-planning closure in force, the fingerprint of the answer that made it (so a changed answer
     reopens it), including closures first seen in a replayed file. Changes `memo`."""
+    from . import your_input as Y
     cl = memo.setdefault("closures", {})
+    # closures a file lists under an answer (`closes:`), first seen in a file replayed in a fresh folder: kept before a
+    # stage that does not ask those items yet rewrites the file without them
+    for by, e in (loaded.get("entries") or {}).items():
+        if _rule_based(by) or not isinstance(e.get("closes"), list):
+            continue
+        ans = Y._text(e.get("answer"))
+        if Y.is_open(ans):
+            continue
+        for k in e["closes"]:
+            cl.setdefault(str(k), {"by": by, "answer": f"as answered for {by}: {ans}", "fp": fingerprint(ans)})
     for k, c in (loaded.get("closed") or {}).items():
         if _rule_based(c["by"]):
             continue
