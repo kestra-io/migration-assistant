@@ -20,7 +20,8 @@ sys.path.insert(0, os.path.join(ROOT, "tests", "vra", "conformance", "large"))
 
 from kestra_migration_assistant.vra.stages import common as C
 
-MAX_WORDS = 800           # the front page's fixed length, in words a reader sees (a four-workflow estate: about 670)
+MAX_WORDS = 880           # the front page's fixed length, in words a reader sees (a four-workflow estate: about 670);
+                          # 1.2.0 added what it covers, how to sharpen it, the edition assumed and the next steps
 MAX_BRIEF_WORDS = 3000    # BRIEF.md for 60 workflows (a four-workflow estate: about 1,400; the cap there is 2,000)
 
 
@@ -97,7 +98,8 @@ def test_the_front_page_follows_the_guides_order(which, request):
     # the navigation is where to check; the notes, what is assumed and the estate answers, when there are any, come
     # before the plan
     assert [x for x in secs[2:] if x not in ("Notes to fix after the migration", "Assumptions",
-                                              "Your answers about the estate")] == ["What we need from you", "The plan"]
+                                              "Your answers about the estate")] == ["What we need from you", "The plan",
+                                                                                     "Next steps"]
     assert "have a path to Kestra" in r["text"]
     assert "**Direct**" not in page and "<strong>Direct</strong> converts one for one" in page
 

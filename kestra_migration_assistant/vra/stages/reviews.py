@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 
 from . import gates as G
 
@@ -45,6 +46,7 @@ def input_items(specs: dict[str, dict | None], wf: dict) -> list[dict]:
         it["family_title"] = "Specs"
         it["workflow"] = wf[u]["name"]
         it["confidence"] = conf
+        it["says"] = first_sentence(s.get("purpose") or "", wf[u]["name"])
         out.append(it)
     return out
 
@@ -69,3 +71,31 @@ def load(specs: dict[str, dict | None], wf: dict, loaded: dict | None = None) ->
                             "comment": st["note"] or (ans if ans and ans.lower() not in Y.YES else None),
                             "why": st["why"]}
     return out
+
+
+def first_sentence(text: str, name: str = "") -> str:
+    """What a spec says a workflow does, in one sentence, to follow its name: "adds one user to ...", or, when the
+    spec starts with what the workflow is, "is an hourly capacity check ..."."""
+    t = re.split(r"(?<=[.!?])\s+(?=[A-Z])", str(text or "").strip(), maxsplit=1)[0].strip().rstrip(".")
+    if name and t.lower().startswith(name.lower() + " "):
+        t = t[len(name) + 1:]                          # "Extend VM Disk is a linear workflow" -> "is a linear workflow"
+    if not t:
+        return ""
+    low = re.sub(r"\W+$", "", t.split()[0].lower())
+    if t[:1].isupper() and not t[1:2].isupper():
+        t = t[:1].lower() + t[1:]
+    if low in ("is", "does", "runs", "was"):
+        return t
+    if low in ("a", "an", "the", "one"):
+        return "is " + t
+    if low.endswith("ed"):                              # "Subscribed to an event, this workflow ...": up to the comma
+        return "is " + t.split(",", 1)[0]
+    if VERB.fullmatch(low) and low not in NOT_VERBS:
+        return t
+    return ("is an " if re.match(r"[aeiou]|hour|honest", t, re.I) else "is a ") + t
+
+
+# A sentence that says what the workflow does starts with a verb: "Adds", "Provisions", "Removes".
+VERB = re.compile(r"[a-z]+(?<!s)s|[a-z]+(?:ches|shes|sses|xes|zes)")
+NOT_VERBS = {"this", "its", "his", "tens", "days", "vms", "settings", "operations", "sales", "news", "series",
+             "status", "various"}

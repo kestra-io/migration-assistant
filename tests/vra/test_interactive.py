@@ -4,9 +4,9 @@ with their specs, no model):
 
 - typed in a terminal, `run` says what it read and how to stop, asks the estate interview, runs the analysis and
   writes the brief at once, every question with a suggestion assumed and written in answers.yaml; then a short
-  summary, and an offer (no by default) to answer at most five questions that sharpen it, the ones that change the
-  brief most first; each answer is saved at once; s skips, q saves and stops; run again, it goes straight to the
-  offer;
+  summary, the brief's file:// link, "Open the brief now? (Y/n)" (Enter opens it, in the browser) and one closing
+  line: no question is offered; run again, it asks at most five questions that sharpen the brief, the ones that
+  change it most first (each answer saved at once, s skips, q stops), and ends the same way;
 - a question whose choices are not exclusive takes several numbers; a yes-or-no question offers yes and no;
 - Ctrl+C stops the model calls in flight at once and keeps what is written;
 - called by a program, run without a terminal, or with --batch, it never waits for input;
@@ -20,6 +20,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import pathlib
 import re
 import shutil
 
@@ -102,33 +103,51 @@ def _estate_questions(tmp_path, monkeypatch) -> int:
     return sum(1 for e in _answers(probe)["estate"] if e["id"].startswith("estate."))
 
 
+def _more_open_questions() -> None:
+    """Three questions with no suggestion, as the re-planning adds them: since 1.2.0 the review tree leaves only one
+    open (who owns each area), and these tests need a few."""
+    from kestra_migration_assistant.vra.stages import planner
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    qs = [q for q in planner.questions() if not q.get("estate")]
+    planner.apply({"close": [], "merge": [], "reword": [], "add": [
+        {"about": "maintenance window", "question": "When can changes run in production?", "options": [], "why": "w"},
+        {"about": "approver", "question": "Who approves a change to a production system?", "options": [],
+         "why": "w"},
+        {"about": "rollback", "question": "Who decides to roll back a failed change?", "options": [], "why": "w"}]},
+        Y.load(), qs)
+
+
 HIDDEN = re.compile(r"settles? \d+|settled by other|questions? to answer|Round \d|settle the most|Saved\. |"
                     r"Re-planned|accept every suggested answer below|Choose 1-1\b|After the analysis", re.I)
 
 
 class Person(io.StringIO):
-    """Takes every suggestion (Enter) until the offer to sharpen the brief, then types `lines` one by one; records
-    what the terminal showed and whether the brief was on disk at each prompt."""
+    """Takes every suggestion (Enter) while the estate has no brief, then types `lines` one by one (Enter once they
+    run out); records what the terminal showed and whether the brief was on disk at each prompt."""
 
     def __init__(self, lines: list[str], out: io.StringIO, export: str):
         super().__init__()
-        self.lines, self.out, self.export, self.seen, self.offered = list(lines), out, export, [], False
+        self.lines, self.out, self.export, self.seen = list(lines), out, export, []
 
     def readline(self, *a):
         prompt = self.out.getvalue().rsplit("\n", 1)[-1]
-        brief = os.path.join(self.export, "kestra-assessment", "data", "3-brief", "brief.json")
-        self.seen.append({"prompt": prompt, "brief": os.path.exists(brief)})
-        self.offered = self.offered or prompt.startswith("Answer them now?")
-        return (self.lines.pop(0) if self.offered and self.lines else "") + "\n"
+        brief = os.path.exists(os.path.join(self.export, "kestra-assessment", "data", "3-brief", "brief.json"))
+        self.seen.append({"prompt": prompt, "brief": brief})
+        return (self.lines.pop(0) if brief and self.lines else "") + "\n"
 
 
-def _typed_run(monkeypatch, export: str, lines: list[str]) -> tuple[int, str, Person]:
+def _typed_run(monkeypatch, export: str, lines: list[str], browser: bool = True) -> tuple[int, str, Person]:
+    """`run` typed in a terminal; `browser`: whether one can be opened. What would open in it is in OPENED."""
     import sys
+    import webbrowser
 
-    from kestra_migration_assistant.vra import cli
+    from kestra_migration_assistant.vra import cli, interactive
     out = io.StringIO()
     person = Person(lines, out, export)
+    OPENED.clear()
     monkeypatch.setattr(cli, "is_terminal", lambda: True)
+    monkeypatch.setattr(interactive, "can_open_browser", lambda: browser)
+    monkeypatch.setattr(webbrowser, "open", lambda url, *a, **k: OPENED.append(url) or True)
     monkeypatch.setattr(sys, "stdin", person)
     monkeypatch.setattr(sys, "stdout", out)
     monkeypatch.setenv("VRO_NO_MODEL", "1")
@@ -136,9 +155,18 @@ def _typed_run(monkeypatch, export: str, lines: list[str]) -> tuple[int, str, Pe
     return code, out.getvalue(), person
 
 
-def test_the_interactive_run_writes_the_brief_after_the_interview_then_offers_to_sharpen_it(tmp_path, monkeypatch):
+OPENED: list[str] = []
+AGAIN = "To answer more questions and sharpen the brief, run the same command again. Your answers are kept."
+
+
+def _ending(out: str) -> str:
+    """The end of a run, from the summary on, on one line."""
+    return re.sub(r"\s+", " ", out[out.rindex("The brief recommends: "):]).strip()
+
+
+def test_a_first_run_writes_the_brief_after_the_interview_and_stops_at_it(tmp_path, monkeypatch):
     export = _export(tmp_path)
-    code, out, person = _typed_run(monkeypatch, export, [""])     # Enter: every suggestion, then the default no
+    code, out, person = _typed_run(monkeypatch, export, [""])     # Enter: every suggestion, then Enter opens the brief
     assert code == 0
     # the first screen: what it read, that it only reads, how to stop, then the interview in one short line
     assert "Read:" in out and re.search(r"- review\S*: \d+ workflows?, \d+ actions?", out)
@@ -148,20 +176,17 @@ def test_the_interactive_run_writes_the_brief_after_the_interview_then_offers_to
     assert "estate:" not in out and "answers.yaml" not in out.split("Question 1 of", 1)[0]
     interview = re.search(r"Before the analysis, (\d+) questions? about your estate\.", out)
     assert interview and out.index("Press Ctrl+C") < interview.start()
-    # after the interview, nothing is required: the brief is written, then summed up, then offered to sharpen
+    # after the interview, nothing is asked: the summary, the time, the link, the offer to open it, the closing line
     n = int(interview.group(1))
     after = out[interview.end():].split(f"Question {n} of {n}", 1)[-1]
-    assert "Question" not in after.split("Answer them now?", 1)[0]
-    summary = after.index("The brief recommends: ")
-    offer = re.search(r"The brief is ready\. It makes (\d+) assumptions?, listed in it\. To make it sharper, you can "
-                      r"answer (up to 5 questions|\w+ questions?) now \(about [\w ]+\), or later in \S*answers\.yaml\.",
-                      re.sub(r"\s+", " ", after))
-    assert offer and int(offer.group(1)) > 0 and summary < after.index("Answer them now? (y/N)")
-    assert re.search(r"Open\s+\S*index\.html", after[summary:])
-    at_offer = next(x for x in person.seen if x["prompt"].startswith("Answer them now?"))
-    assert at_offer["brief"]                                       # the brief was on disk before the offer
-    assert person.seen[-1] is at_offer                             # the default no ends the run: nothing else asked
-    assert "Done in " in out.rsplit("Answer them now?", 1)[1]
+    assert "Question" not in after and "Answer them now" not in out
+    end = _ending(out)
+    url = pathlib.Path(os.path.abspath(os.path.join(export, "kestra-assessment", "index.html"))).as_uri()
+    assert re.fullmatch(r"The brief recommends: .+ Done in \d+s\. The brief: (\S+) Open the brief now\? \(Y/n\) "
+                        + re.escape(AGAIN), end) and f"The brief: {url} " in end
+    at_open = person.seen[-1]
+    assert at_open["prompt"] == "Open the brief now? (Y/n) " and at_open["brief"]
+    assert OPENED == [url]                                          # Enter opened it
     assert not HIDDEN.search(out), HIDDEN.search(out)
     # every assumption is in answers.yaml, each item it settles listed with the answer it takes
     doc = _answers(export)
@@ -176,49 +201,122 @@ def test_the_interactive_run_writes_the_brief_after_the_interview_then_offers_to
     b = _brief(export)
     assert b["questions"]["open"] == _open_lines(doc)
     assert {a["id"] for a in b["assumptions"] if a["holds"]} >= {"assume.suggested", "assume.non-production"}
+    # the brief says the closing line too, at the top of its assumptions
+    md = open(os.path.join(export, "kestra-assessment", "report", "BRIEF.md"), encoding="utf-8").read()
+    assert md.split("## Assumptions\n\n", 1)[1].startswith(AGAIN + "\n")
+
+
+def test_n_declines_and_no_browser_skips_the_question(tmp_path, monkeypatch):
+    export = _export(tmp_path)
+    _typed_run(monkeypatch, export, [""])
+    _code, out, person = _typed_run(monkeypatch, export, ["s", "n"])      # skip the one question, then no
+    assert [x["prompt"].strip() for x in person.seen] == [
+        "Your answer (Enter or s to skip, q to save and quit):", "Open the brief now? (Y/n)"] and OPENED == []
+    assert "Nothing answered: the brief stays as it is." in out and _ending(out).endswith(AGAIN)
+    _code, out, person = _typed_run(monkeypatch, export, ["s"], browser=False)
+    assert "Open the brief now?" not in out and OPENED == [] and "The brief: file://" in out
+    assert _ending(out).endswith(AGAIN)
 
 
 def test_non_production_certificates_off_limits_vra_and_suggestions_are_assumed_never_asked(tmp_path, monkeypatch):
     """What has an answer that keeps today's behavior, or that the code suggests, is assumed: the lab first then
-    non-production where it exists, nothing off limits, vRA replaced, every suggestion taken."""
+    non-production where it exists, nothing off limits, vRA replaced, every suggestion taken; and Enterprise
+    Edition is available."""
     export = _export(tmp_path)
-    code, out, _p = _typed_run(monkeypatch, export, ["y"] + ["s"] * 5)
-    after = out.split("The brief recommends: ", 1)[1]
-    assert re.search(r"Question 1 of \d", after)                          # the offer was taken: questions follow
-    for words in ("non-production", "off limits", "front end", "The code suggests these answers", "certificate"):
-        assert words not in out.split("Before the analysis", 1)[1], words
+    _typed_run(monkeypatch, export, [""])                          # the first run asks only the interview
+    code, out, _p = _typed_run(monkeypatch, export, ["s", "n"])
+    assert re.search(r"Question 1 of \d", out)                     # the second run asks
+    for words in ("non-production", "off limits", "front end", "The code suggests these answers", "certificate",
+                  "Enterprise Edition"):
+        assert words not in out, words
     from kestra_migration_assistant.vra import interactive
     from kestra_migration_assistant.vra.stages import your_input as Y
     offered = interactive.to_offer(False)
     assert offered and all(not q.get("default") for q in offered)          # only what has no suggestion
-    assert not {"q3-non-production-targets", "q4-off-limits", "q9-vra-front-end"} & {q["id"] for q in offered}
+    assert not {"q3-non-production-targets", "q4-off-limits", "q9-vra-front-end", "edition"} & {q["id"] for q in offered}
     assert Y.state("q9-vra-front-end")["answer"].startswith("replace")
     assert _brief(export)["trigger_plan"]["front_end"] == "replace"
 
 
-def test_yes_asks_at_most_five_ranked_q_stops_and_the_brief_is_written_again(tmp_path, monkeypatch):
+def test_a_run_after_the_brief_asks_at_most_five_ranked_q_stops_and_it_ends_like_the_first(tmp_path, monkeypatch):
     from kestra_migration_assistant.vra import interactive
     from kestra_migration_assistant.vra.stages import planner
     from kestra_migration_assistant.vra.stages import your_input as Y
     monkeypatch.setattr(interactive, "OFFER_AT_MOST", 2)
     export = _export(tmp_path)
-    _run(monkeypatch, export, None)
+    _typed_run(monkeypatch, export, [""])
+    _more_open_questions()
     offered = interactive.to_offer(False)
     assert len(offered) >= 2
     assert offered == planner.ranked(offered)                              # what changes the brief most first
     assert [(-(q["waves"]), -q["settles"]) for q in offered] == sorted((-(q["waves"]), -q["settles"]) for q in offered)
     before = os.path.getmtime(os.path.join(export, "kestra-assessment", "data", "3-brief", "brief.json"))
-    code, out, _p = _typed_run(monkeypatch, export, ["y", "1", "q"])
-    assert code == 0 and "you can answer up to 2 questions now" in re.sub(r"\s+", " ", out)
-    asked = re.findall(r"Question (\d+) of (\d+)", out.split("Answer them now?", 1)[1])
-    assert asked == [("1", "2"), ("2", "2")]                              # q stopped at the second
-    assert not Y.is_open(Y.load()["entries"][offered[0]["id"]].get("answer"))
-    assert "Updating the brief with your answers" in out and re.search(r"The brief is updated\. Open\s+\S*index\.html", out)
-    assert os.path.getmtime(os.path.join(export, "kestra-assessment", "data", "3-brief", "brief.json")) >= before
-    # run again: straight to the summary and the offer, no first screen and no interview
-    code, out, person = _typed_run(monkeypatch, export, [""])
+    code, out, person = _typed_run(monkeypatch, export, ["the platform team", "q", ""])
     assert code == 0 and "Read:" not in out and "Before the analysis" not in out
-    assert "The brief recommends: " in out and [x["prompt"] for x in person.seen][-1].startswith("Answer them now?")
+    assert "To sharpen the brief: 2 questions (about a minute), the ones that change it most first." in out
+    asked = re.findall(r"Question (\d+) of (\d+)", out)
+    assert asked == [("1", "2"), ("2", "2")]                              # q stopped at the second
+    assert Y.load()["entries"][offered[0]["id"]].get("answer") == "the platform team"
+    assert "Updating the brief with your answers" in out
+    assert os.path.getmtime(os.path.join(export, "kestra-assessment", "data", "3-brief", "brief.json")) >= before
+    # then it ends exactly like a first run: the summary, the time, the link, Enter opens it, the closing line
+    assert out.index("Updating the brief") < out.index("The brief recommends: ")
+    assert re.fullmatch(r"The brief recommends: .+ Done in \d+s\. The brief: file://\S+ Open the brief now\? "
+                        r"\(Y/n\) " + re.escape(AGAIN), _ending(out))
+    assert len(OPENED) == 1 and person.seen[-1]["prompt"] == "Open the brief now? (Y/n) "
+
+
+def test_done_in_counts_the_tools_working_time_not_the_time_spent_answering(tmp_path, monkeypatch):
+    import time as T
+    export = _export(tmp_path)
+    _typed_run(monkeypatch, export, [""])
+    _more_open_questions()
+    clock = {"t": 1000.0}
+    real = Person.readline
+
+    def monotonic() -> float:
+        clock["t"] += 0.01
+        return clock["t"]
+
+    def ten_minutes_each(self, *a):
+        clock["t"] += 600
+        return real(self, *a)
+    monkeypatch.setattr(T, "monotonic", monotonic)
+    monkeypatch.setattr(Person, "readline", ten_minutes_each)
+    _code, out, person = _typed_run(monkeypatch, export, ["the platform team", "s", "s", "n"])
+    assert len(person.seen) >= 3                                    # half an hour or more spent answering
+    took = re.search(r"Done in (\S+ ?\S*)\.", out).group(1)
+    assert re.fullmatch(r"\d+s", took), took                        # not counted
+
+
+def test_a_spec_check_quotes_the_brief_and_waits_for_it(tmp_path, monkeypatch):
+    """A spec check is asked only once the brief exists, one per workflow: "The brief says <workflow> <what it does>.
+    Is that right?"."""
+    from kestra_migration_assistant.vra import interactive
+    from kestra_migration_assistant.vra.stages import reviews
+    assert reviews.first_sentence("Adds one user to a group, then closes the request. It is started by vRA.") == \
+        "adds one user to a group, then closes the request"
+    assert reviews.first_sentence("Hourly datastore capacity check for vSphere. More.") == \
+        "is an hourly datastore capacity check for vSphere"                 # what it is, not what it does
+    assert reviews.first_sentence("Day 2 action that patches one machine.") == "is a day 2 action that patches one machine"
+    assert reviews.first_sentence("Extend VM Disk is a Day 2 workflow.", "Extend VM Disk") == "is a Day 2 workflow"
+    assert reviews.first_sentence("Subscribed to an event, this workflow creates a CI.") == "is subscribed to an event"
+    q = {"id": "specs", "question": "Are the specs of A and B right?", "members": ["spec.a", "spec.b"],
+         "options": ["yes", "no: I will say which is wrong"], "default": None, "about": ["A", "B"], "group": "specs"}
+    monkeypatch.setattr(interactive, "has_brief", lambda: False)
+    from kestra_migration_assistant.vra.stages import planner
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    monkeypatch.setattr(planner, "questions", lambda: [q])
+    monkeypatch.setattr(planner, "ranked", lambda qs: qs)
+    assert interactive.to_offer(False) == []                               # no brief yet: no spec check
+    monkeypatch.setattr(interactive, "has_brief", lambda: True)
+    monkeypatch.setattr(Y, "items", lambda: [
+        {"key": "spec.a", "workflow": "Add User to AD Group", "says": "adds one user to one managed AD group"},
+        {"key": "spec.b", "workflow": "Reconcile DNS Records", "says": "compares DNS records with the CMDB"}])
+    got = interactive.to_offer(False)
+    assert [x["id"] for x in got] == ["spec.a", "spec.b"]
+    assert got[0]["question"] == "The brief says Add User to AD Group adds one user to one managed AD group. Is that right?"
+    assert got[1]["options"] == ["yes", interactive.NO_OWN] and not got[1]["default"]
 
 
 def test_a_question_whose_choices_are_not_exclusive_takes_several_numbers(tmp_path, monkeypatch):
@@ -287,7 +385,7 @@ def test_every_yes_or_no_question_offers_yes_and_no_and_none_has_one_choice(tmp_
     out = io.StringIO()
     assert interactive.Terminal(io.StringIO("the platform team\n"), out).pose(
         {"question": "Who owns each area?", "options": []}, "Q") == "the platform team"
-    assert "Choose" not in out.getvalue() and "Your answer (Enter to skip" in out.getvalue()
+    assert "Choose" not in out.getvalue() and "Your answer (Enter or s to skip" in out.getvalue()
     export = _export(tmp_path)
     _run(monkeypatch, export, None)
     for q in planner.questions():
@@ -416,6 +514,7 @@ def test_the_brief_counts_are_the_files_counts(tmp_path, monkeypatch):
 def test_the_re_planning_reply_is_checked_and_a_changed_answer_reopens_what_it_closed(tmp_path, monkeypatch):
     export = _export(tmp_path)
     _run(monkeypatch, export, None)
+    _more_open_questions()
     from kestra_migration_assistant import config as K
     from kestra_migration_assistant.vra import model as M
     from kestra_migration_assistant.vra.stages import planner
@@ -465,18 +564,22 @@ def test_a_re_planning_closure_and_merge_survive_a_replay_in_a_fresh_folder(tmp_
     and merged must still be there when the brief asks them (the file is the only record)."""
     export = _export(tmp_path)
     _run(monkeypatch, export, None)
+    _more_open_questions()
     from kestra_migration_assistant.vra.stages import planner
     from kestra_migration_assistant.vra.stages import your_input as Y
     qs = [q for q in planner.questions() if not q.get("estate")]
     groups = Y.load()["groups"]
     plain = [q["id"] for q in qs if q["id"] not in groups]
-    by = qs[0]["id"]
+    # an added question answers, a question of the tool's own is closed by it, and two others are merged
+    by = next(x for x in plain if x.startswith("added."))
+    shut = next(x for x in plain if not x.startswith("added."))
+    two = [x for x in plain if x not in (by, shut)][:2]
     Y.set_answer(by, "keep all")
     Y.write()
     loaded = Y.load()
-    planner.apply({"close": [{"id": plain[-1], "by": by, "answer": "as for the first", "why": "same"}],
-                   "merge": [{"ids": plain[:2], "about": "two in one", "question": "Both at once?",
-                              "options": ["yes"]}] if len(plain) >= 3 else [],
+    planner.apply({"close": [{"id": shut, "by": by, "answer": "as for the first", "why": "same"}],
+                   "merge": [{"ids": two, "about": "two in one", "question": "Both at once?",
+                              "options": ["yes"]}] if len(two) == 2 else [],
                    "reword": [], "add": []}, loaded, qs)
     _run(monkeypatch, export, None, "--batch")
     again = _export(tmp_path, "again")
@@ -486,21 +589,20 @@ def test_a_re_planning_closure_and_merge_survive_a_replay_in_a_fresh_folder(tmp_
     assert _run(monkeypatch, again, None, "--batch")[0] == 0
     a, b = _brief(export), _brief(again)
     assert a["questions"] == b["questions"]
-    assert Y.load()["closed"][plain[-1]]["by"] == by
-    if len(plain) >= 3:
-        assert "same.two-in-one" in Y.load()["groups"]
+    assert Y.load()["closed"][shut]["by"] == by
+    assert len(two) == 2 and "same.two-in-one" in Y.load()["groups"]
 
 
 def test_a_merge_already_made_is_not_made_again(tmp_path, monkeypatch):
     export = _export(tmp_path)
     _run(monkeypatch, export, None)
+    _more_open_questions()
     from kestra_migration_assistant.vra.stages import planner
     from kestra_migration_assistant.vra.stages import your_input as Y
     qs = [q for q in planner.questions() if not q.get("estate")]
     groups = Y.load()["groups"]
     plain = [q["id"] for q in qs if q["id"] not in groups]
-    if len(plain) < 2:
-        pytest.skip("needs two plain questions")
+    assert len(plain) >= 2
     m = {"ids": plain[:2], "about": "first words", "question": "Both?", "options": ["yes"]}
     assert planner.apply({"close": [], "merge": [m], "reword": [], "add": []}, Y.load(), qs)["merged"] == 1
     again = {**m, "about": "other words"}

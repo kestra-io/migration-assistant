@@ -5,29 +5,38 @@ Every release of the Kestra Migration Assistant for vRA. Versions follow [semant
 ## Unreleased
 
 A brief from every run. After a few questions about the estate and the analysis, the brief is written straight
-away, with every assumption it makes listed in it. Questions only make it sharper: they are offered, never needed.
+away, with every assumption it makes listed in it. Questions only make it sharper: a later run asks them, and none is
+needed.
 Re-running on a folder that 1.1.0 assessed keeps every answer you gave.
 
 ### What's new
 
-- **`kestra-migrate vra run` asks its questions in the terminal.** It first says which model it uses (Enter keeps it,
+- **`kestra-migrate vra run` asks its questions in the terminal.** It starts with the KESTRA wordmark and the
+  version (in Kestra's purple, fading to lavender, where the terminal has color). It first says which model it uses (Enter keeps it,
   `c` shows the others with their cost and changes it for this export), what it read in each file, what code the
   workflows call that is not in the package, that it only reads, and that Ctrl+C stops it. Then it asks the few
   questions about the whole estate that the analysis reads (what starts the workflows, where the converted flows
   read their settings and get their secrets, calls to other vRO clusters, what looks out of scope), each choice
   explained in vRO's terms. Before the analysis it says how many model calls it makes and what they cost, and asks.
-  Then it writes the brief at once and shows a short summary: the recommendation, the waves, how many workflows
-  convert, and where to open it. Last, it offers to ask up to five questions that would sharpen the brief, the ones
-  that change it most first. The default is no. Each question has numbered choices, the suggestion first and your
-  own words last; a question whose choices are not exclusive takes several numbers (`2, 4`); `s` skips a question,
-  `q` saves and stops. Every answer is saved at once. Run it again, and it goes straight to the summary and the
-  offer. `--batch` asks nothing, and a run with no terminal never asks.
+  Then it writes the brief at once and stops there: a short summary (the recommendation, the waves, how many
+  workflows convert), the brief's `file://` link, `Open the brief now? (Y/n)` (Enter opens it in the browser), and
+  one line: run the same command again to answer more questions and sharpen the brief. Run again, it asks up to five
+  questions, the ones that change the brief most first, writes it again and ends the same way. Each question has
+  numbered choices, the suggestion first and your own words last; a question whose choices are not exclusive takes
+  several numbers (`2, 4`); `s` skips a question, `q` saves and stops. Every answer is saved at once. `--batch` asks
+  nothing, and a run with no terminal never asks.
 - **The brief assumes what has a sensible answer.** Non-production: a simulated lab first, then a non-production
   instance where one exists. Certificate and host checks vRO turned off: kept as today, listed as a security note.
-  Off limits: nothing. vRA: replaced by Kestra. What the code suggests: taken. Any other question with a suggestion
-  takes it. The brief lists each assumption, and each answer taken from a suggestion, under "Assumptions", with how
-  to change it in `answers.yaml`. Only a question with no sensible answer (your Kestra edition, whether run history
-  can be exported) is left to answer, and none of them is needed to write the brief.
+  Off limits: nothing. vRA: replaced by Kestra. Kestra Enterprise Edition: available. What the code suggests: taken.
+  Any other question with a suggestion takes it. The brief lists each assumption, and each answer taken from a
+  suggestion, under "Assumptions", with how to change it in `answers.yaml`. Only a question with no sensible answer
+  (who owns each area, the check of a spec) is left to answer, and none of them is needed to write the brief.
+- **Three questions are no longer asked.** Whether the export is the whole estate (the brief says it covers what is
+  in the export), whether anyone tried to migrate it before, and whether twelve months of run history can be
+  exported (the brief's next steps suggest checking each workflow's run history to find the ones that no longer
+  run). An answer 1.1.0 kept for one stays in `answers.yaml`, no longer asked.
+- **A spec check quotes the brief.** "The brief says Add User to AD Group adds one user to one managed Active
+  Directory group. Is that right?", one per workflow, and only in a run after the brief exists.
 - **Notes to fix after the migration.** The brief lists, before anything else it asks, the security problems kept as
   today (certificate or host checks turned off, a credential written to a log or sent somewhere) and the possible
   defects that make a workflow fail every time.
@@ -122,8 +131,8 @@ Re-running on a folder that 1.1.0 assessed keeps every answer you gave.
 
 - **A run in a terminal asks the estate questions.** To run it unattended, add `--batch`.
 - **Fewer questions, and none needed after the analysis.** On the 46-workflow test estate, the terminal asks 4
-  questions before the analysis, then writes the brief; 1.1.0 left 149 answers to fill in `answers.yaml`. The brief
-  then offers at most five questions, which you can decline.
+  questions before the analysis, then writes the brief; 1.1.0 left 149 answers to fill in `answers.yaml`. A later
+  run asks at most five questions, and `q` stops them.
 - **The run's own lines are shorter.** One line per step, and one progress line while the workflows are analyzed.
   What each step did in detail is in `data/run.log`.
 - **Typed in a terminal, `run` asks before any billed call,** whatever the estimate, and also with `--yes`. Add

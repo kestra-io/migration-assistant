@@ -41,6 +41,8 @@ HOW_CLASS = {"Direct": "done", "Redesign": "todo", "Keep": "done", "Retire": "do
 # What the How column shows: the guide's two terms, Direct and Redesign; anything else in its own words
 WAITS = {"vra": "Waits on whether vRA stays", "answer": "Waits on an answer", "model": "Waits on a model"}
 HOW_SHOWN = {"Keep": "Stays in vRA", "Retire": "Retired"}
+# The interactive run's closing line, said again at the top of the brief's assumptions
+AGAIN = "To answer more questions and sharpen the brief, run the same command again. Your answers are kept."
 
 
 # ------------------------------------------------------------------ small words
@@ -656,7 +658,8 @@ def assumption_lines(brief: dict) -> list[str]:
             text = (str(a["assumed"]).replace(" here.", f" under `{a['id']}`.")
                     .replace("Each is listed below as it behaves today", "Each is in Appendix C as it behaves today")
                     .replace(", listed in the brief", ""))
-            out.append(text + (f" Settles {a['settles']} {_s(a['settles'], 'item')}, each listed under `{a['id']}`."
+            out.append(text + ((f" Settles 1 item, listed under `{a['id']}`." if a.get("settles") == 1 else
+                                f" Settles {a['settles']} items, each listed under `{a['id']}`.")
                                if a.get("settles") else f" (`{a['id']}`)"))
     for a in brief.get("assumptions") or []:
         if not a["holds"]:
@@ -1195,7 +1198,8 @@ def document(assess: dict, brief: dict) -> list[tuple]:
     src = f"{n_pkg} vRO {_s(n_pkg, pkg)}" + (f" and {n_vra} vRA {_s(n_vra, 'export')}" if n_vra else "")
     B: list[tuple[str, Any]] = [("h1", f"Migration brief: {est}"),
          ("p", f"Stage 1 of the [vRA migration guide]({GUIDE}), done for you from {src}: what the export holds, what "
-               "we recommend, and what we need from you before anything is converted.")]
+               "we recommend, and what we need from you before anything is converted. It covers what is in the "
+               "export.")]
     B.append(("status", dict(_status(brief, st, num), stand_in=stand_in(brief))))
     stale = brief.get("stale_specs") or {}
     if stale:
@@ -1254,8 +1258,15 @@ def document(assess: dict, brief: dict) -> list[tuple]:
         B.append(("p", "No wave yet: nothing can convert until the open items are answered. "
                        "[What each workflow waits on](waves.html)."))
 
+    B += [("h2", "Next steps"), ("ul", next_steps())]
     B.append(("sub", "Every other page, the explorer among them, is under [All reports](reports/index.html)."))
     return B
+
+
+def next_steps() -> list[str]:
+    """What to do with the brief, besides answering: check which workflows still run."""
+    return ["**Check each workflow's run history** in vRO to find those that no longer run, and retire them in "
+            "`your-input/corrections.yaml` (`outcome: Retire`) instead of converting them."]
 
 
 # ------------------------------------------------------------------ rendering
@@ -1316,6 +1327,7 @@ def _estate_blocks(brief: dict) -> list[tuple]:
     al = assumption_lines(brief)
     if al:
         B += [("h2", "Assumptions"),
+              ("p", AGAIN),
               ("p", "Where a question has an answer that keeps today's behavior, or one the code suggests, the brief "
                     "takes it instead of asking. Each is under `estate:` in `your-input/answers.yaml` with every item "
                     "it settles: to change one, write your answer under it and run the assessment again."),

@@ -478,6 +478,11 @@ def closures(its: list[dict], entries: dict) -> dict[str, dict]:
         if est.get("family") == "assume":
             over = answer_of(est, entries.get(est["key"]))
             if over is not None:
+                if topic == "edition":
+                    # the edition as the answer says: "not available" holds the waves that need it
+                    for it in others:
+                        if it["key"] == "edition" and it["key"] not in out:
+                            out[it["key"]] = {"by": est["key"], "answer": over}
                 if topic == "host-checks" and checks_wanted(over):
                     # the checks turned on instead: as the old question's first choice answered
                     for it in others:

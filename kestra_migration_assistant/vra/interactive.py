@@ -8,11 +8,12 @@ them to answers.yaml.
     Interview   the few questions about the whole estate that the analysis reads, no model
     Analysis    Understand, asked for before anything is billed, with one progress line
     Brief       written at once: every question that has a suggestion is assumed, written in answers.yaml as assumed
-                and listed in the brief; then a short summary
-    Sharpen     an offer, no by default, to answer at most OFFER_AT_MOST questions that have no suggestion, those that
-                change the brief most first; then one re-planning call (with a model) and the brief again
-Run again on an estate that has a brief (and nothing to ask before the analysis), it redoes what changed and goes
-straight to the summary and the offer.
+                and listed in the brief; then a short summary, the brief's file:// link, an offer to open it (Enter
+                opens it) and one closing line: run the same command again to sharpen it
+Run again on an estate that has a brief (and nothing to ask before the analysis), it redoes what changed, then:
+
+    Sharpen     at most OFFER_AT_MOST questions that have no suggestion, those that change the brief most first (q
+                stops); then one re-planning call (with a model) and the brief again; then it ends like the first run
 
 Every question has the same shape: numbered choices, the suggestion first (Enter takes it), the last one always the
 person's own words, and a question whose choices are not exclusive takes several numbers ("2, 4"). `s` leaves a
@@ -31,6 +32,7 @@ import os
 import re
 import sys
 import textwrap
+import time
 from typing import TextIO
 
 from .stages import common as C
@@ -40,6 +42,7 @@ OWN = "None of these, enter my own answer"
 NO_OWN = "no, enter my own answer"
 SKIPPED = "Skipped: it stays open in answers.yaml for someone else to answer."
 STOP_LINE = "Press Ctrl+C to stop at any time. Finished work is kept."
+WAITED = {"seconds": 0.0}               # time spent waiting for the person: not the tool's working time
 
 
 class Quit(Exception):
@@ -65,7 +68,9 @@ class Terminal:
 
     def read(self, prompt: str) -> str:
         print(prompt, end="", file=self.out, flush=True)
+        t0 = time.monotonic()
         line = self.inp.readline()
+        WAITED["seconds"] += time.monotonic() - t0
         if not line:                                     # end of input: save and stop
             raise Quit()
         return line.strip()
@@ -86,10 +91,10 @@ class Terminal:
             if line[1]:
                 self.say(f"Suggested: {line[1]}", "      ")
         if not opts:
-            a = self.read("  Your answer (Enter to skip, q to save and quit): ")
+            a = self.read("  Your answer (Enter or s to skip, q to save and quit): ")
             if a.lower() in ("q", "quit"):
                 raise Quit()
-            return a or None
+            return None if a.lower() in ("", "s", "skip") else a
         for i, o in enumerate(opts, 1):
             mark = " (suggested)" if q.get("default") and o == q["default"] else ""
             self.say(f"{i}. {o}{mark}", "    ")
@@ -303,8 +308,8 @@ def _brief() -> dict:
     return C.read_json(os.path.join(C.BRIEF, "brief.json"))
 
 
-def summary(term: Terminal, path: str) -> None:
-    """The brief in a few lines: the recommendation, the waves, how many workflows convert, and where to open it."""
+def summary(term: Terminal) -> None:
+    """The brief in a few lines: the recommendation, the waves, how many workflows convert."""
     b = _brief()
     rec = b.get("recommendation") or {}
     verdict = str(rec.get("verdict") or "").strip()
@@ -329,7 +334,6 @@ def summary(term: Terminal, path: str) -> None:
                 continue
             term.say(f"Wave {w['wave']}: {_n(len(n) if isinstance(n, list) else int(n or w.get('n') or 0), 'workflow')}, "
                      f"{_wave_words(w)}", "    ")
-    term.say(f"Open {path}", "  ")
 
 
 def _wave_words(w: dict) -> str:
@@ -343,17 +347,48 @@ def _wave_words(w: dict) -> str:
     return f"{'reads' if how.startswith('read') else 'writes to'} {shown}"
 
 
-def assumptions_count() -> int:
-    """The assumptions the brief lists: those in force."""
-    return sum(1 for a in _brief().get("assumptions") or [] if a.get("holds"))
-
-
 def to_offer(use_model: bool) -> list[dict]:
     """The questions that can sharpen the brief: those with no suggestion (every other one is assumed), the ones
-    that change the brief most first."""
+    that change the brief most first. A spec check only once the brief exists (it quotes it), one per workflow."""
     from .stages import planner
     qs = [q for q in planner.questions() if not q.get("estate") and (use_model or not q.get("needs_model"))]
-    return planner.ranked(qs)
+    out = []
+    for q in planner.ranked(qs):
+        if q["id"] == "specs" or q["id"].startswith("spec."):
+            if has_brief():
+                out += spec_checks(q)
+            continue
+        out.append(q)
+    return out
+
+
+def spec_checks(q: dict) -> list[dict]:
+    """A spec question, one per workflow it covers: "The brief says <workflow> <what it does>. Is that right?"."""
+    from .stages import your_input as Y
+    by_key = {it["key"]: it for it in Y.items()}
+    out = []
+    for k in q.get("members") or [q["id"]]:
+        it = by_key.get(k) or {}
+        says = str(it.get("says") or "").strip().rstrip(".")
+        name = str(it.get("workflow") or "")
+        if not says or not name:
+            continue
+        out.append({**q, "id": k, "group": None, "about": [], "default": None, "settles": 1,
+                    "question": f"The brief says {name} {says}. Is that right?", "options": ["yes", NO_OWN]})
+    return out
+
+
+def to_ask(term: Terminal, use_model: bool) -> list[dict]:
+    """Run again on an estate that has a brief: say what comes, and the questions to ask (at most OFFER_AT_MOST)."""
+    qs = to_offer(use_model)[:OFFER_AT_MOST]
+    term.say()
+    if not qs:
+        term.say(f"Nothing is left to ask: every question is answered or assumed. To change an assumption, write "
+                 f"your answer under it in {C.rel(C.ANSWERS)} and run the same command again.")
+        return []
+    k = len(qs)
+    term.say(f"To sharpen the brief: {_n(k, 'question')} ({_minutes_words(k)}), the ones that change it most first.")
+    return qs
 
 
 def _minutes_words(k: int) -> str:
@@ -361,26 +396,38 @@ def _minutes_words(k: int) -> str:
     return "about a minute" if m <= 1 else f"about {m} minutes"
 
 
-def offer(term: Terminal, use_model: bool) -> list[dict]:
-    """Say the brief is ready and how many assumptions it makes, and offer the few questions that sharpen it. The
-    default is no. Returns the questions to ask (none when the person says no, or nothing is left to offer)."""
-    n = assumptions_count()
-    made = f"It makes {_n(n, 'assumption')}, listed in it." if n else "It makes no assumptions."
-    qs = to_offer(use_model)[:OFFER_AT_MOST]
-    term.say()
-    if not qs:
-        term.say(f"The brief is ready. {made} To change one, write your answer under it in {C.rel(C.ANSWERS)} and "
-                 "run the same command again.")
-        return []
-    k = len(qs)
-    some = f"up to {k} questions" if k == OFFER_AT_MOST else _n(k, "question")
-    term.say(f"The brief is ready. {made} To make it sharper, you can answer {some} now ({_minutes_words(k)}), or "
-             f"later in {C.rel(C.ANSWERS)}.")
+def can_open_browser() -> bool:
+    """A browser the brief can be opened in: a graphical one (a text browser would take over the terminal)."""
+    import webbrowser
+
+    from kestra_migration_assistant import config as K
+    if K.in_container():
+        return False
     try:
-        a = term.read("Answer them now? (y/N) ").strip().lower()
-    except Quit:
-        return []
-    return qs if a in ("y", "yes") else []
+        b = webbrowser.get()
+    except webbrowser.Error:
+        return False
+    return getattr(b, "name", "") not in ("www-browser", "links", "elinks", "lynx", "w3m", "links2")
+
+
+def finish(term: Terminal, index: str) -> None:
+    """How every interactive run ends: the brief's file:// link, an offer to open it (Enter opens it), the closing
+    line."""
+    import pathlib
+    import webbrowser
+
+    from .stages import front as F
+    url = pathlib.Path(os.path.abspath(index)).as_uri()
+    term.say()
+    print(f"The brief: {url}", file=term.out, flush=True)          # one line, never wrapped: terminals make it a link
+    if can_open_browser():
+        try:
+            a = term.read("Open the brief now? (Y/n) ").lower()
+        except Quit:
+            a = "n"
+        if a in ("", "y", "yes") and not webbrowser.open(url):
+            term.say("No browser opened: open the link above.", "  ")
+    term.say(F.AGAIN)
 
 
 def sharpen(term: Terminal, use_model: bool, qs: list[dict], rewrite) -> dict:

@@ -21,8 +21,9 @@ finds:
   `waves:`, to answer when that wave is converted (or now).
 - **Every other question with a suggestion takes it** (`assume.suggested`): what the code suggests, what keeps
   today's behavior, the analysis's most likely answer. Each is listed with the answer it takes.
-- Only a question with no suggestion is left: a fact only the owner knows (which Kestra edition, whether run history
-  can be exported). The run offers the few that change the brief most, and never needs them to write it.
+- **Kestra Enterprise Edition is available** (`assume.edition`) when the plan needs one of its tasks.
+- Only a question with no suggestion is left: a fact only the owner knows (who owns each area). A run after the first
+  asks the few that change the brief most, and never needs them to write it.
 
 Which is which comes from one model call per batch of items (cached like every call), or, without a model, from
 rules on each item's kind and words. Every assumption is written in answers.yaml with each item it settles and the
@@ -67,6 +68,8 @@ ASSUMPTIONS = {
                      "correct one, write `answer: corrected` under it and the correction in your-input/corrections.yaml.",
     "assume.specs": "Specs written with high confidence are taken as written: each is on its workflow's page. If one "
                     "is wrong, write what is wrong as `answer:` under it.",
+    "assume.edition": "Kestra Enterprise Edition is available for this migration. If it is not, write "
+                      "`answer: not available` here.",
     "assume.suggested": "Where a question has a suggested answer (from the code, from today's behavior, or the "
                         "analysis's most likely answer), the brief takes it. To change one, write `answer:` under it.",
 }
@@ -375,6 +378,12 @@ def _specs(est: dict, it: dict) -> str | None:
     return None
 
 
+def _edition(est: dict, it: dict) -> str | None:
+    if it["key"] == "edition":
+        return "available (assumed, assume.edition)"
+    return None
+
+
 def _suggested(est: dict, it: dict) -> str | None:
     """Any other question with a suggestion takes it: never an estate question (the interview asks those), a spec
     review, or what waits for its wave."""
@@ -386,5 +395,5 @@ def _suggested(est: dict, it: dict) -> str | None:
 
 # In this order: the first rule that settles an item gives its answer (the general one last).
 RULES = {"assume.defects": _defects, "assume.behavior": _behavior, "assume.placeholders": _placeholders,
-         "assume.timeouts": _timeouts, "assume.labels": _labels, "assume.specs": _specs,
+         "assume.timeouts": _timeouts, "assume.labels": _labels, "assume.specs": _specs, "assume.edition": _edition,
          "assume.suggested": _suggested}

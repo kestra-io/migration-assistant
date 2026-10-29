@@ -426,8 +426,8 @@ def test_13_rewriting_the_questions_keeps_the_answers_file_time(estate):
     from kestra_migration_assistant.vra.stages import preflight as P
     path = C.ANSWERS
     txt = open(path).read()
-    assert "    question: Is this export the whole" in txt
-    open(path, "w").write(txt.replace("    question: Is this export the whole", "    question: (old wording) Is this export the whole", 1))
+    assert "    question: Who owns each functional area" in txt
+    open(path, "w").write(txt.replace("    question: Who owns each functional area", "    question: (old wording) Who owns each functional area", 1))
     os.utime(path, (1_000_000_000, 1_000_000_000))
     P.refresh_questions()
     assert "(old wording)" not in open(path).read() and os.path.getmtime(path) == 1_000_000_000

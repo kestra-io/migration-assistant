@@ -22,6 +22,7 @@ import argparse
 import os
 import shutil
 import sys
+import time
 import zipfile
 from typing import Any
 
@@ -251,6 +252,9 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
         return check_intake(args.path)
 
     asking = bool(interactive and args.cmd == "run" and not getattr(args, "batch", False) and is_terminal())
+    if asking:
+        from kestra_migration_assistant import banner
+        banner.show()
     from kestra_migration_assistant.vra import model
     model.STOP.clear()
     model.LIMIT["message"] = None
@@ -351,8 +355,13 @@ def cost_gate(yes: bool = False, confirm=None, out=None, always: bool = False):
     def ask_terminal(question: str) -> bool:
         PROGRESS.clear()
         if always:
+            from kestra_migration_assistant.vra import interactive
             print(f"\n{question}", end="", file=out, flush=True)
-            return sys.stdin.readline().strip().lower() in ("", "y", "yes")
+            t0 = time.monotonic()
+            try:
+                return sys.stdin.readline().strip().lower() in ("", "y", "yes")
+            finally:
+                interactive.WAITED["seconds"] += time.monotonic() - t0
         print(f"{'Cost':<{width}}  {question}", end="", file=out, flush=True)
         return sys.stdin.readline().strip().lower() in ("y", "yes")
 
@@ -615,17 +624,17 @@ def _write_brief(log: RunLog) -> None:
 def _run_interactive(term) -> int:
     """`run` typed in a terminal. The first time: the model, the export read, the first screen, the interview, the
     analysis (asked for before anything is billed, one progress line), then the brief at once, with every question
-    that has a suggestion assumed and listed in it. Then a short summary, and an offer, no by default, to answer the
-    few questions that would sharpen it. Run again on an estate that has a brief and nothing to ask before the
-    analysis, it re-runs only what changed and goes straight to the summary and the offer. What each step did in
-    detail is in data/run.log."""
-    import time
-
+    that has a suggestion assumed and listed in it. It ends with a short summary, the brief's link, an offer to open
+    it, and one line: run the same command again to sharpen it. Run again on an estate that has a brief and nothing
+    to ask before the analysis, it re-runs only what changed, asks the few questions that sharpen the brief most (q
+    stops), writes it again and ends the same way. "Done in" is the tool's own working time, not the time spent
+    answering. What each step did in detail is in data/run.log."""
     from kestra_migration_assistant.vra import interactive as I
     from kestra_migration_assistant.vra import model
     from kestra_migration_assistant.vra.stages import assess, estimate
     from kestra_migration_assistant.vra.stages import your_input as Y
     t_all = time.monotonic()
+    I.WAITED["seconds"] = 0.0
     use_model = not os.environ.get("VRO_NO_MODEL")
     log = RunLog()
     calls_before, _ = _calls_since(0)
@@ -643,7 +652,7 @@ def _run_interactive(term) -> int:
         finally:
             assess.NAME_DOMAINS = True
         qs = I.interview_questions(use_model)
-        again = I.has_brief() and not qs            # run again: straight to the brief and the offer
+        again = I.has_brief() and not qs            # run again: no first screen, the questions that sharpen it
         if not again:
             I.first_screen(term, use_model, len(qs))
             warn = None
@@ -656,7 +665,7 @@ def _run_interactive(term) -> int:
                 term.stopped = True
             term.say()
         # the analysis: what changed is analyzed again, the rest comes from the cache
-        t0 = time.monotonic()
+        t0, w0 = time.monotonic(), I.WAITED["seconds"]
         ANALYZING["on"] = True
         with __import__("contextlib").redirect_stdout(log):
             assess.run() if use_model else None     # the domain names, now that billing is agreed
@@ -664,20 +673,21 @@ def _run_interactive(term) -> int:
         ANALYZING["on"] = False
         PROGRESS.clear()
         _write_brief(log)
-        if not again and time.monotonic() - t0 > 60:
-            term.say(f"Analysis and brief done in {_minutes(time.monotonic() - t0)}.")
-        I.summary(term, shown(C.INDEX))
-        if not getattr(term, "stopped", False):
-            asked = I.offer(term, use_model)
+        worked = time.monotonic() - t0 - (I.WAITED["seconds"] - w0)
+        if not again and worked > 60:
+            term.say(f"Analysis and brief done in {_minutes(worked)}.")
+        if again:
+            asked = I.to_ask(term, use_model)
             if asked:
                 I.sharpen(term, use_model, asked, lambda: _write_brief(log))
-                term.say(f"The brief is updated. Open {shown(C.INDEX)}")
+        I.summary(term)
         _, m = _calls_since(calls_before)
         cost = "under $0.01" if m["cost"] < 0.005 else f"${m['cost']:.2f}"
         spent = (f" {m['billed']} billed model call{'s' if m['billed'] != 1 else ''}, {cost}." if m["billed"]
                  else "")
         term.say()
-        term.say(f"Done in {_minutes(time.monotonic() - t_all)}.{spent}")
+        term.say(f"Done in {_minutes(max(0.0, time.monotonic() - t_all - I.WAITED['seconds']))}.{spent}")
+        I.finish(term, C.INDEX)
         return 0
     finally:
         C.set_tick(None)

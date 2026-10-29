@@ -264,7 +264,7 @@ def questions(loaded: dict | None = None) -> list[dict]:
                  "blocks": any(Y.blocks_a_wave(by_key[m]) for m in members if m in by_key),
                  "waves": len({w for m in members if m in by_key for w in _waves_held(by_key[m])}),
                  "needs_model": bool((it or {}).get("needs_model")), "group": gid, "estate": False,
-                 "phase": "plan", "several": False, "about": _about(members, by_key),
+                 "phase": "plan", "several": False, "about": _about(members, by_key), "members": list(members),
                  "defect": all((by_key.get(m) or {}).get("family") == "defect" for m in members)}
             if gid == "suggested":
                 q["list"] = [(Y.question_of(by_key[m]), str(by_key[m].get("suggested") or ""))

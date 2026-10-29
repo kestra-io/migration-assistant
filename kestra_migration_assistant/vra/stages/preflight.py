@@ -26,14 +26,11 @@ from . import common as C
 # test, bespoke build infrastructure, prior attempts and what is off limits.
 # For vRO the build questions do not apply (a workflow is not built), and the
 # things that decide a migration are who calls the workflows and whether there
-# is somewhere safe to run them.
+# is somewhere safe to run them. Since 1.2.0 three are no longer asked: the
+# brief covers what is in the export (Q1, scope), a prior attempt changes no
+# wave (Q5), and its next steps say to check each workflow's run history (Q7).
+# An answer an earlier version kept for one stays in answers.yaml, no longer asked.
 QUESTIONS: list[dict[str, Any]] = [
-    {"id": "Q1", "topic": "scope",
-     "question": "Is this export the whole vRO estate? If not, what is missing, and how many vRO nodes or clusters does the estate run on?",
-     "why": "Every count in Assess and Brief is only as complete as the export. A partial export hides callers and callees.",
-     "read_by": ["assess: unexported calls", "brief: retire candidates, waves"],
-     "options": ["yes, the whole estate, from one vRO cluster", "the whole estate, from several clusters: I will name them",
-                 "only part of it: I will say what is missing"]},
     {"id": "Q2", "topic": "external callers",
      "question": "What starts these workflows from outside vRO? Two ways to answer, and they can be combined: put the vRA content export (a .vra-ng from Build Tools) in the export folder, and the tool reads its catalog items, cloud templates and event broker subscriptions; and list in your-input/entry-points.yaml whatever that export does not hold, or everything if there is no export: vRO scheduled tasks and policies, the ITSM (for example ServiceNow), and scripts calling the vRO REST API. Set complete: true there once the list is whole.",
      "why": "None of these are in a vRO package. Without them every workflow nobody calls in the export looks like an entry point or dead code, and the two cannot be told apart.",
@@ -49,23 +46,11 @@ QUESTIONS: list[dict[str, Any]] = [
      "options": ["nothing is off limits", "some of it is: I will name it"],
      "suggested": "nothing is off limits",
      "plain": "Is any of it off limits (another team's, frozen, vendor supplied, or being replaced)?"},
-    {"id": "Q5", "topic": "prior attempts",
-     "question": "Has anyone tried to migrate or rewrite any of this before? What happened?",
-     "why": "A previous attempt usually found the hard part already. It belongs in the brief's risks.",
-     "read_by": ["brief: risks"],
-     "options": ["no earlier attempt", "yes: I will say what happened"],
-     "plain": "Has anyone tried to migrate or rewrite any of it before? What happened?"},
     {"id": "Q6", "topic": "owners",
      "question": "Who owns each functional area (for example load balancing, network provisioning, tenant onboarding)? Name a person or team per area.",
      "why": "Open questions, retire candidates and wave approvals need someone to answer them. The brief lists open questions by area.",
      "read_by": ["brief: open questions, approval"],
      "plain": "Who owns each functional area? A person or team for each."},
-    {"id": "Q7", "topic": "execution history",
-     "question": "Can you export twelve months of workflow run history (vRO workflow tokens, or the vRA deployment history), with workflow ID, start time and result?",
-     "why": "The retire rule is 'no executions in twelve months'. Without history it cannot be tested, only guessed from the call graph.",
-     "read_by": ["brief: retire pass"],
-     "options": ["yes, I will put it in the export folder", "no, there is no history to export"],
-     "plain": "Can you export twelve months of run history: workflow, start time and result?"},
     {"id": "Q8", "topic": "plugin inventory",
      "question": "Which vRO plugins and versions are installed on each node, and are any custom or in-house plugins in use?",
      "why": "A plugin object type Kestra cannot reach blocks every workflow that uses it. The export only records plugins by name where dunes-meta-inf lists them.",
@@ -189,11 +174,6 @@ def questions_for(f: dict) -> list[dict]:
                              "workflows reach.")
             q["found"] = "; ".join(f"{n} (from {how})" for n, how in f["systems"]) + "."
             q["systems"] = [{"key": (f.get("system_ids") or {}).get(n, n), "name": n} for n in names]
-        if q["id"] == "Q7" and f.get("history_files"):
-            hs = f["history_files"]
-            q["question"] = ("The estate folder holds files that look like run history. Do they cover twelve months "
-                             "for every workflow, with workflow ID, start time and result? If not, export the rest.")
-            q["found"] = f"{_n(len(hs), 'file')}: " + ", ".join(hs[:5]) + (" ..." if len(hs) > 5 else "") + "."
         if q["id"] == "Q8" and f.get("plugins"):
             q["question"] = ("The code uses these vRO plugins: " + ", ".join(f["plugins"]) + ". Is that the list? "
                              "Correct it if not, and add the installed version per node and any custom or in-house "
@@ -220,8 +200,6 @@ def contradictions(questions: list[dict], f: dict) -> list[str]:
             out.append("Q3 lists systems the tool did not find (" + ", ".join(extra) + ") instead of those it did")
     if f.get("plugins") and not (by.get("Q8") or {}).get("found"):
         out.append("Q8 asks which plugins are used without saying which the code uses: " + ", ".join(f["plugins"]))
-    if f.get("history_files") and not (by.get("Q7") or {}).get("found"):
-        out.append("Q7 asks for run history while the estate folder holds files that look like it")
     return out
 
 
@@ -524,18 +502,18 @@ def run() -> dict:
             "Prefer a .package containing these workflows (INPUTS.md).")
     if exp["ignored_files"]:
         chk("Other files in the estate folder", "ignored",
-            ", ".join(exp["ignored_files"]), "Not an export format, so not read. Run history goes to Q7.")
+            ", ".join(exp["ignored_files"]), "Not an export format, so not read.")
     chk("Element counts", "ready",
         ", ".join(f"{v} {k}" for k, v in exp["totals"].items()))
     chk("Execution history", "missing" if not exp["execution_history"]["present"] else "ready",
         "none in the export" if not exp["execution_history"]["present"] else
         f"{len(exp['execution_history']['files'])} file(s)",
-        "Export run history (Q7). Until then the retire rule is untestable.")
+        "Check each workflow's run history in vRO: until then the retire rule is untestable.")
     vtxt = ", ".join(exp["vro_versions"]) or "none"
     chk("Source vRO version", "gap" if exp["sources_without_version"] else "ready",
         f"{vtxt} (from dunes-meta-inf)" + (f"; no version recorded for {', '.join(exp['sources_without_version'])}"
                                            if exp["sources_without_version"] else ""),
-        "Confirm the version per node (Q1, Q8). Sources built from source control carry no version.")
+        "Confirm the version per node (Q8). Sources built from source control carry no version.")
     plug = sorted({p for s in exp["sources"] for p in s["used_plugins"]})
     chk("Plugins declared", "gap",
         (", ".join(plug) or "none") + " declared in dunes-meta-inf; other plugins are only visible from object types in the XML",
@@ -670,10 +648,10 @@ def _readiness_md(r: dict) -> str:
 
     L += ["## Most important gap", ""]
     if entry_points.total(exp["entry_points"]["model"]):
-        L += ["No execution history (Q7). The entry points on record say what can start a workflow, not "
+        L += ["No execution history. The entry points on record say what can start a workflow, not "
               "whether anything did in the last twelve months, so the retire rule is still untested.", ""]
     else:
-        L += ["No execution history and no external entry points (Q2, Q7). Without them the brief cannot "
+        L += ["No execution history and no external entry points (Q2). Without them the brief cannot "
               "say which workflows are unused, only which ones nothing in the export calls.", ""]
     return "\n".join(L)
 

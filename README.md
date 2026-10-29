@@ -56,20 +56,19 @@ kestra-migrate vra run ~/exports/acme
 
 If Claude Code is installed and you're logged in, the tool uses that login by default. Otherwise, it checks for an Anthropic API key. If neither is available, the assessment runs without a model. Before its first billed model call, it shows an estimated cost. See [Choose a model](#choose-a-model) for other options.
 
-In a terminal, the run goes like this:
+In a terminal, the run starts with the KESTRA wordmark and the version, then goes like this:
 
 1. **The model.** It says which model it uses. Press Enter to go on, or `c` to choose another (the cheaper ones show their cost compared with it). The choice is kept for this export.
 2. **What it read.** Each file and what is in it (workflows, actions, configuration and resource elements, catalog items, subscriptions), and the code the workflows call that is not in the package, with how to add it. You can carry on without it: the workflows that call it get less certain results. The assessment only reads these files: it never connects to or runs anything on your systems. Press Ctrl+C at any time to stop: finished work is kept.
 3. **About the estate.** The few questions the analysis needs, built from what the code shows: what starts the workflows, where the converted flows read their settings and get their secrets, whether workflows call other vRO clusters, what looks out of scope. Each choice says what a Kestra term means in vRO's terms.
 4. **Analysis.** It says how many model calls this takes and what they cost, and asks before it spends anything. Then one line shows which step it is on, how far it is and how long it has taken. What each step did in detail goes to `kestra-assessment/data/run.log`.
-5. **The brief.** It is written straight away, with every assumption it makes listed in it. The terminal shows a short summary: the recommendation, the waves, and where to open the brief.
-6. **Sharpening it, if you want.** It says how many assumptions the brief makes and offers to ask up to five questions, the ones that change the brief most. The default is no, and the run ends there. Say yes, and it asks them (`q` stops at any point), then writes the brief again.
+5. **The brief.** It is written straight away, with every assumption it makes listed in it. The terminal shows a short summary (the recommendation and the waves), the brief's location as a `file://` link, and asks `Open the brief now? (Y/n)`: Enter opens it in your browser. The run ends there.
 
-Run the same command again later, and it goes straight to the summary and the offer, after redoing whatever changed.
+To answer more questions and sharpen the brief, run the same command again. Your answers are kept. After redoing whatever changed, it asks up to five questions, the ones that change the brief most (`q` stops at any point), writes the brief again, and ends the same way. "Done in" counts the tool's own working time, not the time you spend answering.
 
 Each question lists numbered choices. The first is what the code or the model suggests, and Enter takes it. The last is always "None of these, enter my own answer". When the choices are not exclusive, type several numbers, like `2, 4`. Type `s` to leave a question for someone else, or `q` to save and stop. Every answer is saved in `answers.yaml` as soon as you give it.
 
-A question with a sensible answer is not asked: the brief assumes it. The converted flows do what the workflows do today, so one can be tested against the other, and fixes come afterwards. Possible defects are kept; one that makes its workflow fail every time, or a security problem such as a credential written to a log, is listed in the brief as a note to fix after the migration. Certificate and host checks that vRO turned off stay off, with a security note. Flows are tested in a simulated lab first, then against a non-production instance where one exists. Nothing is off limits, vRA is replaced by Kestra, and what the code suggests is taken. A question about a value the sanitized copy hides is not asked: the real value is in the export. A detail of how one flow is built waits for the wave that converts it. Each assumption is written in `answers.yaml` with the answer it takes, and you can change any of them there.
+A question with a sensible answer is not asked: the brief assumes it. The converted flows do what the workflows do today, so one can be tested against the other, and fixes come afterwards. Possible defects are kept; one that makes its workflow fail every time, or a security problem such as a credential written to a log, is listed in the brief as a note to fix after the migration. Certificate and host checks that vRO turned off stay off, with a security note. Flows are tested in a simulated lab first, then against a non-production instance where one exists. Nothing is off limits, vRA is replaced by Kestra, Kestra Enterprise Edition is available, and what the code suggests is taken. The brief covers what is in the export; its next steps suggest checking each workflow's run history to find the ones that no longer run. A question about a value the sanitized copy hides is not asked: the real value is in the export. A detail of how one flow is built waits for the wave that converts it. Each assumption is written in `answers.yaml` with the answer it takes, and you can change any of them there.
 
 If your Claude plan's limit (or your API key's rate limit) runs out during the analysis, the run stops and says so. Finished work is kept: run the same command again once the limit resets.
 
@@ -97,7 +96,7 @@ acme/kestra-assessment/
 
 ### 4. Sharpen the brief and run again
 
-The questions the brief could not assume, and whatever you skipped, stay in `kestra-assessment/your-input/answers.yaml`. Answer them there, change any assumption there, or run the command again in a terminal to be offered the questions again:
+The questions the brief could not assume, and whatever you skipped, stay in `kestra-assessment/your-input/answers.yaml`. Answer them there, change any assumption there, or run the command again in a terminal to be asked them:
 
 ```bash
 kestra-migrate vra run ~/exports/acme

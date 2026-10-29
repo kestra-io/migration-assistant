@@ -131,7 +131,11 @@ def test_answers_yaml_lists_every_decision_with_options(estate):
 def test_a_decision_closes_every_criterion_it_covers(estate):
     b, _ = estate()
     ed = [(n, e) for n, e in _criteria(b) if e["closes"]["key"] == "edition"]
-    assert ed and all(e["status"] == "open" for _, e in ed)
+    assert ed and all(e["status"] == "done" for _, e in ed)             # Enterprise Edition is assumed (assume.edition)
+    Y.set_answer("assume.edition", "not available")                     # the assumption overridden: the edition as said
+    b, _ = estate()
+    assert all(e["status"] == "blocked" for _, e in _criteria(b) if e["closes"]["key"] == "edition")
+    Y.set_answer("assume.edition", "")
     _fill({"edition": {"decision": "available"}})
     b, md = estate()
     ed = [(n, e) for n, e in _criteria(b) if e["closes"]["key"] == "edition"]

@@ -98,7 +98,7 @@ the brief can only say which workflows nothing *in the export* calls, not which 
 
 | Missing from the export | Why it matters | How to get it **(to confirm with a vRO expert)** | Preflight question |
 |---|---|---|---|
-| **Run history**, twelve months: workflow ID, start time, result | The retire rule ("no executions in twelve months") cannot be tested without it | vRO workflow tokens (the Orchestrator REST API `/vco/api/workflows/{id}/executions`, or the vRO database), or vRA deployment and request history. A CSV is enough | Q7 |
+| **Run history**, twelve months: workflow ID, start time, result | The retire rule ("no executions in twelve months") cannot be tested without it | vRO workflow tokens (the Orchestrator REST API `/vco/api/workflows/{id}/executions`, or the vRO database), or vRA deployment and request history. Check it for each workflow, and retire the ones that no longer run in `corrections.yaml` | The brief's next steps (no longer asked since 1.2.0) |
 | **vRA catalog items** and the workflows behind them | These are entry points: a workflow a catalog item starts is used even if nothing in vRO calls it | The `.vra-ng` content export (section 4), or `entry-points.yaml` | Q2 |
 | **Event broker subscriptions** | Also entry points (for example a workflow that runs after every VM is provisioned). They feed the trigger plan (the vRA flow page): what starts each workflow, whether vRA waits for it, and how that maps in Kestra. They never decide the workflow's outcome, which is judged on its logic | The `.vra-ng` content export (section 4), or `entry-points.yaml` | Q2 |
 | **Whether vRA stays** as the front end or is replaced | Kept, each subscription calls a Kestra webhook; replaced, catalog items become Kestra Apps and cloud templates flows | A decision, not an export | Q9 |
@@ -150,9 +150,9 @@ waves:
         answer:
 
 answered:
-  - id: q1-scope
-    question: Is this export the whole vRO estate?
-    answer: yes, the whole estate, from one vRO node
+  - id: q4-off-limits
+    question: Is any of it off limits (another team's, frozen, vendor supplied, or being replaced)?
+    answer: nothing is off limits
 
 signed_for: full plan
 ```
@@ -205,13 +205,13 @@ in `data/`.
 
 The questions are asked from what is on record, and asked again after Assess: with a vRA export read, Q2
 asks only for what an export cannot hold (vRO scheduled tasks and policies, the ITSM, REST callers); Q3
-names the systems the tool found; Q7 names any run-history files in the folder; Q8 suggests the vRO plugins
+names the systems the tool found; Q8 suggests the vRO plugins
 the code uses, for you to answer `yes` or correct. Q9 takes keep, replace, or replace vRA with a bridge that
 forwards vRA's requests to Kestra until users move to the new front end. A `.vra-ng` in the estate folder is read (section 4). Other files (a run-history CSV) can go there
 too; Preflight lists them as "other files" and they are not parsed yet.
 
 Later, the brief asks in the same `answers.yaml` for the decisions its waves wait for: a client route for a
-system with no Kestra plugin, whether Enterprise Edition is available, a timeout policy for each blocking step,
+system with no Kestra plugin, whether Enterprise Edition is available (assumed: it is), a timeout policy for each blocking step,
 how to get a resource no Kestra task creates, and keep or fix for each suspected defect. Each is a plain
 question with the choices in it, and a suggested value where the tool has a recommendation. After
 `decide each`, a suspected defect reads like this: "The Deployment Registry is read before the teardown gate,
