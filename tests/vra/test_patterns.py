@@ -142,16 +142,22 @@ def test_rest_in_code_and_its_mechanics_are_assumed_not_asked(run_pattern):
     _use(r)
     from kestra_migration_assistant.vra.stages import your_input as Y
     assert rt and sorted(rt) == sorted(it["key"] for it in Y.items() if it.get("family") == "question")
-    # host verification turned off is a security matter: one question, asked after the analysis, not assumed
-    hv = est["estate.host-verification"]
-    assert hv["options"][0].startswith("yes, check them") and len(hv["settles"]) == 3
-    assert all(".tls" in k for k in hv["settles"])
-    _use(r)
-    assert next(it for it in Y.items() if it["key"] == "estate.host-verification")["phase"] == "plan"
-    b = _answer_and_rebrief(r, "estate.host-verification", "2")
-    assert all(Y.state(k)["answer"].startswith("keep: the checks stay off") for k in hv["settles"])
-    open_ids = {m for x in b["input"]["shown"] for m in x["members"]}
-    assert not set(hv["settles"]) & open_ids
+    # certificate and host checks turned off stay off, as today: assumed, never asked, and a security note in the brief
+    assert "estate.host-verification" not in est
+    hc = est["assume.host-checks"]
+    ms = [m["id"] for m in hc.get("each") or []]
+    assert len(ms) == 3 and all(".tls" in k for k in ms)
+    assert all(m["assumed"].startswith("keep: the checks stay off") for m in hc["each"])
+    b = _read(r, "3-brief", "brief.json")
+    from kestra_migration_assistant.vra.stages import front as F
+    notes = F.note_lines(b)
+    assert notes and notes[0].startswith("**Security: certificate or host checks turned off** in three workflows")
+    assert not set(ms) & {m for x in b["input"]["shown"] for m in x["members"]}
+    # answered to check them, the conversion fixes each one instead
+    b = _answer_and_rebrief(r, "assume.host-checks", "check them")
+    assert all(Y.state(k)["answer"].startswith("fix: the flow verifies the certificate") for k in ms)
+    assert not set(ms) & {m for x in b["input"]["shown"] for m in x["members"]}
+    assert not any("host checks turned off" in n for n in F.note_lines(b))
 
 
 def test_a_call_to_another_cluster_lists_what_to_add_and_asks_how_to_reach_it(run_pattern):

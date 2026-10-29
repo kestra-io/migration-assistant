@@ -74,7 +74,8 @@ def test_a_defect_is_kept_and_described_by_what_it_does_unless_it_is_a_security_
     kept, asked = sorted_items["defect.wf-a.other"], sorted_items["defect.wf-a.logs-password"]
     assert kept["question"] == "The ServiceNow request is closed without its work notes. Keep it as today, or fix it?"
     assert D._defects({}, kept).startswith("keep") and not D.asked(kept)
-    assert D.asked(asked) and D._defects({}, asked) is None and asked["suggested"] == "keep it, as today"
+    # a security problem is kept too (the run never asks), and flagged: the brief lists it first, as a note
+    assert D.asked(asked) and D._defects({}, asked).startswith("keep") and asked["suggested"] == "keep it, as today"
 
 
 def test_without_a_model_the_rules_sort_them(monkeypatch):

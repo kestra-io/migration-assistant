@@ -716,12 +716,20 @@ def run_estate() -> dict:
             continue
         todo.append({"id": cid, "key": key, "c": c, "members": members})
 
+    summed = {"n": 0}
+    sum_lock = threading.Lock()
+
     def summarize(job: dict) -> dict:
         t0 = time.monotonic()
         v = M.ask("cluster-summary", f"{C.ESTATE}/{job['id']}", cluster_prompt(job["c"], job["members"]), CLUSTER_SCHEMA)
-        C.progress(f"wrote the summary of group {job['id']} ({time.monotonic() - t0:.1f}s)")
+        with sum_lock:
+            summed["n"] += 1
+            C.progress(f"wrote the summary of group {job['id']} ({time.monotonic() - t0:.1f}s)")
+            C.tick("groups", summed["n"], len(todo))
         return v
     # the group summaries, in parallel like the specs (one after the other, 19 of them took four minutes)
+    if todo:
+        C.tick("groups", 0, len(todo))
     got, errs = M.run_parallel(todo, summarize) if todo else ({}, {})
     for job in todo:
         cid = job["id"]

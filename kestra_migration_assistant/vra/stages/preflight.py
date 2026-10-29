@@ -47,6 +47,7 @@ QUESTIONS: list[dict[str, Any]] = [
      "why": "Off-limits workflows are dropped from the waves, and whatever calls them keeps a dependency on vRO.",
      "read_by": ["brief: waves, blocked list"],
      "options": ["nothing is off limits", "some of it is: I will name it"],
+     "suggested": "nothing is off limits",
      "plain": "Is any of it off limits (another team's, frozen, vendor supplied, or being replaced)?"},
     {"id": "Q5", "topic": "prior attempts",
      "question": "Has anyone tried to migrate or rewrite any of this before? What happened?",
@@ -74,6 +75,7 @@ QUESTIONS: list[dict[str, Any]] = [
      "why": "The trigger plan differs: kept, every subscription calls a Kestra webhook (and a blocking one waits for the result); replaced, each catalog item becomes a Kestra App and each cloud template a flow whose steps are the old lifecycle events; replaced with a bridge, the converted flows run behind webhooks first and vRA goes once the replacement is ready. Unanswered, the brief shows both.",
      "read_by": ["brief: trigger plan, wave entry criteria"],
      "options": ["keep", "replace", "replace with a bridge until then"],
+     "suggested": "replace",
      "plain": "Will vRA stay as the front end and call Kestra, or will Kestra replace it? (keep, replace, or replace "
               "with a bridge until then)"},
 ]

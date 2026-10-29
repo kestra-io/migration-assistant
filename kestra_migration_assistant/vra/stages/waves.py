@@ -260,7 +260,7 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                          "source": "waves", "closes": _wave_exit(d)})
         for t in writes:
             crit.append({"criterion": f"A non-production {targets[t]['name']} is named for this wave to write to",
-                         "source": "preflight Q3", "closes": G.by_answer("Q3")})
+                         "source": "the question about non-production instances", "closes": G.by_answer("Q3")})
         for t in ts:
             crit.append({"criterion": f"{targets[t]['name']}: the instance this wave's flows call is named (base URL "
                                       "or host) and its credentials are stored as Kestra secrets",
@@ -340,8 +340,8 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                 if e.get("kind") == "subscription" and not e.get("disabled")]
         if subs:
             crit.append({"criterion": "The trigger plan for this wave's subscriptions is agreed: vRA calls Kestra's "
-                                      "webhook, or vRA is replaced and each event becomes a step (preflight Q9)",
-                         "source": "preflight Q9", "closes": G.by_answer("Q9")})
+                                      "webhook, or vRA is replaced and each event becomes a step",
+                         "source": "the question whether vRA stays", "closes": G.by_answer("Q9")})
         for u, e in subs:
             # replaced: a step of the vRA replacement wave instead; with a bridge, the webhook in between too
             if e.get("blocking") and (not replacing or front == TG.BRIDGE):
@@ -390,7 +390,7 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                 listing = "; ".join(f"{_nm(wf, u)}: {', '.join(k)}" for u, k in sorted(typed.items()))
                 crit.append({"criterion": "Each flow takes typed inputs instead of vRA's event payload (" + listing
                                           + "); the payload parsing is not converted",
-                             "source": "preflight Q9",
+                             "source": "the question whether vRA stays",
                              "closes": G.by_decision(
                                  f"typed-inputs.wave-{n}",
                                  "With vRA replaced, which typed inputs does each flow take? Proposed from the payload "
@@ -419,8 +419,8 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                                  why="the converter builds one or the other; the spec found it in the code",
                                  plain=defect_question(_short_name(wf, u), d["what"], _names(assess)))})
         if "Q4" in open_q:
-            crit.append({"criterion": "Preflight Q4 answered: none of these workflows is off limits",
-                         "source": "preflight Q4", "closes": G.by_answer("Q4")})
+            crit.append({"criterion": "Answered: none of these workflows is off limits",
+                         "source": "the question whether anything is off limits", "closes": G.by_answer("Q4")})
         # Pilot: the safest member to learn from. Convert with a high-confidence spec first,
         # then the fewest writes, then nothing it calls inside the wave. A workflow nothing calls or starts (a
         # retire candidate) is the last choice: it may be retired. In a lifecycle group the member with the

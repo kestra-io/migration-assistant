@@ -289,11 +289,11 @@ def call_graph(assess, brief) -> str:
     n_ep = assess["counts"].get("entry_points", 0)
     if n_ep:
         note = (f"{n_ep} entry point(s) are on record, from the vRA export and <code>entry-points.yaml</code> "
-                "(preflight Q2). The first graph shows what starts each workflow from outside vRO. A workflow "
+                "(the question what starts the workflows from outside vRO). The first graph shows what starts each workflow from outside vRO. A workflow "
                 "no other workflow calls and no entry point starts may be started by hand or be unused; only an "
                 "owner can tell which.")
     else:
-        note = ("This export has no catalog items, subscriptions or schedules (preflight Q2 is open), so an "
+        note = ("This export has no catalog items, subscriptions or schedules (the question what starts the workflows from outside vRO is open), so an "
                 "<b>entry point</b> here means a workflow that no other workflow in the export calls. Clusters "
                 "holding one have a highlighted border. Some are real entry points; some may be unused. Only an "
                 "owner can tell which.")
@@ -622,7 +622,7 @@ def _criterion_label(e: dict, key: str, by_part: dict, by_name: dict, wf_by_shor
         name = next((s for n, s in by_name.items() if n in e["criterion"]), m.group(1) if m else "")
         return f"Non-production {name}".strip(), f"{key}:{name}"
     if fam.startswith("q9"):
-        return "Whether vRA stays or is replaced (preflight Q9)", key
+        return "Whether vRA stays or is replaced", key
     m = re.match(r"q(\d+)-", fam)
     if m:
         return f"Preflight Q{m.group(1)}: " + fam.split("-", 1)[1].replace("-", " "), key
@@ -1102,14 +1102,14 @@ def vra_view(assess, brief) -> str:
     if not views:
         body = ("<h1>vRA view</h1><div class=\"note\">No vRA content is on record: no .vra-ng export in the estate "
                 "folder and no catalog item, cloud template or subscription in <code>entry-points.yaml</code> "
-                "(preflight Q2). Nothing here to show.</div>")
+                "(the question what starts the workflows from outside vRO). Nothing here to show.</div>")
         return TH.page("vRA view", body, active="vra.html")
-    choice = {TG.KEEP: "vRA stays as the front end (preflight Q9): subscriptions call Kestra's webhook.",
-              TG.REPLACE: "vRA is replaced (preflight Q9): the catalog item becomes a Kestra App, the cloud template "
+    choice = {TG.KEEP: "vRA stays as the front end (your answer, or what the brief assumes): subscriptions call Kestra's webhook.",
+              TG.REPLACE: "vRA is replaced (your answer, or what the brief assumes): the catalog item becomes a Kestra App, the cloud template "
                           "a flow, each event below a step in it.",
-              TG.BRIDGE: "vRA is replaced, with a bridge until then (preflight Q9): subscriptions call Kestra's "
+              TG.BRIDGE: "vRA is replaced, with a bridge until then (your answer): subscriptions call Kestra's "
                          "webhook while the replacement is built, then each event below becomes a step.",
-              TG.BOTH: "Preflight Q9 (keep vRA or replace it) is open, so the plan below shows both."}[tp["front_end"]]
+              TG.BOTH: "Whether vRA stays or is replaced is open, so the plan below shows both."}[tp["front_end"]]
     parts = [f"""<h1>vRA flow</h1>
 <p>How a request becomes machines and what the workflows do with them: the catalog item and its form, the cloud
 template and what it creates, then the lifecycle events in the order vRA fires them, each with the workflow its

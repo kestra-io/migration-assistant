@@ -67,6 +67,8 @@ def plan(assess: dict, triage: dict, answers: dict, trigger_plan: dict | None, w
     """Replacement waves, numbered from `first_number`. Empty unless the trigger plan says vRA is replaced."""
     if not trigger_plan or trigger_plan.get("front_end") not in TG.REPLACING:
         return []
+    if triage and all(t.get("outcome") == "Needs a model" for t in triage.values()):
+        return []                       # no workflow is judged without a model, so there is no plan for vRA's either
     model = (assess.get("entry_points") or {}).get("model") or {}
     templates = model.get("cloud_templates") or []
     if not templates:
@@ -123,7 +125,7 @@ def _wave(n, deps, its, wf, triage, open_q, app_where, blocked, assess) -> dict:
     systems = sorted({(r["system"], r["system_key"]) for it in its for r in it["resources"] if r["system"]})
     for sname, _key in systems:
         crit.append({"criterion": f"A non-production {sname} is named for this wave's flow to create resources in",
-                     "source": "preflight Q3", "closes": G.by_answer("Q3")})
+                     "source": "the question about non-production instances", "closes": G.by_answer("Q3")})
     ee = sorted({_short(t) for it in its for r in it["resources"] if r["enterprise_only"] for t in r["tasks"]})
     if its and any(it["catalog_items"] for it in its):
         ee = [APP] + ee
@@ -214,6 +216,7 @@ def _wave(n, deps, its, wf, triage, open_q, app_where, blocked, assess) -> dict:
                              f"'{it['cloud_template']}' scales it and runs the per-machine steps for each machine added "
                              "or removed. Does the Kestra side offer that?",
                              ["a day-2 App that scales and runs the same steps", "not offered: redeploy instead"],
+                             recommended="a day-2 App that scales and runs the same steps",
                              why="the machine count comes from an input, so vRA allowed it to change after the "
                                  "deployment")})
         for c in it["catalog_items"]:
@@ -263,6 +266,7 @@ def _wave(n, deps, its, wf, triage, open_q, app_where, blocked, assess) -> dict:
                                  ["errors runs for a killed execution (checked on the target Kestra)",
                                   "afterExecution with a condition on the execution's state",
                                   "not needed (say why)"],
+                                 recommended="afterExecution with a condition on the execution's state",
                                  why="Kestra's errors branch is documented for failed tasks; this tool has not "
                                      "checked a killed execution")})
         crit.append({"criterion": f"A plan for the deployments vRA already made from '{it['cloud_template']}': deleted "
@@ -273,9 +277,10 @@ def _wave(n, deps, its, wf, triage, open_q, app_where, blocked, assess) -> dict:
                          f"existing-deployments.{fk}",
                          f"What happens to the deployments vRA already made from '{it['cloud_template']}'?",
                          ["there are none", "deleted through vRA before it goes",
-                          "recorded for the delete path of flow " + it["flow"]])})
+                          "recorded for the delete path of flow " + it["flow"]],
+                         recommended="recorded for the delete path of flow " + it["flow"])})
     if "Q4" in open_q:
-        crit.append({"criterion": "Preflight Q4 answered: nothing here is off limits", "source": "preflight Q4",
+        crit.append({"criterion": "Answered: nothing here is off limits", "source": "the question whether anything is off limits",
                      "closes": G.by_answer("Q4")})
 
     scope = []

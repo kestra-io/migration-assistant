@@ -60,7 +60,7 @@ def test_a_long_stage_says_it_started_and_one_line_how_far_it_is(tmp_path, monke
     assert lines[0].startswith("Preflight   done at once;")                 # instant: one line
     assert lines[1] == "Understand  started"
     # no terminal: the progress line is written when the step starts and when it ends, never once per spec
-    assert lines[2] == "Analyzing 2 workflows: 0 done." and lines[3] == "Analyzing 2 workflows: 2 done."
+    assert lines[2] == "Analyzing 2 workflows: 0 done." and re.fullmatch(r"Analyzing 2 workflows: 2 done, \d+s\.", lines[3])
     assert lines[4].startswith("Understand  2 specs, 2 written this run;")
     assert not any("wrote spec" in x for x in lines)
     log = open(tmp_path / "data" / "run.log", encoding="utf-8").read()

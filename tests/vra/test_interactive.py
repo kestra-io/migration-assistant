@@ -2,11 +2,12 @@
 The interactive run (1.2.0), driven with simulated terminal input, on the review/ conformance tree (three workflows
 with their specs, no model):
 
-- typed in a terminal, `run` says what it read and how to stop, asks the estate interview, runs the analysis, then
-  asks what the plan needs; each answer is saved at once; s skips, q saves and stops; it never shows a count it keeps
-  behind the scenes;
-- a question whose choices are not exclusive takes several numbers; a yes-or-no question offers yes and no; a
-  blanket answer settles every question of its kind at once;
+- typed in a terminal, `run` says what it read and how to stop, asks the estate interview, runs the analysis and
+  writes the brief at once, every question with a suggestion assumed and written in answers.yaml; then a short
+  summary, and an offer (no by default) to answer at most five questions that sharpen it, the ones that change the
+  brief most first; each answer is saved at once; s skips, q saves and stops; run again, it goes straight to the
+  offer;
+- a question whose choices are not exclusive takes several numbers; a yes-or-no question offers yes and no;
 - Ctrl+C stops the model calls in flight at once and keeps what is written;
 - called by a program, run without a terminal, or with --batch, it never waits for input;
 - the same answers.yaml run again in batch mode in a fresh folder gives the same brief;
@@ -102,14 +103,42 @@ def _estate_questions(tmp_path, monkeypatch) -> int:
 
 
 HIDDEN = re.compile(r"settles? \d+|settled by other|questions? to answer|Round \d|settle the most|Saved\. |"
-                    r"Re-planned|assumptions?\b|accept every suggested answer below|Choose 1-1\b", re.I)
+                    r"Re-planned|accept every suggested answer below|Choose 1-1\b|After the analysis", re.I)
 
 
-def test_the_interactive_run_says_what_it_read_asks_the_interview_then_what_the_plan_needs(tmp_path, monkeypatch):
-    n = _estate_questions(tmp_path, monkeypatch)
+class Person(io.StringIO):
+    """Takes every suggestion (Enter) until the offer to sharpen the brief, then types `lines` one by one; records
+    what the terminal showed and whether the brief was on disk at each prompt."""
+
+    def __init__(self, lines: list[str], out: io.StringIO, export: str):
+        super().__init__()
+        self.lines, self.out, self.export, self.seen, self.offered = list(lines), out, export, [], False
+
+    def readline(self, *a):
+        prompt = self.out.getvalue().rsplit("\n", 1)[-1]
+        brief = os.path.join(self.export, "kestra-assessment", "data", "3-brief", "brief.json")
+        self.seen.append({"prompt": prompt, "brief": os.path.exists(brief)})
+        self.offered = self.offered or prompt.startswith("Answer them now?")
+        return (self.lines.pop(0) if self.offered and self.lines else "") + "\n"
+
+
+def _typed_run(monkeypatch, export: str, lines: list[str]) -> tuple[int, str, Person]:
+    import sys
+
+    from kestra_migration_assistant.vra import cli
+    out = io.StringIO()
+    person = Person(lines, out, export)
+    monkeypatch.setattr(cli, "is_terminal", lambda: True)
+    monkeypatch.setattr(sys, "stdin", person)
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setenv("VRO_NO_MODEL", "1")
+    code = cli.main(["run", export, "--no-model"], interactive=True)
+    return code, out.getvalue(), person
+
+
+def test_the_interactive_run_writes_the_brief_after_the_interview_then_offers_to_sharpen_it(tmp_path, monkeypatch):
     export = _export(tmp_path)
-    typed = "\n" * n + "1\n" * 40              # Enter takes a suggestion; a question without one takes a number
-    code, out = _run(monkeypatch, export, typed)
+    code, out, person = _typed_run(monkeypatch, export, [""])     # Enter: every suggestion, then the default no
     assert code == 0
     # the first screen: what it read, that it only reads, how to stop, then the interview in one short line
     assert "Read:" in out and re.search(r"- review\S*: \d+ workflows?, \d+ actions?", out)
@@ -119,30 +148,77 @@ def test_the_interactive_run_says_what_it_read_asks_the_interview_then_what_the_
     assert "estate:" not in out and "answers.yaml" not in out.split("Question 1 of", 1)[0]
     interview = re.search(r"Before the analysis, (\d+) questions? about your estate\.", out)
     assert interview and out.index("Press Ctrl+C") < interview.start()
-    told = re.search(r"After the analysis, (\d+) questions?\.", out)
-    assert told and interview.start() < told.start()
-    # every question it asks is one it said it would: never "of" more than it said
-    after = out[told.end():]
-    asked = [(int(i), int(k)) for i, k in re.findall(r"Question (\d+) of (\d+)", after)]
-    assert asked and all(k <= int(told.group(1)) for _i, k in asked)
-    assert [i for i, _k in asked] == list(range(1, len(asked) + 1))
-    # nothing it counts behind the scenes, no rounds, no "Saved" after each answer
+    # after the interview, nothing is required: the brief is written, then summed up, then offered to sharpen
+    n = int(interview.group(1))
+    after = out[interview.end():].split(f"Question {n} of {n}", 1)[-1]
+    assert "Question" not in after.split("Answer them now?", 1)[0]
+    summary = after.index("The brief recommends: ")
+    offer = re.search(r"The brief is ready\. It makes (\d+) assumptions?, listed in it\. To make it sharper, you can "
+                      r"answer (up to 5 questions|\w+ questions?) now \(about [\w ]+\), or later in \S*answers\.yaml\.",
+                      re.sub(r"\s+", " ", after))
+    assert offer and int(offer.group(1)) > 0 and summary < after.index("Answer them now? (y/N)")
+    assert re.search(r"Open\s+\S*index\.html", after[summary:])
+    at_offer = next(x for x in person.seen if x["prompt"].startswith("Answer them now?"))
+    assert at_offer["brief"]                                       # the brief was on disk before the offer
+    assert person.seen[-1] is at_offer                             # the default no ends the run: nothing else asked
+    assert "Done in " in out.rsplit("Answer them now?", 1)[1]
     assert not HIDDEN.search(out), HIDDEN.search(out)
+    # every assumption is in answers.yaml, each item it settles listed with the answer it takes
     doc = _answers(export)
     est = {e["id"]: e for e in doc["estate"]}
     answered = [k for k, e in est.items() if k.startswith("estate.") and e.get("answer")]
     assert answered and all(est[k]["answer"] == est[k]["suggested"] for k in answered)
-    assert _brief(export)["questions"]["open"] == _open_lines(doc)
+    assumed = {k: e for k, e in est.items() if k.startswith("assume.")}
+    assert {"assume.suggested", "assume.non-production", "assume.defects"} <= set(assumed)
+    takes = {m["id"]: m["assumed"] for m in assumed["assume.suggested"]["each"]}
+    assert takes["q4-off-limits"] == "nothing is off limits" and takes["q9-vra-front-end"] == "replace"
+    assert all(m.get("assumed") and "answer" not in m for e in assumed.values() for m in e.get("each") or [])
+    b = _brief(export)
+    assert b["questions"]["open"] == _open_lines(doc)
+    assert {a["id"] for a in b["assumptions"] if a["holds"]} >= {"assume.suggested", "assume.non-production"}
 
 
-def test_the_interview_asks_only_what_the_analysis_reads(tmp_path, monkeypatch):
-    """Whether there is a non-production instance, and whether to check certificates, only the plan needs: they are
-    asked after the analysis, explained."""
+def test_non_production_certificates_off_limits_vra_and_suggestions_are_assumed_never_asked(tmp_path, monkeypatch):
+    """What has an answer that keeps today's behavior, or that the code suggests, is assumed: the lab first then
+    non-production where it exists, nothing off limits, vRA replaced, every suggestion taken."""
     export = _export(tmp_path)
-    code, out = _run(monkeypatch, export, "1\n" * 40)
-    before, after = out.split("After the analysis", 1)
-    assert "non-production" not in before and "Converted flows are tested in a simulated lab first" in after
-    assert "checked against production, with care" not in out
+    code, out, _p = _typed_run(monkeypatch, export, ["y"] + ["s"] * 5)
+    after = out.split("The brief recommends: ", 1)[1]
+    assert re.search(r"Question 1 of \d", after)                          # the offer was taken: questions follow
+    for words in ("non-production", "off limits", "front end", "The code suggests these answers", "certificate"):
+        assert words not in out.split("Before the analysis", 1)[1], words
+    from kestra_migration_assistant.vra import interactive
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    offered = interactive.to_offer(False)
+    assert offered and all(not q.get("default") for q in offered)          # only what has no suggestion
+    assert not {"q3-non-production-targets", "q4-off-limits", "q9-vra-front-end"} & {q["id"] for q in offered}
+    assert Y.state("q9-vra-front-end")["answer"].startswith("replace")
+    assert _brief(export)["trigger_plan"]["front_end"] == "replace"
+
+
+def test_yes_asks_at_most_five_ranked_q_stops_and_the_brief_is_written_again(tmp_path, monkeypatch):
+    from kestra_migration_assistant.vra import interactive
+    from kestra_migration_assistant.vra.stages import planner
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    monkeypatch.setattr(interactive, "OFFER_AT_MOST", 2)
+    export = _export(tmp_path)
+    _run(monkeypatch, export, None)
+    offered = interactive.to_offer(False)
+    assert len(offered) >= 2
+    assert offered == planner.ranked(offered)                              # what changes the brief most first
+    assert [(-(q["waves"]), -q["settles"]) for q in offered] == sorted((-(q["waves"]), -q["settles"]) for q in offered)
+    before = os.path.getmtime(os.path.join(export, "kestra-assessment", "data", "3-brief", "brief.json"))
+    code, out, _p = _typed_run(monkeypatch, export, ["y", "1", "q"])
+    assert code == 0 and "you can answer up to 2 questions now" in re.sub(r"\s+", " ", out)
+    asked = re.findall(r"Question (\d+) of (\d+)", out.split("Answer them now?", 1)[1])
+    assert asked == [("1", "2"), ("2", "2")]                              # q stopped at the second
+    assert not Y.is_open(Y.load()["entries"][offered[0]["id"]].get("answer"))
+    assert "Updating the brief with your answers" in out and re.search(r"The brief is updated\. Open\s+\S*index\.html", out)
+    assert os.path.getmtime(os.path.join(export, "kestra-assessment", "data", "3-brief", "brief.json")) >= before
+    # run again: straight to the summary and the offer, no first screen and no interview
+    code, out, person = _typed_run(monkeypatch, export, [""])
+    assert code == 0 and "Read:" not in out and "Before the analysis" not in out
+    assert "The brief recommends: " in out and [x["prompt"] for x in person.seen][-1].startswith("Answer them now?")
 
 
 def test_a_question_whose_choices_are_not_exclusive_takes_several_numbers(tmp_path, monkeypatch):
@@ -159,36 +235,6 @@ def test_a_question_whose_choices_are_not_exclusive_takes_several_numbers(tmp_pa
     # in the file, numbers work too
     assert interview.option_text(it, "2, 3") == ("an external platform or scripts, through the vRO API; vRO schedules "
                                                  "or policies")
-
-
-def test_a_blanket_answer_settles_every_question_of_its_kind_at_once(tmp_path, monkeypatch):
-    """Possible defects that are a security problem are asked; keeping one "and every other" keeps them all, the rest
-    of the list included, and the next question is not about a defect."""
-    from kestra_migration_assistant.vra import interactive
-    from kestra_migration_assistant.vra.stages import defaults
-    from kestra_migration_assistant.vra.stages import your_input as Y
-    real = defaults.fallback
-    monkeypatch.setattr(defaults, "fallback", lambda it: {**real(it), "security": True}
-                        if it.get("family") == "defect" else real(it))
-    export = _export(tmp_path)
-    _run(monkeypatch, export, None)
-    defects = [it["key"] for it in Y.items() if it.get("family") == "defect"]
-    assert len(defects) >= 2 and all(Y.state(k)["state"] == "open" for k in defects)
-    qs = [q for q in interactive._plan_questions(False, set()) if q.get("defect")]
-    assert qs
-    # in the terminal: the first defect question offers to keep every one; nothing about a defect is asked after it
-    out = io.StringIO()
-
-    class Person(io.StringIO):
-        def readline(self, *a):
-            shown = out.getvalue().rsplit("Question ", 1)[-1]
-            m = re.search(r"(\d+)\. keep this and every other possible defect asked here", shown)
-            return (m.group(1) if m else "s") + "\n"
-    interactive.after_analysis(interactive.Terminal(Person(), out), False, lambda: None)
-    text = out.getvalue()
-    first = text.index("keep this and every other possible defect asked here")
-    assert "possible defect" not in text[first + 60:].lower() and "Keep it as today" not in text[first + 60:]
-    assert all(Y.state(k)["answer"].startswith("keep") for k in defects)
 
 
 def test_a_question_in_the_terminal_is_numbered_choices_ending_with_the_persons_own(monkeypatch):
@@ -329,7 +375,7 @@ def test_ctrl_c_says_how_far_the_analysis_got_and_keeps_it(tmp_path, monkeypatch
 def test_the_same_answers_replayed_in_batch_give_the_same_brief(tmp_path, monkeypatch):
     n = _estate_questions(tmp_path, monkeypatch)
     first = _export(tmp_path, "alphaxq")
-    _run(monkeypatch, first, "\n" * n + "1\n1\n1\nq\n")
+    _run(monkeypatch, first, "\n" * n + "y\n1\n1\nq\n")
     again = _export(tmp_path, "betaxq")
     os.makedirs(os.path.join(again, "kestra-assessment", "your-input"))
     shutil.copy(os.path.join(first, "kestra-assessment", "your-input", "answers.yaml"),
@@ -349,11 +395,13 @@ def test_the_brief_counts_are_the_files_counts(tmp_path, monkeypatch):
     export = _export(tmp_path)
     _run(monkeypatch, export, None)
     from kestra_migration_assistant.vra.stages import status
-    for answer in (None, "decide each", "yes"):
-        if answer:
-            from kestra_migration_assistant.vra.stages import your_input as Y
-            gid = next(x["id"] for x in _brief(export)["input"]["shown"] if x["id"] == "suggested")
-            Y.set_answer(gid, answer)
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    for step in (None, "answer one", "override the suggestions"):
+        if step == "answer one":
+            Y.set_answer(_brief(export)["input"]["shown"][0]["id"], "1")
+            _run(monkeypatch, export, None)
+        elif step:
+            Y.set_answer("assume.suggested", "no: ask each")      # every suggestion is asked again
             _run(monkeypatch, export, None)
         b, doc = _brief(export), _answers(export)
         n = _open_lines(doc)
@@ -362,6 +410,7 @@ def test_the_brief_counts_are_the_files_counts(tmp_path, monkeypatch):
         assert st["open"] == n
         m = re.search(r"answer (\d+) questions?", st["line"])
         assert not m or int(m.group(1)) <= n
+    assert "suggested" in {x["id"] for x in _brief(export)["input"]["shown"]}
 
 
 def test_the_re_planning_reply_is_checked_and_a_changed_answer_reopens_what_it_closed(tmp_path, monkeypatch):
@@ -475,4 +524,5 @@ def test_a_question_the_re_planning_added_survives_a_replay_in_a_fresh_folder(tm
                 os.path.join(again, "kestra-assessment", "your-input", "answers.yaml"))
     _run(monkeypatch, again, None, "--batch")
     assert _brief(export)["questions"] == _brief(again)["questions"]
-    assert "added.ca-files" in {m for x in _brief(again)["input"]["shown"] for m in x["members"]}
+    # it has a suggestion, so it is assumed, and listed with its answer under the assumption: the file keeps it
+    assert Y.load()["closed"]["added.ca-files"]["by"] == "assume.suggested"

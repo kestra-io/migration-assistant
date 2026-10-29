@@ -187,7 +187,7 @@ def table(assess: dict, brief: dict) -> dict:
     rep = [w for w in brief["plan"]["waves"] if w.get("kind") == "vra-replacement"]
     ev_vra = [{"label": "vRA view", "href": "vra.html"}]
     for c in model.get("catalog_items") or []:
-        r = (row(("vra", "catalog"), "Catalog items", "a Kestra App or vRA calling Kestra (Q9 decides)",
+        r = (row(("vra", "catalog"), "Catalog items", "a Kestra App or vRA calling Kestra (depends on whether vRA stays)",
                  "needs an answer", lines=False, evidence=ev_vra) if q9 else
              row(("vra", "catalog"), "Catalog items", "a Kestra App (io.kestra.plugin.ee.apps.Execution) with the "
                  "form's fields as inputs" if front in TG.REPLACING else "stays in vRA; reaches Kestra through "
@@ -195,7 +195,7 @@ def table(assess: dict, brief: dict) -> dict:
                  evidence=ev_vra))
         add(r, c["name"], link="vra.html", eid=f"vra:{c['name']}")
     for t in model.get("cloud_templates") or []:
-        r = (row(("vra", "template"), "Cloud templates", "a Kestra flow, or stays in vRA (Q9 decides)",
+        r = (row(("vra", "template"), "Cloud templates", "a Kestra flow, or stays in vRA (depends on whether vRA stays)",
                   "needs an answer", lines=False, evidence=ev_vra) if q9 else
              row(("vra", "template"), "Cloud templates", "a Kestra flow with a create and a delete path"
                  if front in TG.REPLACING else "stays in vRA", "designed" if front in TG.REPLACING else "core task",
@@ -206,7 +206,7 @@ def table(assess: dict, brief: dict) -> dict:
                        and s["name"].startswith(f"{x['name']} (")), None)
             if q9 or front not in TG.REPLACING:
                 r = row(("vra", "resource", "q9" if q9 else "kept"), "Cloud template resources",
-                        "built by Kestra tasks, or by vRA (Q9 decides)" if q9 else "built by vRA, as today",
+                        "built by Kestra tasks, or by vRA (depends on whether vRA stays)" if q9 else "built by vRA, as today",
                         "needs an answer" if q9 else "core task", lines=False, evidence=ev_vra)
             elif sc and sc.get("gap"):
                 r = row(("vra", "resource", "gap"), "Cloud template resources with no Kestra task",
@@ -224,7 +224,7 @@ def table(assess: dict, brief: dict) -> dict:
                                    "external": True}, {"label": "plugin coverage", "href": "plugins.html"}])
             add(r, f"{t['name']}: {x['name']} ({x['type']})", link="vra.html", eid=f"vra:{t['name']}")
     for s in model.get("subscriptions") or []:
-        r = (row(("vra", "sub"), "Event subscriptions", "a webhook trigger or a step of the flow (Q9 decides)",
+        r = (row(("vra", "sub"), "Event subscriptions", "a webhook trigger or a step of the flow (depends on whether vRA stays)",
                   "needs an answer", lines=False, evidence=ev_vra) if q9 else
              row(("vra", "sub"), "Event subscriptions", "steps of the cloud template's flow (Subflow)"
                  if front in TG.REPLACING else "a Kestra webhook vRA calls",

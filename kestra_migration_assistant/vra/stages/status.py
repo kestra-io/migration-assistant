@@ -71,8 +71,8 @@ def status_of(brief: dict) -> dict:
                 "defects, and whether to convert or rebuild it are not judged yet.")
     elif blocking and n_hold:
         k = n_hold
-        line = (f"Next step: answer {k} question{'s' if k != 1 else ''}{add}, then run `{C.run_command()}` again. "
-                f"{'They hold' if k != 1 or add else 'It holds'} {_and(blocks)}"
+        line = (f"The brief is ready. To start {_and(blocks)}: answer {k} question{'s' if k != 1 else ''} in "
+                f"answers.yaml{add}, then run `{C.run_command()}` again"
                 + (f"; {n_open - k} more {'blocks' if n_open - k == 1 else 'block'} nothing" if n_open > k else "") + ".")
     elif package:
         line = (f"Next step: add {len(package)} missing piece{'s' if len(package) != 1 else ''} of code to the package "

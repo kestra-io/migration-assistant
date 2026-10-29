@@ -89,13 +89,15 @@ def test_the_front_page_follows_the_guides_order(which, request):
     main = page.split("<main>", 1)[1]
     assert main.lstrip().startswith("<h1>Migration brief: large</h1>")
     assert "Stage 1 of the" in r["text"] and 'href="https://kestra.io/resources/migration/vra"' in page
-    assert re.search(r'class="panel statusbox"><p class="headline"><span class="status [a-z]+">(Next step: |Ready: |Ready to '
+    assert re.search(r'class="panel statusbox"><p class="headline"><span class="status [a-z]+">(Next step: |To start |Ready: |Ready to '
                      r'sign|Signed, ready)', main)
     secs = _sections(page)
     assert secs[0] == "What's in this estate" and secs[1].startswith("The recommendation: ")
     assert secs[1].split(": ", 1)[1] in ("convert", "a mix", "rebuild")
-    # the navigation is where to check; what is assumed estate-wide, when anything is, comes before the plan
-    assert [x for x in secs[2:] if x != "Applied to the whole estate"] == ["What we need from you", "The plan"]
+    # the navigation is where to check; the notes, what is assumed and the estate answers, when there are any, come
+    # before the plan
+    assert [x for x in secs[2:] if x not in ("Notes to fix after the migration", "Assumptions",
+                                              "Your answers about the estate")] == ["What we need from you", "The plan"]
     assert "have a path to Kestra" in r["text"]
     assert "**Direct**" not in page and "<strong>Direct</strong> converts one for one" in page
 
@@ -169,7 +171,7 @@ def test_the_status_box_and_the_list_agree_on_what_blocks(which, request):
     from kestra_migration_assistant.vra.stages import status as S
     r = request.getfixturevalue(which)
     st = S.status_of(r["brief"])
-    m = re.search(r"Next step: answer (\d+) questions?", r["text"])
+    m = re.search(r"To start [^:]*: answer (\d+) questions?", r["text"])
     if st["blocking"]:
         # the status box counts the answers that hold a wave: the empty answer lines of answers.yaml ...
         held = [x for x in r["brief"]["input"]["shown"] if set(x["members"]) & set(st["blocking"])]

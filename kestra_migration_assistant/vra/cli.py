@@ -253,6 +253,7 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
     asking = bool(interactive and args.cmd == "run" and not getattr(args, "batch", False) and is_terminal())
     from kestra_migration_assistant.vra import model
     model.STOP.clear()
+    model.LIMIT["message"] = None
     if asking:                          # the model chosen for this estate is kept in its output folder
         try:
             C.configure_export(args.export, args.out)
@@ -317,14 +318,19 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
         return 3
     except (KeyboardInterrupt, model.Stopped):
         model.stop()                    # the calls in flight end now; nothing new starts
-        PROGRESS.clear()
-        print(f"\n{stopped_message()}", flush=True)
+        PROGRESS.stop()
+        limit = model.LIMIT["message"]  # the model's limit ran out (any thread may have raised first)
+        print(f"\n{limit or stopped_message()}", flush=True)
+        code = LIMIT_EXIT if limit else 130
         if exit_now:
             sys.stderr.flush()
-            os._exit(130)               # a call still in flight (an HTTP request) would hold the process otherwise
-        return 130
+            os._exit(code)              # a call still in flight (an HTTP request) would hold the process otherwise
+        return code
     finally:
         model.GATE = None
+
+
+LIMIT_EXIT = 75                 # EX_TEMPFAIL: the model's limit ran out; the same command works once it resets
 
 
 def cost_gate(yes: bool = False, confirm=None, out=None, always: bool = False):
@@ -438,34 +444,93 @@ STARTED_AFTER = 1.0          # seconds: a stage still running by then says it st
 
 
 class ProgressLine:
-    """One line that says how far a long step is ("Analyzing 46 workflows: 19 done."), rewritten in place on a
-    terminal; elsewhere written once at the start and once at the end. What each step did in detail goes to the
-    run's log file instead (RunLog)."""
+    """One line that says which step a long run is on and how far it is ("Analyzing 46 workflows: 19 done, 4m 2s"),
+    rewritten in place on a terminal, with the time redrawn every second so the line never looks stuck; elsewhere
+    written once at the start and once at the end. A step that starts inside another (sorting, inside the brief)
+    gives the line back to it when it ends. What each step did in detail goes to the run's log file instead (RunLog)."""
 
-    WHAT = {"workflows": "Analyzing {total} workflows: {done} done.",
-            "questions": "Sorting what the analysis found: {done} of {total} parts done."}
+    WHAT = {"workflows": "Analyzing {total} workflows: {done} done",
+            "groups": "Summarizing {total} groups: {done} done",
+            "questions": "Sorting what the analysis found: {done} of {total} parts done",
+            "brief": "Preparing the brief"}
+    EVERY = 1.0                      # seconds between two redraws of the time
 
     def __init__(self) -> None:
+        import threading
         self.out: Any = None
         self.active = False
+        self.lock = threading.RLock()
+        self.cur: dict | None = None             # {"what", "text", "t0"}
+        self.outer: list[dict] = []              # the steps this one started inside
+        self.beat: Any = None
+
+    def _tty(self) -> bool:
+        return bool(getattr(self.out or sys.stdout, "isatty", lambda: False)())
+
+    def _draw(self, end: str = "") -> None:
+        assert self.cur is not None
+        import time
+        t = _minutes(time.monotonic() - self.cur["t0"])
+        print(f"\r{self.cur['text']}, {t}{end}\033[K" if self._tty() else f"{self.cur['text']}, {t}{end}",
+              end="" if not end else "\n", file=self.out or sys.stdout, flush=True)
 
     def tick(self, what: str, done: int, total: int) -> None:
-        out = self.out or sys.stdout
-        text = self.WHAT.get(what, what + ": {done} of {total} done.").format(done=done, total=total)
-        tty = getattr(out, "isatty", lambda: False)()
-        if tty:
-            print("\r" + text, end="", file=out, flush=True)
-            self.active = done < total
-            if not self.active:
-                print("", file=out, flush=True)
-        elif done in (0, total):
-            print(text, file=out, flush=True)
+        import time
+        with self.lock:
+            if self.cur is None or self.cur["what"] != what:
+                if self.cur is not None and self.active:
+                    self.outer.append(self.cur)
+                self.cur = {"what": what, "t0": time.monotonic()}
+            self.cur["text"] = self.WHAT.get(what, what + ": {done} of {total} done").format(done=done, total=total)
+            if not self._tty():
+                if done == 0:
+                    print(f"{self.cur['text']}.", file=self.out or sys.stdout, flush=True)
+                elif done >= total:
+                    self._draw(".")
+                if done >= total:
+                    self.cur = self.outer.pop() if self.outer else None
+                return
+            if done < total:
+                self.active = True
+                self._draw()
+                self._keep_alive()
+                return
+            self._draw(".")
+            self.active = False
+            self.cur = self.outer.pop() if self.outer else None
+            if self.cur is not None:              # back to the step this one ran inside
+                self.active = True
+                self._draw()
+
+    def _keep_alive(self) -> None:
+        import threading
+        if self.beat is not None and self.beat.is_alive():
+            return
+
+        def beat() -> None:
+            import time
+            while True:
+                time.sleep(self.EVERY)
+                with self.lock:
+                    if not self.active or self.cur is None:
+                        return
+                    self._draw()
+        self.beat = threading.Thread(target=beat, name="progress-line", daemon=True)
+        self.beat.start()
 
     def clear(self) -> None:
-        """End the line in progress, so what is printed next starts on a line of its own."""
-        if self.active:
-            print("", file=self.out or sys.stdout, flush=True)
-            self.active = False
+        """End the line in progress, so what is printed next starts on a line of its own (the next tick draws it
+        again)."""
+        with self.lock:
+            if self.active:
+                print("", file=self.out or sys.stdout, flush=True)
+                self.active = False
+
+    def stop(self) -> None:
+        """The run stopped: end the line and forget every step."""
+        with self.lock:
+            self.clear()
+            self.cur, self.outer = None, []
 
 
 PROGRESS = ProgressLine()
@@ -530,28 +595,30 @@ def _minutes(sec: float) -> str:
     return f"{int(sec // 60)}m {int(sec % 60)}s" if sec >= 60 else f"{sec:.0f}s"
 
 
-def _rerun_brief(log: RunLog, quiet: bool = False) -> None:
-    """The brief again, after answers: Assess first when the specs changed under it. `quiet`: between two
-    questions, no progress line."""
+def _write_brief(log: RunLog) -> None:
+    """The brief and its pages, one progress line ("Preparing the brief"): Assess first when the specs changed under
+    it, then the brief, what an earlier version's files carry over, and the pages."""
     import contextlib
 
     from kestra_migration_assistant.vra.stages import assess
-    tick = C._TICK
-    if quiet:
-        C.set_tick(None)
+    C.tick("brief", 0, 1)
     try:
         with contextlib.redirect_stdout(log):
             assess.load()
-        _run_stage_logged("brief", log)
+        for s in ("brief", "migrate-input", "visuals"):
+            _run_stage_logged(s, log)
     finally:
-        C.set_tick(tick)
+        C.tick("brief", 1, 1)
         PROGRESS.clear()
 
 
 def _run_interactive(term) -> int:
-    """`run` typed in a terminal: the model, the export read, the first screen, the interview, the analysis (asked
-    for before anything is billed, one progress line), the questions after it, then the pages. What each step did
-    in detail is in data/run.log."""
+    """`run` typed in a terminal. The first time: the model, the export read, the first screen, the interview, the
+    analysis (asked for before anything is billed, one progress line), then the brief at once, with every question
+    that has a suggestion assumed and listed in it. Then a short summary, and an offer, no by default, to answer the
+    few questions that would sharpen it. Run again on an estate that has a brief and nothing to ask before the
+    analysis, it re-runs only what changed and goes straight to the summary and the offer. What each step did in
+    detail is in data/run.log."""
     import time
 
     from kestra_migration_assistant.vra import interactive as I
@@ -576,17 +643,19 @@ def _run_interactive(term) -> int:
         finally:
             assess.NAME_DOMAINS = True
         qs = I.interview_questions(use_model)
-        I.first_screen(term, use_model, len(qs))
-        warn = None
-        if qs and use_model and Y._specs_on_record():
-            est = estimate.reanalysis()
-            warn = ("Your answers change what the analysis reads, so every workflow is analyzed again: "
-                    + model.estimate_words(est, model.settings()).split(". With")[0] + ".")
-        if not I.interview(term, use_model, qs, warn):
-            term.stopped = True
-        # the analysis
-        estimate.REPLAN_CALLS = 3 if use_model else 0
-        term.say()
+        again = I.has_brief() and not qs            # run again: straight to the brief and the offer
+        if not again:
+            I.first_screen(term, use_model, len(qs))
+            warn = None
+            if qs and use_model and Y._specs_on_record():
+                est = estimate.reanalysis()
+                warn = ("If your answers differ from those the last analysis read, every workflow is analyzed again: "
+                        "up to " + model.estimate_words(est, model.settings()).split(". With")[0]
+                        + ". You are asked before anything is billed.")
+            if not I.interview(term, use_model, qs, warn):
+                term.stopped = True
+            term.say()
+        # the analysis: what changed is analyzed again, the rest comes from the cache
         t0 = time.monotonic()
         ANALYZING["on"] = True
         with __import__("contextlib").redirect_stdout(log):
@@ -594,20 +663,21 @@ def _run_interactive(term) -> int:
         _run_stage_logged("understand", log)
         ANALYZING["on"] = False
         PROGRESS.clear()
-        _rerun_brief(log)
-        if time.monotonic() - t0 > STARTED_AFTER:
-            term.say(f"Analysis done in {_minutes(time.monotonic() - t0)}.")
+        _write_brief(log)
+        if not again and time.monotonic() - t0 > 60:
+            term.say(f"Analysis and brief done in {_minutes(time.monotonic() - t0)}.")
+        I.summary(term, shown(C.INDEX))
         if not getattr(term, "stopped", False):
-            I.after_analysis(term, use_model, lambda: _rerun_brief(log, quiet=True))
-        for s in ("migrate-input", "visuals"):
-            _run_stage_logged(s, log)
-        from kestra_migration_assistant.vra.stages import status
-        term.say()
-        term.say(status.headline())
+            asked = I.offer(term, use_model)
+            if asked:
+                I.sharpen(term, use_model, asked, lambda: _write_brief(log))
+                term.say(f"The brief is updated. Open {shown(C.INDEX)}")
         _, m = _calls_since(calls_before)
-        spent = (f" {m['billed']} billed model call{'s' if m['billed'] != 1 else ''}, ${m['cost']:.2f}." if m["billed"]
+        cost = "under $0.01" if m["cost"] < 0.005 else f"${m['cost']:.2f}"
+        spent = (f" {m['billed']} billed model call{'s' if m['billed'] != 1 else ''}, {cost}." if m["billed"]
                  else "")
-        term.say(f"Done in {_minutes(time.monotonic() - t_all)}.{spent} Open {shown(C.INDEX)}")
+        term.say()
+        term.say(f"Done in {_minutes(time.monotonic() - t_all)}.{spent}")
         return 0
     finally:
         C.set_tick(None)

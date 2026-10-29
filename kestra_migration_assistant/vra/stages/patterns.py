@@ -247,7 +247,7 @@ def find(assess: dict | None = None, idx: dict | None = None, models: dict | Non
 def _how_action(module: str) -> str:
     if module.startswith(("com.vmware.library.", "com.vmware.")):
         return (f"It comes from a VMware library module ({module}) installed with vRO or a plugin: add that module "
-                "to the package, or name the plugin and its version in answers.yaml (Q8)")
+                "to the package, or name the plugin and its version in answers.yaml, under the question about which vRO plugins the code uses")
     return f"Add the action module {module} to the package (in the vRO client, add it to the package's actions)"
 
 

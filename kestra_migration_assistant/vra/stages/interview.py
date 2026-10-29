@@ -184,8 +184,9 @@ def questions(pat: dict, assess: dict, has_vra: bool, systems: list[str]) -> lis
                       why="nothing is asked about a workflow that is left out, and it is marked Retire",
                       about={"shorts": [s["short"] for s in sc], "names": [s["name"] for s in sc]}))
 
-    # only the plan needs these: asked after the analysis, with why they matter
-    if systems:
+    # Only the plan needs these, and each has an answer that keeps today's behavior: assumed instead (assumptions()).
+    # An answer a file already gives keeps the question, so that answer still counts.
+    if systems and answered("estate.non-production"):
         out.append(_q("estate.non-production",
                       "Converted flows are tested in a simulated lab first. Before they go live, they can also run "
                       f"against a non-production instance of each system they call, if you have one. The workflows "
@@ -195,7 +196,7 @@ def questions(pat: dict, assess: dict, has_vra: bool, systems: list[str]) -> lis
                       why="a wave that writes to a system can run against a non-production instance before production",
                       about={"systems": systems}, phase="plan"))
     hv = (pat.get("mechanics") or {}).get("host_verification") or []
-    if hv:
+    if hv and answered("estate.host-verification"):
         out.append(_q("estate.host-verification",
                       f"{_n(len(hv), 'workflow turns', 'workflows turn')} off the check of the certificate and "
                       f"host name when {'it connects' if len(hv) == 1 else 'they connect'} to a system, so a "
@@ -207,11 +208,37 @@ def questions(pat: dict, assess: dict, has_vra: bool, systems: list[str]) -> lis
     return out
 
 
-def assumptions(pat: dict, any_calls: bool) -> list[dict]:
-    """The vRO mechanics assumed instead of asked. Each says what Kestra does instead; each can be overridden."""
+def answered(key: str) -> bool:
+    """answers.yaml already answers this estate question (an answer given before it became an assumption)."""
+    from . import your_input as Y
+    data, _w = Y._read(C.ANSWERS) if C.ANSWERS else ({}, [])
+    if not data or Y.is_old_format(data):
+        return False
+    return not Y.is_open((Y.flat(data).get(key) or {}).get("answer"))
+
+
+HOST_CHECKS = ("{n} off the check of the certificate and host name when connecting to a system, so a "
+               "connection to the wrong server is not noticed. The converted flows do the same, as today: this is a "
+               "security note to fix after the migration, listed in the brief. To check them in the conversion "
+               "instead, write `answer: check them` here.")
+NON_PRODUCTION = ("Converted flows run in a simulated lab first, then against a non-production instance of each system "
+                  "they call where one exists, before production. If some systems have none, say which as `answer:` "
+                  "here.")
+
+
+def assumptions(pat: dict, any_calls: bool, systems: list[str] | None = None) -> list[dict]:
+    """The vRO mechanics assumed instead of asked. Each says what Kestra does instead; each can be overridden. The
+    certificate checks come before the trust store, so they keep the checks vRO turned off (an answer to them gives the
+    trust store those systems back)."""
     mech = pat.get("mechanics") or {}
     rest = (pat.get("rest_in_code") or {})
     out = []
+    hv = mech.get("host_verification") or []
+    if hv and not answered("estate.host-verification"):
+        out.append(_assume("assume.host-checks", HOST_CHECKS.format(n=_n(len(hv), "workflow turns", "workflows turn")),
+                           hv))
+    if systems and not answered("estate.non-production"):
+        out.append(_assume("assume.non-production", NON_PRODUCTION, list(systems)))
     if any_calls or mech.get("trust_store"):
         out.append(_assume("assume.trust-store",
                            "Kestra checks each system's certificate against the CAs in its trust store. The CAs vRO "
@@ -231,7 +258,7 @@ def assumptions(pat: dict, any_calls: bool) -> list[dict]:
                            "become Kestra HTTP tasks, with the address from the settings. Nothing is configured in "
                            "a plugin.",
                            [x["name"] for x in rest.get("workflows") or []] + [m["module"] for m in rest.get("modules") or []]))
-    return out
+    return out + _D.early()
 
 
 # ------------------------------------------------------------------ what an answer settles
@@ -385,6 +412,32 @@ def _host_verification(est: dict, it: dict) -> str | None:
     return None
 
 
+def _checks_off(est: dict, it: dict) -> str | None:
+    """assume.host-checks: the certificate and host checks vRO turned off stay off, as today."""
+    if it["key"].startswith("tls."):
+        return "do not check, as today: a security note to fix after the migration (assumed, assume.host-checks)"
+    if it["key"].startswith(("defect.", "question.")) and _kind(it["key"]) == "tls":
+        return "keep: the checks stay off, as today (assumed, assume.host-checks)"
+    return None
+
+
+def _lab_first(est: dict, it: dict) -> str | None:
+    """assume.non-production: the lab first, then a non-production instance where one exists."""
+    if it["key"].startswith("q3-"):
+        return "a simulated lab first, then a non-production instance where one exists (assumed, assume.non-production)"
+    if it["key"].startswith("endpoint."):
+        return ("its non-production instance where one exists, after the lab; credentials as in estate.secrets "
+                "(assumed, assume.non-production)")
+    return None
+
+
+def checks_wanted(answer: str) -> bool:
+    """An answer to assume.host-checks that turns the checks on (check them, fix them), not one that keeps them off."""
+    a = answer.lower()
+    return bool(re.search(r"\b(check|fix|verify|turn\w* (them )?on)\b", a)) and not re.search(
+        r"\b(off|as today|keep|leave|don't|do not|no)\b", a)
+
+
 def _retries(est: dict, it: dict) -> str | None:
     if it["key"].startswith("question.") and re.search(r"\bretr(y|ies|ied)\b|\battempts?\b", _text_of(it)):
         return "the task's retry setting, as in vRO (assumed, assume.retries)"
@@ -400,10 +453,11 @@ def _counters(est: dict, it: dict) -> str | None:
 
 ASSUMED: dict[str, Callable[[dict, dict], str | None]] = {
     "trust-store": _tls, "host-verification": _host_verification, "retries": _retries, "counters": _counters,
+    "host-checks": _checks_off, "non-production": _lab_first,
     # after the analysis: what keeps today's behavior (defaults.py)
     **{k.split(".", 1)[1]: rule for k, rule in _D.RULES.items()}}
 # Assumed for the plan, after the analysis: never in the analysis's prompts.
-PLAN_ASSUMPTIONS = frozenset(_D.ASSUMPTIONS)
+PLAN_ASSUMPTIONS = frozenset(_D.ASSUMPTIONS) | {"assume.host-checks", "assume.non-production"}
 
 
 def closures(its: list[dict], entries: dict) -> dict[str, dict]:
@@ -411,15 +465,25 @@ def closures(its: list[dict], entries: dict) -> dict[str, dict]:
     is never settled by them (its answer wins)."""
     from . import your_input as Y
     out: dict[str, dict] = {}
-    estate = [it for it in its if it.get("family") in ("estate", "assume")]
+    estate = sorted((it for it in its if it.get("family") in ("estate", "assume")),
+                    key=lambda it: it["key"] in _D.EARLY)          # the general assumption settles what is left
     others = [it for it in its if it.get("family") not in ("estate", "assume")
               and Y.is_open((entries.get(it["key"]) or {}).get("answer"))]
-    # a check vRO turned off that protects a connection is asked (estate.host-verification), never assumed
-    asks_checks = any(e.get("topic") == "host-verification" and e.get("family") == "estate" for e in estate)
+    # a check vRO turned off that protects a connection stays off (assume.host-checks), or as an answer says; the trust
+    # store's assumption never turns it on behind the person's back
+    asks_checks = any(e.get("topic") == "host-verification" and e.get("family") == "estate" for e in estate) or any(
+        e.get("topic") == "host-checks" and not checks_wanted(answer_of(e, entries.get(e["key"])) or "") for e in estate)
     for est in estate:
         topic = est.get("topic") or est["key"].split(".", 1)[1]
         if est.get("family") == "assume":
-            if answer_of(est, entries.get(est["key"])) is not None:
+            over = answer_of(est, entries.get(est["key"]))
+            if over is not None:
+                if topic == "host-checks" and checks_wanted(over):
+                    # the checks turned on instead: as the old question's first choice answered
+                    for it in others:
+                        if it["key"] not in out and (a := _host_checks(est, over, 1, it)):
+                            out[it["key"]] = {"by": est["key"], "answer": a.replace("estate.host-verification",
+                                                                                    est["key"])}
                 continue                                # overridden: nothing assumed
             rule = ASSUMED.get(topic)
             if rule is None or (topic == "trust-store" and asks_checks):
@@ -540,6 +604,7 @@ def register() -> dict:
     systems = [n for n, _ in f.get("systems") or []]
     rest = pat.get("rest_in_code") or {}
     any_calls = bool(systems) or bool(rest.get("modules")) or bool(rest.get("workflows"))
-    items: list[dict[str, Any]] = questions(pat, assess, bool(f.get("vra")), systems) + assumptions(pat, any_calls)
+    items: list[dict[str, Any]] = (questions(pat, assess, bool(f.get("vra")), systems)
+                                   + assumptions(pat, any_calls, systems))
     Y.register("estate", items)
     return pat

@@ -159,17 +159,116 @@ def test_a_reply_of_the_wrong_shape_twice_is_a_clear_error(sandboxed, monkeypatc
     assert not os.listdir(sandboxed / "cache")              # nothing wrong is cached
 
 
-def test_quota_errors_back_off_and_resume(sandboxed, monkeypatch):
-    replies = iter([{"result": "rate limit: slow down", "is_error": True}, {"result": '{"ok": true}', "is_error": False}])
-    waits = []
+def _limited(monkeypatch, *texts):
+    """A provider that refuses with each text in turn, then answers; the waits it causes are recorded, not waited."""
+    replies = iter([*({"result": t, "is_error": True} for t in texts), {"result": '{"ok": true}', "is_error": False}])
+    waits: list[float] = []
 
     class Limited(M.Provider):
         def invoke(self, prompt, schema):
             return next(replies)
     monkeypatch.setattr(M, "provider_for", lambda c, s=None: Limited(c))
-    monkeypatch.setattr(M.time, "sleep", lambda s: waits.append(s))
+    monkeypatch.setattr(M, "pause", lambda s: waits.append(s))
+    monkeypatch.setattr(M, "LIMIT", {"message": None})
+    return waits
+
+
+@pytest.fixture
+def unstopped():
+    """A test that stops the run's calls leaves them startable for the next test."""
+    yield
+    M.STOP.clear()
+
+
+def test_quota_errors_back_off_and_resume_when_asked_to_wait(sandboxed, monkeypatch):
+    """A program that runs unattended (WAIT_ON_LIMIT) keeps 1.1.0's back-off: wait, then resume."""
+    monkeypatch.setattr(M, "WAIT_ON_LIMIT", True)
+    waits = _limited(monkeypatch, "rate limit: slow down")
     assert M.ask("understand", "w", safety.guard("x"), SCHEMA) == {"ok": True}
     assert waits == [M.QUOTA_BACKOFF_S[0]]
+
+
+def test_a_plan_limit_stops_the_run_at_once(sandboxed, monkeypatch, unstopped):
+    monkeypatch.setattr(M, "SETTINGS", K.Settings("claude-code", model="big"))
+    waits = _limited(monkeypatch, "You've hit your session limit · resets 5am")
+    with pytest.raises(M.LimitReached):
+        M.ask("understand", "w", safety.guard("x"), SCHEMA)
+    assert waits == [] and M.STOP.is_set()                      # no wait, and no other call starts
+    assert M.LIMIT["message"] == ("You've hit your Claude plan's limit. Finished work is kept. Run the same command "
+                                  "again after it resets.")
+
+
+def test_an_api_keys_rate_limit_is_tried_once_more_then_stops(sandboxed, monkeypatch, unstopped):
+    waits = _limited(monkeypatch, "rate limit: slow down", "rate limit: slow down")
+    with pytest.raises(M.LimitReached):
+        M.ask("understand", "w", safety.guard("x"), SCHEMA)
+    assert waits == [M.RATE_RETRY_S] and "API key's rate limit" in M.LIMIT["message"]
+
+
+def test_a_rate_limit_that_lifts_after_the_short_wait_goes_on(sandboxed, monkeypatch):
+    waits = _limited(monkeypatch, "rate limit: slow down")
+    assert M.ask("understand", "w", safety.guard("x"), SCHEMA) == {"ok": True}
+    assert waits == [M.RATE_RETRY_S] and M.LIMIT["message"] is None
+
+
+def _interrupt_after(seconds: float) -> None:
+    """Ctrl+C, as the terminal sends it to the main thread, after `seconds`."""
+    import _thread
+    import threading
+    threading.Timer(seconds, _thread.interrupt_main).start()
+
+
+def test_ctrl_c_stops_a_batch_while_its_calls_wait(monkeypatch, unstopped):
+    """The main thread waits on the workers in steps: a wait with no timeout does not see Ctrl+C on macOS, and the
+    run would only stop once every worker's wait ended (after a quota error, up to half an hour)."""
+    import threading
+    import time
+    ended = threading.Event()
+
+    def worker(job):
+        try:
+            M.pause(600)                                         # a long wait, such as a quota back-off
+        finally:
+            ended.set()
+    _interrupt_after(0.3)
+    t0 = time.monotonic()
+    with pytest.raises(KeyboardInterrupt):
+        M.run_parallel([{"id": "a"}, {"id": "b"}], worker)
+    assert time.monotonic() - t0 < 3 and M.STOP.is_set()
+    assert ended.wait(3)                                         # the worker's wait ended too: nothing left running
+
+
+def test_ctrl_c_stops_the_wait_after_a_quota_error(sandboxed, monkeypatch, unstopped):
+    """The wait after a quota error (WAIT_ON_LIMIT) ends at Ctrl+C, and nothing stays parked behind it."""
+    import time
+    monkeypatch.setattr(M, "WAIT_ON_LIMIT", True)
+    replies = iter([{"result": "rate limit: slow down", "is_error": True}])
+
+    class Limited(M.Provider):
+        def invoke(self, prompt, schema):
+            return next(replies)
+    monkeypatch.setattr(M, "provider_for", lambda c, s=None: Limited(c))
+    _interrupt_after(0.3)
+    t0 = time.monotonic()
+    with pytest.raises(KeyboardInterrupt):
+        M.ask("understand", "w", safety.guard("x"), SCHEMA)       # backs off 60 s in the main thread
+    assert time.monotonic() - t0 < 3 and M._quota_gate.is_set()
+
+
+def test_the_run_says_why_it_stopped_at_a_limit_and_keeps_its_work(tmp_path, monkeypatch, capsys, unstopped):
+    from kestra_migration_assistant.vra import cli
+
+    def stage(s):
+        if s == "understand":
+            M._limit_reached(M.PLAN_LIMIT)
+        return "done"
+    monkeypatch.setattr(cli, "run_stage", stage)
+    monkeypatch.setenv("VRO_NO_MODEL", "1")
+    os.makedirs(tmp_path / "e")
+    open(tmp_path / "e" / "x.workflow", "w").close()
+    assert cli.main(["run", str(tmp_path / "e"), "--no-model"]) == cli.LIMIT_EXIT
+    out = capsys.readouterr().out
+    assert M.PLAN_LIMIT in out and "Stopped." not in out
 
 
 def test_legacy_cache_is_reused_for_claude_code(tmp_path, monkeypatch):

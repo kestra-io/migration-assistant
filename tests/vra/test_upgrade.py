@@ -92,10 +92,11 @@ def test_only_what_is_new_is_asked_and_the_signature_stays(upgraded):
     assert not before["unanswered"]
     new = after["unanswered"]
     assert not new & set(before["answered"])                # nothing 1.0.0 had answered is asked again
-    # 1.2.0: the new systems' endpoints wait on one estate question, and missing code is not asked: it is listed
+    # 1.2.0: the new systems' endpoints are assumed (the lab first, then non-production where it exists), each listed
+    # under the assumption; missing code is not asked: it is listed
     est = after["estate"]
-    assert {"endpoint.ansible-tower", "endpoint.ms-teams", "endpoint.slack"} <= set(
-        est["estate.non-production"].get("settles") or [])
+    assert {"endpoint.ansible-tower", "endpoint.ms-teams", "endpoint.slack"} <= {
+        m["id"] for m in est["assume.non-production"].get("each") or []}
     assert "missing.purgeorphanedvolumes" not in new
     assert after["signed_for"] == "full plan"
 

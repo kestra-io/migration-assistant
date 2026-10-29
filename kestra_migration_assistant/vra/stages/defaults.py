@@ -5,9 +5,10 @@ A migration changes one thing at a time: each converted flow behaves exactly lik
 the two can be tested against each other, and fixes come afterwards as changes of their own. So, of what the analysis
 finds:
 
-- **Possible defects are kept** (`assume.defects`), except a defect that makes its workflow fail every time it runs
-  and a security problem: a credential exposed (logged, written to a file, sent somewhere) or a check turned off that
-  protects a connection. Those are asked. A value from an internal input that is not escaped is listed, not asked.
+- **Possible defects are kept** (`assume.defects`). A defect that makes its workflow fail every time it runs, and a
+  security problem (a credential exposed: logged, written to a file, sent somewhere), are kept too, and the brief lists
+  them first as notes to fix after the migration (`flagged`). A value from an internal input that is not escaped is
+  listed, not flagged.
 - **A question that the code answers today is answered so** (`assume.behavior`): what a failure does, whether a step
   retries, what is returned. The flow does the same.
 - **A question asked only because the sanitized copy hides a value is not asked** (`assume.placeholders`): the real
@@ -18,7 +19,10 @@ finds:
 - **A detail of how one flow is built** (which vCenters it targets, the shape of an input value), and the review of a
   spec whose confidence is medium, **wait for the wave** that converts the workflow: answers.yaml lists them under
   `waves:`, to answer when that wave is converted (or now).
-- The rest are asked: what changes the recommendation or the plan.
+- **Every other question with a suggestion takes it** (`assume.suggested`): what the code suggests, what keeps
+  today's behavior, the analysis's most likely answer. Each is listed with the answer it takes.
+- Only a question with no suggestion is left: a fact only the owner knows (which Kestra edition, whether run history
+  can be exported). The run offers the few that change the brief most, and never needs them to write it.
 
 Which is which comes from one model call per batch of items (cached like every call), or, without a model, from
 rules on each item's kind and words. Every assumption is written in answers.yaml with each item it settles and the
@@ -63,6 +67,8 @@ ASSUMPTIONS = {
                      "correct one, write `answer: corrected` under it and the correction in your-input/corrections.yaml.",
     "assume.specs": "Specs written with high confidence are taken as written: each is on its workflow's page. If one "
                     "is wrong, write what is wrong as `answer:` under it.",
+    "assume.suggested": "Where a question has a suggested answer (from the code, from today's behavior, or the "
+                        "analysis's most likely answer), the brief takes it. To change one, write `answer:` under it.",
 }
 
 PROMPT = """You sort what was found while reading the workflows of a vRO estate that is being migrated to Kestra, before
@@ -254,7 +260,8 @@ def _apply(it: dict) -> None:
 
 
 def asked(it: dict) -> bool:
-    """A possible defect the person is asked about: one that fails every time, or a security problem."""
+    """A possible defect the brief flags (kept like every other, listed first as a note to fix after the migration):
+    one that fails every time, or a security problem."""
     s = it.get("sort") or {}
     return it.get("family") == "defect" and bool(s.get("always_fails") or s.get("security"))
 
@@ -278,10 +285,21 @@ def wave_of(items: list[dict], plan: dict, wf: dict) -> None:
         k = it["key"]
         if k.startswith(("defect.", "question.", "spec.")):
             it["wave"] = by_short.get(k.split(".")[1])
+        elif k.startswith(BUILD_FACTS):
+            m = next((re.match(r"Wave (\d+)\b", str(u)) for u in it.get("unblocks") or [] if re.match(r"Wave \d+\b", str(u))),
+                     None)
+            it["wave"] = int(m.group(1)) if m else None
+
+
+# Facts that only a wave's conversion needs, and only the owner knows, when vRA is replaced: what vRA's mappings and
+# network profiles resolved, who allocates a static IP, how a resource no Kestra task creates is made.
+BUILD_FACTS = ("mappings.", "ip-allocation.", "gap.")
 
 
 def waits_for_wave(it: dict) -> bool:
     """An item asked when its wave is converted, not now."""
+    if it["key"].startswith(BUILD_FACTS) and not it.get("suggested"):
+        return True
     if it.get("family") == "question":
         return (it.get("sort") or {}).get("kind") == "wave"
     if it.get("group") == "review":
@@ -302,17 +320,26 @@ def _assume(key: str) -> dict:
     return it
 
 
+# Registered with the estate's assumptions (interview.py), before the brief, so the first brief already takes the
+# preflight questions' suggestions (vRA replaced, nothing off limits); it settles items after every other assumption.
+EARLY = ("assume.suggested",)
+
+
 def assumptions(items: list[dict]) -> list[dict]:
-    """The assumptions that settle something among `items`."""
+    """The assumptions that settle something among `items` (those registered early aside)."""
     out = []
     for key, rule in RULES.items():
-        if any(rule({}, it) for it in items):
+        if key not in EARLY and any(rule({}, it) for it in items):
             out.append(_assume(key))
     return out
 
 
+def early() -> list[dict]:
+    return [_assume(k) for k in EARLY]
+
+
 def _defects(est: dict, it: dict) -> str | None:
-    if it.get("family") == "defect" and it.get("sort") and not asked(it):
+    if it.get("family") == "defect" and it.get("sort"):
         return "keep, as today (assumed, assume.defects)"
     return None
 
@@ -348,5 +375,16 @@ def _specs(est: dict, it: dict) -> str | None:
     return None
 
 
+def _suggested(est: dict, it: dict) -> str | None:
+    """Any other question with a suggestion takes it: never an estate question (the interview asks those), a spec
+    review, or what waits for its wave."""
+    sug = str(it.get("suggested") or "").strip()
+    if not sug or it.get("family") in ("estate", "assume") or it.get("group") == "review" or waits_for_wave(it):
+        return None
+    return f"{sug} (assumed, assume.suggested)"
+
+
+# In this order: the first rule that settles an item gives its answer (the general one last).
 RULES = {"assume.defects": _defects, "assume.behavior": _behavior, "assume.placeholders": _placeholders,
-         "assume.timeouts": _timeouts, "assume.labels": _labels, "assume.specs": _specs}
+         "assume.timeouts": _timeouts, "assume.labels": _labels, "assume.specs": _specs,
+         "assume.suggested": _suggested}

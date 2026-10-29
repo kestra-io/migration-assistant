@@ -4,9 +4,9 @@ Every release of the Kestra Migration Assistant for vRA. Versions follow [semant
 
 ## Unreleased
 
-Questions that fit real estates: asked in the terminal, about the whole estate first, once per pattern, and counted
-the same way in the brief and in `answers.yaml`. Re-running on a folder that 1.1.0 assessed keeps every answer you
-gave.
+A brief from every run. After a few questions about the estate and the analysis, the brief is written straight
+away, with every assumption it makes listed in it. Questions only make it sharper: they are offered, never needed.
+Re-running on a folder that 1.1.0 assessed keeps every answer you gave.
 
 ### What's new
 
@@ -16,28 +16,42 @@ gave.
   questions about the whole estate that the analysis reads (what starts the workflows, where the converted flows
   read their settings and get their secrets, calls to other vRO clusters, what looks out of scope), each choice
   explained in vRO's terms. Before the analysis it says how many model calls it makes and what they cost, and asks.
-  After it, it says how many questions the plan needs and asks only those. Each question has numbered choices, the
-  suggestion first and your own words last; a question whose choices are not exclusive takes several numbers
-  (`2, 4`); `s` skips a question, `q` saves and stops. Every answer is saved at once. `--batch` asks nothing, and a
-  run with no terminal never asks.
+  Then it writes the brief at once and shows a short summary: the recommendation, the waves, how many workflows
+  convert, and where to open it. Last, it offers to ask up to five questions that would sharpen the brief, the ones
+  that change it most first. The default is no. Each question has numbered choices, the suggestion first and your
+  own words last; a question whose choices are not exclusive takes several numbers (`2, 4`); `s` skips a question,
+  `q` saves and stops. Every answer is saved at once. Run it again, and it goes straight to the summary and the
+  offer. `--batch` asks nothing, and a run with no terminal never asks.
+- **The brief assumes what has a sensible answer.** Non-production: a simulated lab first, then a non-production
+  instance where one exists. Certificate and host checks vRO turned off: kept as today, listed as a security note.
+  Off limits: nothing. vRA: replaced by Kestra. What the code suggests: taken. Any other question with a suggestion
+  takes it. The brief lists each assumption, and each answer taken from a suggestion, under "Assumptions", with how
+  to change it in `answers.yaml`. Only a question with no sensible answer (your Kestra edition, whether run history
+  can be exported) is left to answer, and none of them is needed to write the brief.
+- **Notes to fix after the migration.** The brief lists, before anything else it asks, the security problems kept as
+  today (certificate or host checks turned off, a credential written to a log or sent somewhere) and the possible
+  defects that make a workflow fail every time.
+- **A limit stops the run cleanly.** When your Claude plan's limit runs out, the run stops at once and says so,
+  instead of waiting: finished work is kept, and the same command picks up after the limit resets. An API key's rate
+  limit gets one short retry first.
+- **Each step of a long run shows on its one progress line**, with the time it has taken so far ("Analyzing 46
+  workflows: 0 done, 1m 20s"), then "Summarizing 19 groups" and "Preparing the brief".
 - **Today's behavior is kept, and not asked about.** The converted flows do what the workflows do today, so one can
-  be tested against the other. Possible defects are kept, except one that makes its workflow fail every time and a
-  security problem (a credential exposed, or a check turned off that protects a connection): those are asked. A
-  question the code answers today is answered so, vRA's timeouts and failure handling are kept, and a question
+  be tested against the other. Possible defects are kept, with the ones that fail every time and the security
+  problems listed as notes. A question the code answers today is answered so, vRA's timeouts and failure handling are kept, and a question
   about a value the sanitized copy hides is not asked. Each is written in `answers.yaml` with the answer it takes,
   and you can change it there. The brief lists every possible defect by what it does today (Appendix C).
 - **Details of how a flow is built wait for its wave.** Which servers a flow targets, the shape of an input, and the
   review of a spec the model was less sure of are asked when the wave is converted (`waves:` in `answers.yaml`).
-- **Ctrl+C stops at once.** The model calls in flight end, none starts after them, and every spec already written
-  is kept. The run says how far it got.
+- **Ctrl+C stops at once,** during every wait, including the wait after a quota error. The model calls in flight
+  end, none starts after them, and every spec already written is kept. The run says how far it got.
 - **Faster analysis.** Eight model calls run at once instead of four, and the group summaries run in parallel too.
   Each call's time is the model writing its reply (about a minute on Opus and Haiku alike), not the tool.
 - **One question per pattern.** A possible defect or a question about an action several workflows share, or the same
   one on near-duplicate workflows, is asked once for all of them.
 - **What the tool assumes instead of asking.** The trust store, retries and counters, and REST hosts made in code
-  have a Kestra equivalent. The brief lists each assumption under "Applied to the whole estate", and you can
-  override any of them in `answers.yaml`. Where vRO turned host verification off, the tool asks whether the
-  converted flows should check it.
+  have a Kestra equivalent. The brief lists each assumption under "Assumptions", and you can override any of them in
+  `answers.yaml`.
 - **What to add to the package.** When a workflow calls code the export does not hold (an action module at any
   depth, a workflow on another vRO cluster, the configuration elements a module reads at run time), the brief lists
   it under "Add to the package", with what calls it and how to add it. It is no longer a question.
@@ -46,6 +60,12 @@ gave.
   and none is listed as a retire candidate from the call graph alone.
 
 ### Fixes
+
+- Ctrl+C did not stop a run on macOS while the model calls waited (after a quota error, for up to half an hour): the
+  run waited on them in a way the terminal's Ctrl+C does not reach. Every wait is now in short steps.
+- A path in the terminal could be cut at a hyphen when a line wrapped (`your-` on one line, `input/answers.yaml` on
+  the next). Paths and names are no longer split.
+- The first screen named a question by its number ("(Q8)"). Questions are named in words there and on the pages.
 
 - The brief could say 8 questions while `answers.yaml` held hundreds. The brief counted the file's entries, where a
   group of questions is one entry, while the file listed every question in it (83 spec questions in one entry on a
@@ -71,27 +91,39 @@ gave.
 - `answers.yaml` (also new in 1.2.0): a `waves` section, one entry per wave (`wave.<n>`, `wave.none`) with what is
   asked when it is converted under `each:`. Each assumption lists the items it settles under `each:`, each with
   `assumed:` (the answer it takes) and no answer line. New assumptions: `assume.defects`, `assume.behavior`,
-  `assume.placeholders`, `assume.timeouts`, `assume.labels`, `assume.specs`. `assume.host-verification` became the
-  question `estate.host-verification`; `estate.non-production` is asked after the analysis; `estate.module.*` is no
-  longer asked (an answer to it still settles its module's questions). A kept defect's answer reads `keep, as today`;
+  `assume.placeholders`, `assume.timeouts`, `assume.labels`, `assume.specs`, `assume.host-checks`,
+  `assume.non-production` and `assume.suggested` (every other question with a suggestion, listed with the answer it
+  takes). `estate.non-production` and `estate.host-verification` are no longer asked; a file that answers them keeps
+  them, and its answer still counts. `estate.module.*` is no longer asked (an answer to it still settles its
+  module's questions). Preflight's off limits question (`q4-off-limits`) suggests "nothing is off limits", and the vRA
+  question (`q9-vra-front-end`) suggests "replace": both are assumed. Possible defects that fail every time or are a
+  security problem are kept (`assume.defects`) instead of asked. A kept defect's answer reads `keep, as today`;
   a kept timeout's is its recommendation, with its minutes. An answer that takes several choices joins them with
   `; `.
 - `data/3-brief/brief.json`: `questions.later` and `input.later` (what waits for a wave); each of
-  `suspected_defects` has `today`, `asked`, `answer` and `assumed`.
+  `suspected_defects` has `today`, `asked`, `flag` (`security`, `fails` or null: listed as a note), `answer` and
+  `assumed`. The `assume.suggested` entry of `assumptions` has `takes`: each answer taken, with its question.
+- When vRA is replaced, the facts only its conversion needs (vRA's image and flavor mappings, who allocates a static
+  IP, how a resource no Kestra task creates is made) wait for that wave; a canceled create, day 2 scaling and the
+  deployments vRA already made get the suggestion that keeps today's behavior.
+- `vra.model`: a plan limit or quota stops the run (`LimitReached`, a `Stopped`, with `LIMIT["message"]`) instead of
+  waiting; set `model.WAIT_ON_LIMIT = True` to keep backing off and resuming, as 1.1.0 did. The command exits with 75
+  when a limit stopped it.
 - `data/run.log` (new): what each step did in detail. `data/model.json` (new): the model chosen in the terminal for
   this export. `data/input-items.json`: each defect and spec question has `sort`.
 - The sanitized copy: `schema.org` and a few other public schema hosts are kept, and in a URL whose path is a
   vendor's documented API path only the host is replaced (`https://<HOST-03>/api/now/table/...`). Placeholders can be
   numbered differently from 1.1.0.
 - `data/1-assess/patterns.json`: new, the patterns the estate questions are built from.
-- The status line reads "answer N questions" and counts answers, not entries.
+- The status line reads "The brief is ready. To start <waves>: answer N questions in answers.yaml" and counts
+  answers, not entries.
 
 ### Behavior changes you will notice
 
-- **A run in a terminal asks questions.** To run it unattended, add `--batch`.
-- **Fewer questions.** On the 46-workflow test estate, taking every suggestion, the terminal asks 4 questions before
-  the analysis and 12 after it; 1.1.0 left 149 answers to fill in `answers.yaml`. What remains in the file: 2 open
-  answers, and 25 asked when their wave is converted. The load balancer sample leaves 11 open answers instead of 19.
+- **A run in a terminal asks the estate questions.** To run it unattended, add `--batch`.
+- **Fewer questions, and none needed after the analysis.** On the 46-workflow test estate, the terminal asks 4
+  questions before the analysis, then writes the brief; 1.1.0 left 149 answers to fill in `answers.yaml`. The brief
+  then offers at most five questions, which you can decline.
 - **The run's own lines are shorter.** One line per step, and one progress line while the workflows are analyzed.
   What each step did in detail is in `data/run.log`.
 - **Typed in a terminal, `run` asks before any billed call,** whatever the estimate, and also with `--yes`. Add
@@ -124,6 +156,12 @@ generic HTTP requests or nothing at all:
   write to the directory.
 
 ### Fixes
+
+- Ctrl+C did not stop a run on macOS while the model calls waited (after a quota error, for up to half an hour): the
+  run waited on them in a way the terminal's Ctrl+C does not reach. Every wait is now in short steps.
+- A path in the terminal could be cut at a hyphen when a line wrapped (`your-` on one line, `input/answers.yaml` on
+  the next). Paths and names are no longer split.
+- The first screen named a question by its number ("(Q8)"). Questions are named in words there and on the pages.
 
 - The brief's opening sentence read "This estate provisions an add user to AD group, ..." when catalog items are
   named for what they do. Such an estate now opens with "Users request 16 Service Broker catalog items, such as

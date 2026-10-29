@@ -6,9 +6,13 @@ them to answers.yaml.
     Inventory   the code is read (Sanitize, Preflight, Assess), no model; then the first screen: what was read, what
                 is missing, that the assessment only reads, and how to stop
     Interview   the few questions about the whole estate that the analysis reads, no model
-    Analysis    Understand and Brief, asked for before anything is billed, with one progress line
-    Questions   what only the person can settle for the plan; every few answers the rest is re-planned (with a model,
-                one call; without, the fixed rules)
+    Analysis    Understand, asked for before anything is billed, with one progress line
+    Brief       written at once: every question that has a suggestion is assumed, written in answers.yaml as assumed
+                and listed in the brief; then a short summary
+    Sharpen     an offer, no by default, to answer at most OFFER_AT_MOST questions that have no suggestion, those that
+                change the brief most first; then one re-planning call (with a model) and the brief again
+Run again on an estate that has a brief (and nothing to ask before the analysis), it redoes what changed and goes
+straight to the summary and the offer.
 
 Every question has the same shape: numbered choices, the suggestion first (Enter takes it), the last one always the
 person's own words, and a question whose choices are not exclusive takes several numbers ("2, 4"). `s` leaves a
@@ -16,7 +20,7 @@ question for someone else, `q` saves and stops asking. Each answer is written to
 (the file is written whole or not at all), so nothing answered is ever lost: stopping, a crash or Ctrl+C keeps every
 answer given so far. The same file, run again with --batch or with no terminal, gives the same brief.
 
-The terminal only talks about the questions it said it would ask: no counts kept behind the scenes, no rounds.
+The terminal only talks about the questions it offered: no counts kept behind the scenes, no rounds.
 
 Nothing here runs unless the person typed the command in a terminal: a program calling `vra.cli.main`, a run with
 no terminal attached and `--batch` never wait for input.
@@ -55,8 +59,9 @@ class Terminal:
             print("", file=self.out, flush=True)
             return
         for para in text.split("\n"):
-            print(textwrap.fill(para, WIDTH, initial_indent=indent, subsequent_indent=indent) if para else "",
-                  file=self.out, flush=True)
+            # a path or a name is never split: no break at its hyphens, and a long one keeps a line of its own
+            print(textwrap.fill(para, WIDTH, initial_indent=indent, subsequent_indent=indent, break_on_hyphens=False,
+                                break_long_words=False) if para else "", file=self.out, flush=True)
 
     def read(self, prompt: str) -> str:
         print(prompt, end="", file=self.out, flush=True)
@@ -233,8 +238,12 @@ def first_screen(term: Terminal, use_model: bool, n_questions: int) -> None:
     adds = pat.get("missing") or []
     if adds:
         term.say()
-        term.say(f"Missing: the workflows call {_n(len(adds), 'piece')} of code that {'is' if len(adds) == 1 else 'are'} "
-                 "not in the package. Add them and run again:")
+        one = len(adds) == 1
+        term.say(f"Not in the package: the workflows call {_n(len(adds), 'piece')} of code that "
+                 f"{'isn' if one else 'aren'}'t in it. You can carry on: the analysis runs without "
+                 f"{'it' if one else 'them'}, but the workflows that call {'it' if one else 'them'} get less certain "
+                 f"results. To include {'it' if one else 'them'}, add {'it' if one else 'them'} to the package and run "
+                 "again.")
         for a in adds:
             by = a.get("called_by") or []
             term.say(f"- {a['what']}, called by {', '.join(by[:2])}{f' and {len(by) - 2} more' if len(by) > 2 else ''}. "
@@ -279,12 +288,130 @@ def interview(term: Terminal, use_model: bool, qs: list[dict], reanalysis: str |
     return True
 
 
-# ------------------------------------------------------------------ after the analysis
+# ------------------------------------------------------------------ the brief, then sharpening it
 
-def _plan_questions(use_model: bool, skipped: set[str]) -> list[dict]:
+OFFER_AT_MOST = 5                       # questions offered in one go
+SECONDS_EACH = 25                       # about how long one question takes to answer
+
+
+def has_brief() -> bool:
+    """The estate has a brief from an earlier run."""
+    return os.path.exists(os.path.join(C.BRIEF, "brief.json"))
+
+
+def _brief() -> dict:
+    return C.read_json(os.path.join(C.BRIEF, "brief.json"))
+
+
+def summary(term: Terminal, path: str) -> None:
+    """The brief in a few lines: the recommendation, the waves, how many workflows convert, and where to open it."""
+    b = _brief()
+    rec = b.get("recommendation") or {}
+    verdict = str(rec.get("verdict") or "").strip()
+    why = re.sub(r"^\w[\w ]*\.\s+", "", str(rec.get("produced_by") or ""), count=1)
+    first = re.split(r"(?<=\.)\s+", why, maxsplit=1)[0] if why else ""
+    c = b.get("counts") or {}
+    total = sum(c.values())
+    converts = total - sum(c.get(o, 0) for o in ("Retire", "Rebuild", "Manual", "Needs a model"))
+    term.say()
+    term.say(f"The brief recommends: {verdict}." + (f" {first}" if first and verdict != "needs a model" else ""))
+    if verdict != "needs a model" and f"{converts} workflows convert" not in first:
+        term.say(f"{converts} of {_n(total, 'workflow')} convert to Kestra flows.", "  ")
+    waves = (b.get("plan") or {}).get("waves") or []
+    if waves:
+        term.say(f"{_n(len(waves), 'wave')}:", "  ")
+        for w in waves:
+            n = w.get("workflows")
+            if w.get("kind") == "vra-replacement":
+                ts = [f"'{t}'" for t in w.get("cloud_templates") or []]
+                term.say(f"Wave {w['wave']}: replaces vRA for {', '.join(ts) or 'its cloud templates'} with a Kestra App "
+                         "and a provisioning flow", "    ")
+                continue
+            term.say(f"Wave {w['wave']}: {_n(len(n) if isinstance(n, list) else int(n or w.get('n') or 0), 'workflow')}, "
+                     f"{_wave_words(w)}", "    ")
+    term.say(f"Open {path}", "  ")
+
+
+def _wave_words(w: dict) -> str:
+    """What a wave does, from its name ("writes: A, B, C"): the systems it writes to or reads."""
+    name = str(w.get("name") or "")
+    how, _, what = name.partition(": ")
+    systems = [x.strip() for x in what.split(",") if x.strip()] if what else []
+    if not systems:
+        return name
+    shown = ", ".join(systems[:3]) + (f" and {len(systems) - 3} more" if len(systems) > 3 else "")
+    return f"{'reads' if how.startswith('read') else 'writes to'} {shown}"
+
+
+def assumptions_count() -> int:
+    """The assumptions the brief lists: those in force."""
+    return sum(1 for a in _brief().get("assumptions") or [] if a.get("holds"))
+
+
+def to_offer(use_model: bool) -> list[dict]:
+    """The questions that can sharpen the brief: those with no suggestion (every other one is assumed), the ones
+    that change the brief most first."""
     from .stages import planner
-    qs = [q for q in planner.questions() if q.get("phase") != "interview" and q["id"] not in skipped]
-    return [q for q in qs if use_model or not q.get("needs_model")]
+    qs = [q for q in planner.questions() if not q.get("estate") and (use_model or not q.get("needs_model"))]
+    return planner.ranked(qs)
+
+
+def _minutes_words(k: int) -> str:
+    m = round(k * SECONDS_EACH / 60)
+    return "about a minute" if m <= 1 else f"about {m} minutes"
+
+
+def offer(term: Terminal, use_model: bool) -> list[dict]:
+    """Say the brief is ready and how many assumptions it makes, and offer the few questions that sharpen it. The
+    default is no. Returns the questions to ask (none when the person says no, or nothing is left to offer)."""
+    n = assumptions_count()
+    made = f"It makes {_n(n, 'assumption')}, listed in it." if n else "It makes no assumptions."
+    qs = to_offer(use_model)[:OFFER_AT_MOST]
+    term.say()
+    if not qs:
+        term.say(f"The brief is ready. {made} To change one, write your answer under it in {C.rel(C.ANSWERS)} and "
+                 "run the same command again.")
+        return []
+    k = len(qs)
+    some = f"up to {k} questions" if k == OFFER_AT_MOST else _n(k, "question")
+    term.say(f"The brief is ready. {made} To make it sharper, you can answer {some} now ({_minutes_words(k)}), or "
+             f"later in {C.rel(C.ANSWERS)}.")
+    try:
+        a = term.read("Answer them now? (y/N) ").strip().lower()
+    except Quit:
+        return []
+    return qs if a in ("y", "yes") else []
+
+
+def sharpen(term: Terminal, use_model: bool, qs: list[dict], rewrite) -> dict:
+    """Ask the questions offered, q to stop at any point; then re-plan what is left (with a model, one call) and
+    write the brief again. Returns {"asked", "answered", "stopped"}."""
+    from .stages import planner
+    done = {"asked": 0, "answered": 0, "stopped": False}
+    given = []
+    for i, q in enumerate(qs, 1):
+        try:
+            a = term.pose(_strip_name(q), f"Question {i} of {len(qs)}")
+        except Quit:
+            done["stopped"] = True
+            break
+        done["asked"] += 1
+        if a is None:
+            term.say(SKIPPED, "  ")
+            continue
+        planner.record(q, a)
+        done["answered"] += 1
+        given.append({"id": q["id"], "question": q["question"], "answer": a})
+    term.say()
+    if not given:
+        term.say("Nothing answered: the brief stays as it is.")
+        return done
+    term.say("Updating the brief with your answers…")
+    r = planner.replan(given, use_model)
+    if r.get("error"):
+        C.progress(f"the re-planning call failed: {r['error'][:200]}")
+    rewrite()
+    return done
 
 
 def _strip_name(q: dict) -> dict:
@@ -301,84 +428,3 @@ def _strip_name(q: dict) -> dict:
             o.split(":")[0].strip().lower() in m.group(1).lower() for o in q["options"][:2]):
         text = text[:m.start()]
     return {**q, "question": text}
-
-
-def _blanket(q: dict, defects_left: int) -> dict:
-    """A possible-defect question offers to keep every one still asked, when there is more than one."""
-    if not q.get("defect") or defects_left < 2:
-        return q
-    return {**q, "options": [*q["options"], "keep this and every other possible defect asked here"]}
-
-
-def after_analysis(term: Terminal, use_model: bool, rerun_brief) -> dict:
-    """The questions only the person can settle for the plan. Says how many first, and only ever talks about those;
-    an answer that settles others (a blanket answer, an estate answer) takes them off the list at once. Every
-    REPLAN_EVERY answers, with a model, the rest is re-planned. Returns {"asked", "answered", "stopped"}."""
-    from .stages import planner
-    from .stages import your_input as Y
-    skipped: set[str] = set()
-    told = {q["id"] for q in _plan_questions(use_model, skipped)}
-    done = {"asked": 0, "answered": 0, "stopped": False}
-    term.say()
-    if not told:
-        term.say("Nothing to ask after the analysis.")
-        return done
-    term.say(f"After the analysis, {_n(len(told), 'question')}.")
-    since, given = 0, []
-    while True:
-        qs = [q for q in _plan_questions(use_model, skipped) if q["id"] in told]
-        if not qs:
-            break
-        q = qs[0]
-        total = done["asked"] + len(qs)
-        defects_left = sum(1 for x in qs if x.get("defect"))
-        try:
-            a = term.pose(_blanket(_strip_name(q), defects_left), f"Question {done['asked'] + 1} of {total}")
-        except Quit:
-            done["stopped"] = True
-            break
-        done["asked"] += 1
-        if a is None:
-            skipped.add(q["id"])
-            term.say(SKIPPED, "  ")
-            continue
-        if a == "keep this and every other possible defect asked here":
-            for x in qs:
-                if x.get("defect"):
-                    planner.record(x, planner.KEEP_ALL if x.get("group") else "keep it, as today")
-        else:
-            planner.record(q, a)
-        if q["id"] == "suggested" and planner.value_of(a) == "decide each":
-            told |= {x["id"] for x in _plan_questions(use_model, skipped)} - {x["id"] for x in qs}
-        done["answered"] += 1
-        given.append({"id": q["id"], "question": q["question"], "answer": a})
-        since += 1
-        if use_model and since >= planner.REPLAN_EVERY and len(qs) > 1:
-            term.say()
-            term.say("Updating the remaining questions…")
-            r = planner.replan(given, use_model)
-            rerun_brief()
-            given, since = [], 0
-            told |= {gid for gid in (Y.registry().get("_merges") or {})
-                     if set(Y.registry()["_merges"][gid].get("members") or []) <= _members_of(told)}
-            if r.get("error"):
-                C.progress(f"the re-planning call failed: {r['error'][:200]}")
-    rerun_brief()                       # the brief, and its counts, follow every answer given
-    term.say()
-    if done["stopped"]:
-        term.say("Saved and stopped. Run the same command again to go on.")
-    elif skipped:
-        term.say(f"Nothing more to ask now. What you skipped stays in {C.rel(C.ANSWERS)}.")
-    else:
-        term.say("That was the last question. Sign the plan in answers.yaml (signed_for) when it reads right.")
-    return done
-
-
-def _members_of(ids: set[str]) -> set[str]:
-    """The items behind question ids (a group's members, or the item itself)."""
-    from .stages import your_input as Y
-    gs = Y.load()["groups"]
-    out: set[str] = set()
-    for i in ids:
-        out |= set(gs.get(i) or [i])
-    return out

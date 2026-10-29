@@ -22,7 +22,11 @@ ask(purpose, workflow_id, prompt, schema) -> dict validated against schema
 - Structured output is enforced twice: the provider is given the JSON schema,
   and the reply is validated here. On a validation failure the call is retried
   once with the validation error appended, then raises.
-- At most MAX_PARALLEL calls in flight; quota and rate limits back off and resume.
+- At most MAX_PARALLEL calls in flight. When the plan's limit or quota runs out, the run stops cleanly
+  (LimitReached), keeping finished work; an API key's rate limit gets one short retry first. A program that runs
+  unattended can set WAIT_ON_LIMIT to back off and resume instead.
+- Every wait is short steps, so Ctrl+C stops the run at once, even while workers wait (on macOS a wait without a
+  timeout does not see Ctrl+C).
 - Every call is appended to the call log with purpose, provider, model,
   workflow, ms and cost.
 """
@@ -116,9 +120,17 @@ BASE_ARGS = [
     "--tools", "",
 ]
 
-# Quota back-off. Headless `claude -p` shares the interactive session's quota,
-# so a long run will hit a session limit partway through. That is backpressure,
-# not failure: wait and resume.
+# When the quota or plan limit runs out: stop cleanly (the person runs the same command again once it resets), or,
+# with WAIT_ON_LIMIT, back off and resume (a program that runs unattended for hours). Headless `claude -p` shares
+# the interactive session's quota, so a long run can hit a session limit partway through.
+WAIT_ON_LIMIT = False
+RATE_RETRY_S = 20.0               # an API key's rate limit, or a busy server: one short wait, then stop
+STEP_S = 0.2                      # every wait is steps this long, so Ctrl+C is seen at once
+PLAN_LIMIT = "You've hit your Claude plan's limit. Finished work is kept. Run the same command again after it resets."
+RATE_LIMIT = ("You've hit your API key's rate limit. Finished work is kept. Run the same command again in a few "
+              "minutes.")
+SERVER_LIMIT = ("The model's server is refusing more calls (rate limit, or too busy). Finished work is kept. Run the "
+                "same command again in a few minutes.")
 QUOTA_BACKOFF_S = [60, 120, 300, 600, 900, 1800, 1800, 1800]
 QUOTA_WAIT_BUDGET_S = 4 * 3600
 
@@ -170,6 +182,52 @@ def stop() -> None:
 def _check_stop() -> None:
     if STOP.is_set():
         raise Stopped()
+
+
+class LimitReached(Stopped):
+    """The model's quota, plan limit or rate limit ran out: the run stops cleanly, keeping finished work. A Stopped,
+    so every stage passes it up like Ctrl+C; LIMIT["message"] says what to do."""
+
+
+LIMIT: dict = {"message": None}
+
+
+def pause(seconds: float) -> None:
+    """Wait, in short steps, so Ctrl+C (in the main thread) and stop() (in a worker) end the wait at once."""
+    end = time.monotonic() + seconds
+    while (left := end - time.monotonic()) > 0:
+        if STOP.wait(min(STEP_S, left)):
+            raise Stopped()
+
+
+def wait_for(event: threading.Event) -> None:
+    """event.wait(), in short steps (see pause)."""
+    while not event.wait(STEP_S):
+        _check_stop()
+
+
+def _limit_reached(message: str) -> None:
+    """Stop every call (the ones in flight end now) and say why, once."""
+    if LIMIT["message"] is None:
+        LIMIT["message"] = message
+    stop()
+    raise LimitReached(message)
+
+
+PLAN_MARKERS = ("session limit", "usage limit", "weekly limit", "hit your", "limit reached", "resets ")
+
+
+def limit_message(provider: str, text: str) -> str:
+    """What the person is told when calls are refused for a limit."""
+    if provider == "claude-code" or any(m in (text or "").lower() for m in PLAN_MARKERS):
+        return PLAN_LIMIT
+    return RATE_LIMIT if provider == "anthropic" else SERVER_LIMIT
+
+
+def _plan_limit(provider: str, text: str) -> bool:
+    """A limit that does not lift in seconds: the Claude plan's (or a quota). A rate limit or a busy server may."""
+    t = (text or "").lower()
+    return any(m in t for m in PLAN_MARKERS) or "quota" in t
 
 
 class SchemaError(ValueError):
@@ -519,9 +577,16 @@ def estimate_words(est: dict, s: K.Settings) -> str:
     if est["usd"] is None:
         return f"{calls}{cached}. There is no price on record for {name}, so no estimate in dollars."
     if s.provider == "claude-code":
-        return (f"{calls}, about ${est['usd']:.2f} at {name}'s API prices{cached}. With your Claude Code login "
+        return (f"{calls}, {_about(est['usd'])} at {name}'s API prices{cached}. With your Claude Code login "
                 "this is not billed separately: it counts against your Claude plan.")
-    return f"{calls}, about ${est['usd']:.2f} at {name}'s API prices{cached}."
+    return f"{calls}, {_about(est['usd'])} at {name}'s API prices{cached}."
+
+
+def _about(usd: float) -> str:
+    """A cost in words: never "about $0.00" for calls that cost something."""
+    if usd < 0.005:
+        return "under $0.01"                # a billed call is never free, however small its estimate
+    return f"about ${usd:.2f}" if usd < 10 else f"about ${usd:.0f}"
 
 
 def ask_words(est: dict, s: K.Settings) -> str:
@@ -530,9 +595,8 @@ def ask_words(est: dict, s: K.Settings) -> str:
     calls = f"{n} model call{'s' if n != 1 else ''}"
     if est["usd"] is None:
         return f"{calls} (there is no price on record for {model_name(s.model or '')})"
-    usd = f"${est['usd']:.2f}" if est["usd"] < 10 else f"${est['usd']:.0f}"
     plan = " (with your Claude Code login it counts against your Claude plan)" if s.provider == "claude-code" else ""
-    return f"{calls}, about {usd}{plan}"
+    return f"{calls}, {_about(est['usd'])}{plan}"
 
 
 class CostNotApproved(BaseException):
@@ -627,10 +691,11 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
     attempt_prompt = prompt
     last_errs: list[str] = []
     quota_attempt = 0
+    rate_retried = False
     with _sem:
         attempt = 0
         while attempt <= retries:
-            _quota_gate.wait()            # park while another thread backs off
+            wait_for(_quota_gate)         # park while another thread backs off
             gen_before = _quota_generation
             _check_stop()
             env = backend.invoke(attempt_prompt, schema)
@@ -650,6 +715,14 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
                 rec["error"] = text[:300]
                 rec["quota"] = _is_quota(text)
                 _log(rec)
+                if _is_quota(text) and not WAIT_ON_LIMIT:
+                    # Not a conversion failure: the run stops cleanly, after one short retry when the limit may lift
+                    # in seconds (a rate limit, a busy server)
+                    if not rate_retried and not _plan_limit(cfg["provider"], text):
+                        rate_retried = True
+                        pause(RATE_RETRY_S)
+                        continue
+                    _limit_reached(limit_message(cfg["provider"], text))
                 if _is_quota(text):
                     # Not a schema retry and not a conversion failure. Wait and
                     # try the same prompt again; `attempt` is deliberately not
@@ -723,10 +796,12 @@ def _quota_backoff(purpose: str, workflow_id: str, attempt: int, detail: str,
               "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
         print(f"[model] quota exhausted ({detail[:80]}); waiting {wait}s then "
               f"resuming", flush=True)
-        time.sleep(wait)
-        _quota_waited_s += wait
-        _quota_generation += 1
-        _quota_gate.set()
+        try:
+            pause(wait)
+        finally:
+            _quota_waited_s += wait
+            _quota_generation += 1
+            _quota_gate.set()             # stopped or not, nobody stays parked on the gate
         return True
 
 
@@ -761,10 +836,13 @@ def run_parallel(jobs, worker, max_workers: int = MAX_PARALLEL):
             quota_hit.set()
             raise
 
+    from concurrent.futures import wait as _wait_futures
     ex = ThreadPoolExecutor(max_workers=max_workers)
     try:
         futs = {ex.submit(guarded, j): j for j in jobs}
         for fut, job in futs.items():
+            while not fut.done():
+                _wait_futures([fut], timeout=STEP_S)      # in steps: a wait without a timeout misses Ctrl+C
             try:
                 results[_job_key(job)] = fut.result()
             except Stopped:

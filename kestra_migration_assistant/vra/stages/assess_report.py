@@ -114,7 +114,7 @@ def entry_points_section(r: dict) -> list[str]:
     L = ["## Entry points", ""]
     if not r["counts"].get("entry_points"):
         return L + ["None on record: no vRA export in the estate folder and nothing in "
-                    "`your-input/entry-points.yaml` (preflight Q2). A workflow nothing calls may be an entry "
+                    "`your-input/entry-points.yaml` (the question what starts the workflows from outside vRO). A workflow nothing calls may be an entry "
                     "point or unused; the call graph cannot tell.", ""]
     L += ["What starts each workflow from outside vRO, from the vRA export and `your-input/entry-points.yaml`, "
           "matched by vRO workflow ID. Details in the readiness report.", "",
@@ -248,7 +248,7 @@ def unexported(r: dict) -> str:
               ["vRO library workflow", kinds.get("vRO library workflow", 0),
                "Shipped with vRO itself. Replace by design (the Kestra side has its own mechanism)."],
               ["unknown workflow", kinds.get("unknown workflow", 0),
-               "Nothing says what it is. Ask the owner (preflight Q1)."],
+               "Nothing says what it is. Ask the owner whether the export is the whole estate."],
               ["action not in export", kinds.get("action not in export", 0),
                "An action from a module that was not exported."]]), ""]
     by: dict[str, list[dict]] = {}

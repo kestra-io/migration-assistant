@@ -1008,7 +1008,7 @@ def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
     for k, e in (loaded.get("entries") or {}).items():
         q = str(e.get("question") or "").strip()
         if k.startswith("added.") and k not in have and q and not q.startswith(GONE.strip()):
-            sug = _text(e.get("suggested")) or None
+            sug = _text(e.get("suggested")) or _text(e.get("assumed")) or None   # listed under an assumption
             it = item(k, "confirm" if sug else "answer", q, question=q, suggested=sug, family="added",
                       unblocks=["raised by an earlier answer"])
             it["family_title"] = "Raised by your answers"

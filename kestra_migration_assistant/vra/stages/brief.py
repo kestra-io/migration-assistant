@@ -152,7 +152,8 @@ def run() -> dict:
     from . import defaults
     defaults.sort(registered, wf)
     defaults.wave_of(registered, plan, wf)
-    Y.register("assumed", defaults.assumptions(registered), write=False)
+    Y.register("assumed", defaults.assumptions(registered + [it for it in Y.items() if it.get("section") in
+                                                             ("preflight", "replan")]), write=False)
     Y.register("brief", registered)
     sorted_by_key = {it["key"]: it for it in registered}
     Y.register_unblocks(preflight_unblocks(plan))
@@ -170,6 +171,9 @@ def run() -> dict:
         st = Y.state(d["decision"], loaded, it) if it else {"state": "open", "answer": None}
         d["today"] = it.get("today") or d["what"]
         d["asked"] = defaults.asked(it) if it else False
+        srt = it.get("sort") or {}
+        d["flag"] = ("security" if srt.get("security") else "fails" if srt.get("always_fails") else None) \
+            if d["asked"] else None             # kept like the rest, and listed first in the brief as a note
         d["in_plan"] = bool(it)                     # its workflow is in a wave: the conversion decides it
         d["answer"] = st["answer"] if st["state"] == "answered" else None
         d["assumed"] = st["state"] == "answered" and "(assumed" in str((loaded.get("closed") or {}).get(
@@ -413,8 +417,15 @@ def estate_summary(loaded: dict, retired: set[str] | None = None) -> dict:
                            "answer": interview.answer_of(it, e), "settles": len(shut.get(k) or [])})
         elif it.get("family") == "assume":
             over = interview.answer_of(it, e)
-            assumed.append({"id": k, "assumed": it.get("assumed"), "holds": over is None, "instead": over,
-                            "where": it.get("where") or [], "settles": len(shut.get(k) or [])})
+            rec = {"id": k, "assumed": it.get("assumed"), "holds": over is None, "instead": over,
+                   "where": it.get("where") or [], "settles": len(shut.get(k) or [])}
+            if k == "assume.suggested":
+                # each answer it takes, for the brief to list: they shape the plan (vRA replaced, nothing off limits)
+                by_key = {x["key"]: x for x in its}
+                rec["takes"] = [{"id": m, "question": Y.question_of(by_key[m]) if m in by_key else m,
+                                 "answer": Y._assumed_words(loaded["closed"][m]["answer"])}
+                                for m in shut.get(k) or [] if m in (loaded.get("closed") or {})]
+            assumed.append(rec)
     pj, aj = os.path.join(C.ASSESS, "patterns.json"), os.path.join(C.ASSESS, "assess.json")
     pat = patterns.run() if not os.path.exists(pj) or C.mtime(pj) < C.mtime(aj) else patterns.load()
     adds = [a for a in pat.get("missing") or [] if not set(a["called_by"]) <= (retired or set())]
@@ -503,7 +514,8 @@ def recommend(assess, tri, act_tri, answers, number: dict | None = None) -> dict
                       "Real reuse. Converting a first of a kind unlocks the rest of its cluster.")},
         {"signal": "Open preflight items",
          "value": f"{len(answers['open'])} of {len(answers['items'])}",
-         "reads_as": "Every wave that writes to a target is gated on Q3; the retire pass on Q2 and Q7."},
+         "reads_as": "Every wave that writes to a target is gated on where it runs before production; the retire pass on what starts "
+                     "the workflows and on run history."},
     ]
     share_mr = manual_rebuild / n
     reuse = top5 / n
@@ -770,7 +782,7 @@ def open_questions_md(assess, specs, tri, answers, cover=None) -> str:
         mine = [g for g in groups if set(g["workflows"]) & set(by_dom[did])]
         n = sum(len(g["wordings"]) for g in mine)
         L += [f"### {d['name']} ({len(mine)} question{'s' if len(mine) != 1 else ''}"
-              + (f", asked {n} times across the specs" if n != len(mine) else "") + "; owner: preflight Q6)", ""]
+              + (f", asked {n} times across the specs" if n != len(mine) else "") + "; owner: as named in answers.yaml)", ""]
         for g in mine:
             flag = " (blocking)" if g["blocking"] else ""
             who = ", ".join(f"{wf[u]['name']} ({tri[u]['outcome']})" for u in g["workflows"])

@@ -41,16 +41,16 @@ def estate(assess: dict, answers: dict) -> dict:
 
     if starts or counts["cloud_templates"]:
         triggers = (f"On record: {listed}, starting {started} of {len(wf)} workflows"
-                    + ("" if q2 == "answered" else "; the list is not marked complete (preflight Q2), so a "
+                    + ("" if q2 == "answered" else "; the list is not marked complete (entry-points.yaml), so a "
                        "schedule, policy or external caller may still be missing") + ".")
     else:
-        triggers = ("No entry point is on record: no vRA export and nothing in entry-points.yaml (preflight Q2 "
-                    "is open), so nothing says what starts these workflows.")
+        triggers = ("No entry point is on record: no vRA export and nothing in entry-points.yaml, so "
+                    "nothing says what starts these workflows.")
     catalog = (f"{_n('catalog_items', counts['catalog_items'])} on record" if counts["catalog_items"]
                else "no catalog item on record")
-    hist = {"unknown": "No run history is on record, and preflight Q7 (can it be exported) is open.",
-            "none": "No run history is available (preflight Q7).",
-            "offered": "Run history was offered (preflight Q7) but this tool does not read it yet; it is not "
+    hist = {"unknown": "No run history is on record, and the question about run history (can it be exported) is open.",
+            "none": "No run history is available (your answer in answers.yaml).",
+            "offered": "Run history was offered (your answer in answers.yaml) but this tool does not read it yet; it is not "
                        "used below."}[history]
     half = ("the 'no caller and no trigger' half can be checked against the entry points on record"
             if starts else "only the 'no caller' half can be checked, since no entry point is on record")

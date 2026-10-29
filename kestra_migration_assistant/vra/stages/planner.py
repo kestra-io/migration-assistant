@@ -262,6 +262,7 @@ def questions(loaded: dict | None = None) -> list[dict]:
             q = {"id": rk, "question": rew.get(rk) or re_["question"], "options": opts, "default": default,
                  "settles": max(1, len([m for m in members if m in still])), "order": n,
                  "blocks": any(Y.blocks_a_wave(by_key[m]) for m in members if m in by_key),
+                 "waves": len({w for m in members if m in by_key for w in _waves_held(by_key[m])}),
                  "needs_model": bool((it or {}).get("needs_model")), "group": gid, "estate": False,
                  "phase": "plan", "several": False, "about": _about(members, by_key),
                  "defect": all((by_key.get(m) or {}).get("family") == "defect" for m in members)}
@@ -272,6 +273,19 @@ def questions(loaded: dict | None = None) -> list[dict]:
             out.append(q)
     out.sort(key=lambda q: (not q.get("estate"), q["phase"] != "interview", not q["blocks"], q.get("order", 0)))
     return out
+
+
+def _waves_held(it: dict) -> set[str]:
+    """The waves whose entry criteria name an item ("Wave 2: ...")."""
+    import re
+    return {m.group(0) for u in it.get("unblocks") or [] if (m := re.match(r"Wave \d+\b", str(u)))}
+
+
+def ranked(qs: list[dict]) -> list[dict]:
+    """Questions in the order they change the brief most: the more waves an answer holds, then the more items it
+    settles, then one with choices before one that takes words (a list of owners changes no wave)."""
+    return sorted(qs, key=lambda q: (-(q.get("waves") or 0), -(q.get("settles") or 1), not q.get("options"),
+                                     q.get("order", 0)))
 
 
 def _would_settle(est: dict, loaded: dict) -> int:

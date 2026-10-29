@@ -95,14 +95,16 @@ def test_q3_names_the_systems_detected(with_vra):
 
 def test_q8_is_prefilled_from_the_code_and_left_for_the_customer_to_confirm(with_vra):
     q = with_vra["q"]["Q8"]
-    # a confirm item: the code's list pre-filled, open until the customer confirms or corrects it
+    # a confirm item: the code's list pre-filled. After Preflight alone it is open, in the group of suggestions with
+    # off limits (Q4) and vRA (Q9), which one yes takes; from the interview on it is assumed (test_interactive)
     assert "HTTP-REST" in q["question"] and "callApi" in q["found"] and q["suggested"] == "HTTP-REST plugin (built in)"
     assert q["status"] == "open" and q["answer"] == ""
     import yaml
     doc = yaml.safe_load(with_vra["file"])
     assert Y.entry_of(doc, q["key"]) == {"question": "The code uses these vRO plugins: HTTP-REST plugin (built in). "
                                                      "Is that the list?",
-                                         "suggested": "HTTP-REST plugin (built in)", "answer": None}
+                                         "suggested": "HTTP-REST plugin (built in)"}
+    assert Y.entry_of(doc, "suggested")["answer"] is None
 
 
 def test_q9_offers_replace_with_a_bridge(with_vra):

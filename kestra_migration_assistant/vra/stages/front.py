@@ -637,18 +637,76 @@ EST_TOPIC = {"started-by": "what starts the workflows", "config": "where setting
 
 
 def estate_lines(brief: dict) -> list[str]:
-    """The estate answers and the assumptions, for the brief: what applies estate-wide and how much it settled."""
+    """The estate answers, for the brief: what applies estate-wide and how much it settled."""
     out = []
     for e in brief.get("estate_answers") or []:
         if e.get("answer"):
             out.append(f"{e['question']} **{e['answer']}**" + (f" (settled {e['settles']} {_s(e['settles'], 'question')})"
                                                                if e.get("settles") else ""))
+    return out
+
+
+def assumption_lines(brief: dict) -> list[str]:
+    """Every assumption the brief makes, with how many items it settles and where to change it; then the ones an
+    answer overrode."""
+    out = []
     for a in brief.get("assumptions") or []:
         if a["holds"]:
-            out.append(f"Assumed: {a['assumed']}" + (f" ({a['settles']} {_s(a['settles'], 'item')}, each listed under it "
-                                                      "in answers.yaml)" if a.get("settles") else ""))
-        else:
+            # written for answers.yaml, where "here" is the assumption and its items are listed below it
+            text = (str(a["assumed"]).replace(" here.", f" under `{a['id']}`.")
+                    .replace("Each is listed below as it behaves today", "Each is in Appendix C as it behaves today")
+                    .replace(", listed in the brief", ""))
+            out.append(text + (f" Settles {a['settles']} {_s(a['settles'], 'item')}, each listed under `{a['id']}`."
+                               if a.get("settles") else f" (`{a['id']}`)"))
+    for a in brief.get("assumptions") or []:
+        if not a["holds"]:
             out.append(f"Not assumed, by your answer: {a['assumed']} Instead: **{a['instead']}**")
+    return out
+
+
+CHECKS_OFF = re.compile(r"certificate|host ?name|verif|trust", re.I)
+
+
+def _n_names(names: list[str]) -> str:
+    """Workflows (and the actions where a check is turned off, named module/action), counted and named."""
+    if len(names) == 1:
+        return names[0]
+    kind = "workflows and actions" if any("/" in n for n in names) else "workflows"
+    return f"{word(len(names))} {kind} ({_capped(sorted(names, key=lambda n: ('/' in n, n.lower())), 4, 'more')})"
+
+
+def taken_lines(brief: dict) -> list[str]:
+    """Each answer the brief takes from a suggestion (assume.suggested), as question and answer."""
+    a = next((a for a in brief.get("assumptions") or [] if a["id"] == "assume.suggested" and a["holds"]), None)
+    lines = [f"{t['question'].rstrip()} **{t['answer']}**" for t in (a or {}).get("takes") or []]
+    seen: dict[str, int] = {}
+    for line in lines:                   # the same question asked of each wave, with the same answer: one line
+        seen[line] = seen.get(line, 0) + 1
+    return [line + (f" ({word(n)} entries)" if n > 1 else "") for line, n in seen.items()]
+
+
+def note_lines(brief: dict) -> list[str]:
+    """What the conversion keeps as today but is worth fixing after the migration: security first (checks turned
+    off, credentials exposed), then what fails on every run. Notes, not questions: each is kept, so the converted
+    flows can be tested against the originals."""
+    out = []
+    held = next((a for a in brief.get("assumptions") or [] if a["id"] == "assume.host-checks" and a["holds"]), None)
+    flagged = [d for d in brief.get("suspected_defects") or [] if d.get("flag") and d.get("in_plan")
+               and str(d.get("answer") or "keep").lower().startswith("keep")]     # an answer to fix it: no note
+    # every certificate or host check turned off is one note, however many workflows do it
+    checks = [d for d in flagged if d["flag"] == "security" and CHECKS_OFF.search(f"{d.get('today')} {d.get('what')}")]
+    names = list(dict.fromkeys(sorted([*(held or {}).get("where", []), *(d["name"] for d in checks)], key=str.lower)))
+    if names:
+        how = ("write `answer: check them` under `assume.host-checks`" if held else
+               "write `answer: fix` under each one's possible defect")
+        out.append(f"**Security: certificate or host checks turned off** in {_n_names(names)}, so a connection to the "
+                   "wrong server is not noticed. The converted flows keep them off, as today. To turn them on in the "
+                   f"conversion instead, {how} in `your-input/answers.yaml`.")
+    for flag, head in (("security", "Security"), ("fails", "Fails on every run")):
+        for d in sorted((d for d in flagged if d["flag"] == flag and d not in checks), key=lambda d: d["name"].lower()):
+            today = str(d.get("today") or d.get("what") or "").rstrip(".")
+            out.append(f"**{head}: {d['name']}.** {today[:1].upper()}{today[1:]}. Kept as today; to fix it in the "
+                       f"conversion, write `answer: fix` under `{d['decision']}`.")
     return out
 
 
@@ -866,9 +924,11 @@ def _status(brief: dict, st: dict, num: dict) -> dict:
     add = f" and add {pk} missing {_s(pk, 'piece')} of code to the package" if pk else ""
     if st["blocking"] and st.get("holding"):
         k = st["holding"]
-        head = f"Next step: answer {k} {_s(k, 'question')}{add}, then run `{C.run_command()}` again."
-        body = (f"{'They are' if k != 1 else 'It is'} in `your-input/answers.yaml`, with what the code suggests "
-                "where it can" + (", and the pieces to add are listed below" if pk else "") + ".")
+        head = (f"To start {_and(st['blocks'])}: answer {k} {_s(k, 'question')}{add}, then run "
+                f"`{C.run_command()}` again.")
+        body = ("The brief below is complete: where a question has a suggested answer, it takes it, and lists it "
+                f"under Assumptions. {'These' if k != 1 else 'This one'} only the owner can answer, in "
+                "`your-input/answers.yaml`" + (", and the pieces to add are listed below" if pk else "") + ".")
         cls = "wait"
     elif pk:
         head = (f"Next step: add {pk} missing {_s(pk, 'piece')} of code to the package, then run "
@@ -1172,6 +1232,11 @@ def document(assess: dict, brief: dict) -> list[tuple]:
     rl = retire_line(assess, brief)
     if rl:
         B.append(("p", rl))
+    nl = note_lines(brief)
+    if nl:
+        B += [("h2", "Notes to fix after the migration"),
+              ("p", "Each converted flow does what its workflow does today, so the two can be tested against each "
+                    "other. These are kept as they are, and worth fixing once the migration is done."), ("ul", nl)]
     B += _estate_blocks(brief)
     warn = (brief.get("input") or {}).get("warnings")
     if warn:
@@ -1248,11 +1313,20 @@ def _estate_blocks(brief: dict) -> list[tuple]:
         B += [("h2", "Add to the package"),
               ("p", "These are called by the workflows but are not in the export. No question is asked about them: "
                     "add each one and run again, and its calls are read like the rest."), ("ul", pl)]
+    al = assumption_lines(brief)
+    if al:
+        B += [("h2", "Assumptions"),
+              ("p", "Where a question has an answer that keeps today's behavior, or one the code suggests, the brief "
+                    "takes it instead of asking. Each is under `estate:` in `your-input/answers.yaml` with every item "
+                    "it settles: to change one, write your answer under it and run the assessment again."),
+              ("ul", al)]
+        tl = taken_lines(brief)
+        if tl:
+            B += [("p", "The answers taken from a suggestion (`assume.suggested`):"), ("ul", tl)]
     el = estate_lines(brief)
     if el:
-        B += [("h2", "Applied to the whole estate"),
-              ("p", "Your answers under `estate:` in `your-input/answers.yaml`, and what the tool assumes instead of "
-                    "asking. Change an answer, or override an assumption, there."), ("ul", el)]
+        B += [("h2", "Your answers about the estate"),
+              ("p", "Under `estate:` in `your-input/answers.yaml`. Change an answer there."), ("ul", el)]
     return B
 
 
