@@ -206,6 +206,28 @@ def test_a_first_run_writes_the_brief_after_the_interview_and_stops_at_it(tmp_pa
     assert md.split("## Assumptions\n\n", 1)[1].startswith(AGAIN + "\n")
 
 
+@pytest.mark.parametrize("n", [1, 3])
+def test_the_first_screen_says_how_much_code_is_missing_and_leaves_the_list_to_the_brief(tmp_path, monkeypatch, n):
+    from kestra_migration_assistant.vra import interactive as I
+    from kestra_migration_assistant.vra.stages import common as C
+    monkeypatch.setattr(C, "PRE", str(tmp_path))
+    monkeypatch.setattr(C, "ASSESS", str(tmp_path))
+    missing = [{"what": f"action com.example/act{i}", "called_by": ["Lab - Enable Override"], "how": "Add it"}
+               for i in range(n)]
+    (tmp_path / "patterns.json").write_text(json.dumps({"missing": missing}))
+    out = io.StringIO()
+    I.first_screen(I.Terminal(io.StringIO(), out), use_model=False, n_questions=0)
+    text = " ".join(out.getvalue().split())
+    said = {1: "Not in the package: the workflows call 1 piece of code that isn't in it. You can carry on: the "
+               "analysis runs without it, but the workflows that call it get less certain results. The brief lists it "
+               "and how to add it.",
+            3: "Not in the package: the workflows call 3 pieces of code that aren't in it. You can carry on: the "
+               "analysis runs without them, but the workflows that call them get less certain results. The brief "
+               "lists each one and how to add it."}[n]
+    assert said in text
+    assert "act0" not in text and "- " not in out.getvalue().split("Not in the package", 1)[1]
+
+
 def test_n_declines_and_no_browser_skips_the_question(tmp_path, monkeypatch):
     export = _export(tmp_path)
     _typed_run(monkeypatch, export, [""])

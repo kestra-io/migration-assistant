@@ -247,12 +247,7 @@ def first_screen(term: Terminal, use_model: bool, n_questions: int) -> None:
         term.say(f"Not in the package: the workflows call {_n(len(adds), 'piece')} of code that "
                  f"{'isn' if one else 'aren'}'t in it. You can carry on: the analysis runs without "
                  f"{'it' if one else 'them'}, but the workflows that call {'it' if one else 'them'} get less certain "
-                 f"results. To include {'it' if one else 'them'}, add {'it' if one else 'them'} to the package and run "
-                 "again.")
-        for a in adds:
-            by = a.get("called_by") or []
-            term.say(f"- {a['what']}, called by {', '.join(by[:2])}{f' and {len(by) - 2} more' if len(by) > 2 else ''}. "
-                     f"{a.get('how', '').rstrip('.')}.", "  ")
+                 f"results. The brief lists {'it' if one else 'each one'} and how to add it.")
     term.say()
     if use_model:
         term.say("The assessment only reads these files: it never connects to or runs anything on your systems. Only "
