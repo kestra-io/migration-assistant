@@ -87,7 +87,9 @@ A small raw XML tree with known fake hosts, IPs, URLs, emails, a service account
 password and a bearer token in scripts, attribute values, a configuration element (including a
 SecureString) and a presentation default. `tests/test_sanitize.py` asserts every one is gone from
 the sanitized copy and that the item graph, bindings and script structure are unchanged. Every
-value in it is invented; none is a real host or credential.
+value in it is invented; none is a real host or credential. Its Slack and Teams webhook URLs (and
+those of `detection/`) are markers, `@WEBHOOK:<name>@`, that `tests/vra/webhooks.py` fills in a copy
+at run time, so no file holds a whole webhook URL for a secret scanner to flag.
 
 ### vRA export (`vra/`)
 

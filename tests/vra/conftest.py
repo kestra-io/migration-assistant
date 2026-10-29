@@ -5,7 +5,7 @@ Shared fixtures.
 <estate>/: review, helpers, events, builders, triage) the way a customer gets it, with no model, in a temporary
 folder, once per session: its vRO tree and its vRA export (if any) are copied into an export folder, its specs/
 seed data/2-understand/ as if Understand had written them, and preflight, assess and brief run with
-VRO_NO_MODEL=1. Stage output is not committed, so tests that read an estate's assess.json or brief.json build
+VRO_NO_MODEL=1. The webhook URLs a tree marks are written into its copy (webhooks.py). Stage output is not committed, so tests that read an estate's assess.json or brief.json build
 it here.
 """
 from __future__ import annotations
@@ -15,6 +15,7 @@ import shutil
 import sys
 
 import pytest
+import webhooks as W
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
@@ -35,9 +36,9 @@ def conformance_stages(tmp_path_factory):
         tmp = tmp_path_factory.mktemp(estate)
         src, stages = tmp / "sources" / estate, tmp / "stages" / estate
         # the tree under the estate's name, so workflow IDs (<estate>-<name>) match the committed specs
-        shutil.copytree(os.path.join(here, "vro"), src / estate)
+        W.copy(os.path.join(here, "vro"), src / estate)
         if os.path.isdir(os.path.join(here, "vra")):
-            shutil.copytree(os.path.join(here, "vra"), src / f"{estate}-vra")
+            W.copy(os.path.join(here, "vra"), src / f"{estate}-vra")
         understand = stages / C.LAYOUT["understand"]
         understand.mkdir(parents=True)
         for f in sorted(os.listdir(os.path.join(here, "specs"))):

@@ -19,6 +19,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
+import webhooks as W
+
 from kestra_migration_assistant.vra.parse import corpus, formats, graph, workflow
 
 CONFORMANCE = os.path.join(ROOT, "tests", "vra", "conformance")
@@ -29,7 +31,7 @@ INPUTS = {
     "pkgdiff-v1.1": os.path.join(CONFORMANCE, "pkgdiff-v1.1.package"),
     "canvas": os.path.join(CONFORMANCE, "canvas"),
     "aria-xml": os.path.join(CONFORMANCE, "aria-xml"),
-    "planted-secrets": os.path.join(CONFORMANCE, "sanitize", "planted-secrets"),
+    "planted-secrets": W.filled(os.path.join(CONFORMANCE, "sanitize", "planted-secrets")),
     **{name: os.path.join(CONFORMANCE, name, "vro") for name in ("events", "helpers", "builders", "review", "triage")},
 }
 _PARSED: dict = {}

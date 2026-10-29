@@ -17,6 +17,7 @@ import os
 import shutil
 
 import pytest
+import webhooks as W
 import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -49,7 +50,7 @@ def upgraded(tmp_path_factory):
     from kestra_migration_assistant import cli
     export = tmp_path_factory.mktemp("upgrade") / "upgrade"
     for label in ("detection", "triage"):
-        shutil.copytree(os.path.join(CONFORMANCE, label, "vro"), export / label)
+        W.copy(os.path.join(CONFORMANCE, label, "vro"), export / label)
     shutil.copytree(os.path.join(CONFORMANCE, "upgrade", "1.0.0"), export / "kestra-assessment")
     before = _answers(str(export / "kestra-assessment" / "your-input" / "answers.yaml"))
     old = os.environ.get("VRO_NO_MODEL")

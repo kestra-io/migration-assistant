@@ -1,7 +1,7 @@
 """
 Writes the `detection/` conformance input: the systems that 1.0.0 did not name, each called the way vRO code calls
 it, so Assess must name them from the sanitized copy. Every name, ID and value in it is invented, and the webhook
-URLs are shaped so they cannot pass for real ones.
+URLs are markers (`@WEBHOOK:<name>@`) that tests/vra/webhooks.py fills in at run time, so no file holds one whole.
 
 Run from the repository root: `python tests/vra/conformance/detection/build.py`. The files it writes are committed;
 re-run it after changing it.
@@ -106,10 +106,10 @@ def build() -> None:
   <display-name><![CDATA[Endpoints]]></display-name>
   <atts>
     <att name="teamsWebhookUrl" type="string" read-only="false">
-      <value encoded="n"><![CDATA[https://example.webhook.office.com/webhookb2/detect-not-a-real-hook]]></value>
+      <value encoded="n"><![CDATA[@WEBHOOK:teams-detect@]]></value>
     </att>
     <att name="slackWebhookUrl" type="string" read-only="false">
-      <value encoded="n"><![CDATA[https://hooks.slack.com/services/DETECT/FAKE/not-a-real-hook]]></value>
+      <value encoded="n"><![CDATA[@WEBHOOK:slack-detect@]]></value>
     </att>
     <att name="towerUrl" type="string" read-only="false">
       <value encoded="n"><![CDATA[https://tower.example.net]]></value>

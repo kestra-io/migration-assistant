@@ -28,6 +28,8 @@ import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFORMANCE = os.path.dirname(HERE)
+sys.path.insert(0, os.path.dirname(CONFORMANCE))
+import webhooks  # noqa: E402  (tests/vra/webhooks.py: the fixtures' webhook URLs, written in at run time)
 OUT = os.path.join(HERE, "1.0.0")
 
 
@@ -81,7 +83,7 @@ def build(binary: str) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         export = os.path.join(tmp, "upgrade")
         for label in ("detection", "triage"):
-            shutil.copytree(os.path.join(CONFORMANCE, label, "vro"), os.path.join(export, label))
+            webhooks.copy(os.path.join(CONFORMANCE, label, "vro"), os.path.join(export, label))
         specs = os.path.join(export, "kestra-assessment", "data", "2-understand")
         os.makedirs(specs)
         for label in ("detection", "triage"):

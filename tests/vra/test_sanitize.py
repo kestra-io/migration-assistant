@@ -15,11 +15,13 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
+import webhooks as W
+
 from kestra_migration_assistant.vra import sanitize as S
 from kestra_migration_assistant.vra.parse import formats, graph, workflow
 
 CONFORMANCE = os.path.join(ROOT, "tests", "vra", "conformance")
-PLANTED = os.path.join(CONFORMANCE, "sanitize", "planted-secrets")
+PLANTED = W.filled(os.path.join(CONFORMANCE, "sanitize", "planted-secrets"))     # its webhook URLs written in
 PACKAGE = os.path.join(CONFORMANCE, "pkgdiff-v1.0.package")
 
 # Every value planted in the fixture, by the category it must be redacted as.
@@ -29,8 +31,7 @@ PLANTED_VALUES = {
     "EMAIL": ["ops-team@acme.example.com"],
     "URL": ["https://avi-ctrl.lab.example.net/api/pool",
             # webhooks, shaped so they cannot pass for real ones; Sanitize records the system, never the value
-            "https://hooks.slack.com/services/PLANTED/FAKE/not-a-real-hook",
-            "https://acme.webhook.office.com/webhookb2/planted-not-a-real-hook",
+            W.URLS["slack-planted"], W.URLS["teams-planted"],
             "hooks.slack.com", "webhook.office.com", "not-a-real-hook"],
     "USER": ["svc-vro-deploy", "jane.doe"],
     "SECRET": ["Hunter2!Winter", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ2cm8ifQ.c2lnbmF0dXJlc2lnbmF0dXJl",
@@ -251,7 +252,7 @@ def test_well_known_public_values_are_kept_and_a_documented_api_path_keeps_its_p
     out = r.text('card["@context"] = "https://schema.org/extensions"; '
                  'u = "https://snow.corp.example.com/api/now/table/sc_req_item?sysparm_limit=1"; '
                  'f = "https://bigip01.corp.example.com/mgmt/tm/ltm/pool"; '
-                 'h = "https://hooks.slack.com' '/services/T00000000/B00000000/abcdefghijklmnopqrstuvwx"; '
+                 f'h = "{W.URLS["slack-shaped"]}"; '
                  'o = "https://intranet.corp.example.com/team/acme-payments/runbook"')
     assert '"https://schema.org/extensions"' in out
     assert re.search(r'"https://<HOST-\d+>/api/now/table/sc_req_item\?sysparm_limit=1"', out), out

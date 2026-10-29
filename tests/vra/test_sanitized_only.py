@@ -18,13 +18,14 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
+import webhooks as W
 from test_sanitize import PLANTED_VALUES as _BY_CATEGORY
 
 from kestra_migration_assistant.vra import model as M
 from kestra_migration_assistant.vra import sanitize as S
 from kestra_migration_assistant.vra.cli import main
 
-PLANTED = os.path.join(ROOT, "tests", "vra", "conformance", "sanitize", "planted-secrets")
+PLANTED = W.filled(os.path.join(ROOT, "tests", "vra", "conformance", "sanitize", "planted-secrets"))
 HELPERS = os.path.join(ROOT, "tests", "vra", "conformance", "helpers")
 
 # Every value planted in the fixture (the password, the token and the key, each IP, each host name, the email,

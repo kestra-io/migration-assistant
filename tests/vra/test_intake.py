@@ -15,10 +15,12 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
+import webhooks as W
+
 from kestra_migration_assistant.vra import intake
 from kestra_migration_assistant.vra import sanitize as S
 
-PLANTED = os.path.join(ROOT, "tests", "vra", "conformance", "sanitize", "planted-secrets")
+PLANTED = W.filled(os.path.join(ROOT, "tests", "vra", "conformance", "sanitize", "planted-secrets"))
 
 # The secret-shaped values in the fixture. Hosts, IPs, emails and users are not grounds for rejection.
 SECRETS = {

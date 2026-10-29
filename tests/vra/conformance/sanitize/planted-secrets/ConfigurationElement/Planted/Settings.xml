@@ -13,7 +13,7 @@
       <value encoded="n"><![CDATA[Pl@ntedPassw0rd]]></value>
     </att>
     <att name="slackWebhookUrl" type="string" read-only="false">
-      <value encoded="n"><![CDATA[https://hooks.slack.com/services/PLANTED/FAKE/not-a-real-hook]]></value>
+      <value encoded="n"><![CDATA[@WEBHOOK:slack-planted@]]></value>
     </att>
     <att name="unused" type="string" read-only="false">
       <value encoded="n"><![CDATA[__NULL__]]></value>
