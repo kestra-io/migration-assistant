@@ -27,18 +27,18 @@ def headline(brief: dict | None = None) -> str:
 
 def status_of(brief: dict) -> dict:
     """{"line", "blocking", "open", "blocks": [wave names], "after": {wave name: [earlier waves]}, "start": [wave
-    names], "signed"}: what still waits on a person. An earlier wave's exit (a gate) is not an open item: a wave held
+    names]}: what still waits on a person. An earlier wave's exit (a gate) is not an open item: a wave held
     only by gates starts once those waves are done, and the line says so."""
     inp = brief.get("input") or {}
     keys_open = {it["key"] for g in ("confirm", "answer", "review") for f in ((inp.get(g) or {}).get("families") or {}).values()
                  for it in f["open"]}
-    # asked when its wave is converted (answers.yaml, `waves:`): holds the wave's start, not the signature
+    # asked when its wave is converted (answers.yaml, `waves:`): holds the wave's start, not the brief
     later = set(inp.get("later") or [])
     blocks, blocking, after, start, package = [], set(), {}, [], set()
     for w in brief["plan"]["waves"]:
         name = f"Wave {w['wave']}"
         crit = [e for e in w["entry_criteria"] if e.get("status") != "done"
-                and (e.get("closes") or {}).get("kind") not in ("approval", "gate")
+                and (e.get("closes") or {}).get("kind") != "gate"
                 and (e.get("closes") or {}).get("field") not in later]
         gates = [e["closes"]["wave"] for e in w["entry_criteria"] if e.get("status") != "done"
                  and (e.get("closes") or {}).get("kind") == "gate"]
@@ -52,8 +52,6 @@ def status_of(brief: dict) -> dict:
             after[name] = [f"Wave {d}" for d in sorted(set(gates))]
         else:
             start.append(name)
-    sign = (inp.get("sign") or brief.get("approval") or {})
-    signed = bool(sign.get("signed"))
     n_open = len(keys_open)
     # a person counts the empty answer lines of answers.yaml (your_input.count), never the items behind them
     entries = inp.get("shown")
@@ -83,19 +81,16 @@ def status_of(brief: dict) -> dict:
         line = f"Next step: nothing from you yet. {_and(blocks)} cannot start until the earlier waves have run."
     elif not brief["plan"]["waves"]:
         line = "Next step: no wave can start yet. The waves page says what each workflow waits on."
-    elif not signed:
-        line = ("Ready to sign." + (f" Once signed, {_and(start)} can start." if start else "")
-                + (f" {order}" if order else "")
-                + (f" {n_open} open question{'s block' if n_open != 1 else ' blocks'} nothing." if n_open else "") + wave_time)
     else:
-        scope = "the full plan" if sign.get("scope") == "full" else "Wave 1"
-        line = (f"Ready: {_and(start)} can start." if start else f"Signed for {scope}. Ready to convert.") \
-            + (f" {order}" if order else "") + (" The signature covers Wave 1 only." if start and scope == "Wave 1"
-                                                and len(brief["plan"]["waves"]) > 1 else "")
-    if wave_time and not line.endswith(wave_time) and not line.startswith("Next step: run it again with a model"):
+        from kestra_migration_assistant.config import HELP_URL, NEXT_STEP
+        line = ("The brief is ready" + (f": {_and(start)} can start." if start else ".")
+                + (f" {order}" if order else "")
+                + (f" {n_open} open question{'s block' if n_open != 1 else ' blocks'} nothing." if n_open else "")
+                + wave_time + f" Next step: {NEXT_STEP} ({HELP_URL}).")
+    if wave_time and wave_time not in line and not line.startswith("Next step: run it again with a model"):
         line += wave_time
     return {"line": line, "blocking": sorted(blocking), "open": n_open, "holding": n_hold, "package": sorted(package), "blocks": blocks, "after": after,
-            "start": start, "order": order, "signed": signed, "later": len(later)}
+            "start": start, "order": order, "later": len(later)}
 
 
 def _and(xs: list[str]) -> str:
@@ -103,6 +98,7 @@ def _and(xs: list[str]) -> str:
 
 
 def collect() -> dict:
+    from kestra_migration_assistant.config import HELP_URL, NEXT_STEP
     pre_json = _p(C.PRE, "preflight.json")
     answers = C.ANSWERS
     readiness = _p(C.PRE, "readiness.md")
@@ -140,8 +136,6 @@ def collect() -> dict:
     ans = preflight.load_answers()
     brief = C.read_json(brief_json) if os.path.exists(brief_json) else None
     assess = C.read_json(assess_json) if os.path.exists(assess_json) else None
-    from . import your_input as Y
-    approval = Y.signature()
 
     def state(outs, waiting):
         if not all(os.path.exists(o) for o in outs):
@@ -203,17 +197,16 @@ def collect() -> dict:
                  if n_wf and len(specs) < n_wf else "Review the specs (the review items in your-input/answers.yaml)"],
         "links": []})
     stages.append({
-        "key": "brief", "title": "3. Brief", "state": state([brief_md, brief_json], not approval.get("signed")),
+        "key": "brief", "title": "3. Brief", "state": state([brief_md, brief_json], bool(brief and status_of(brief)["blocking"])),
         "did": did,
         "next": ["Answer what is open in your-input/answers.yaml",
-                 "Sign (`signed_for:` in answers.yaml): wave 1 or full plan"
-                 + (f" (signed for {approval['scope']})" if approval.get("signed") else "")],
+                 f"{NEXT_STEP[:1].upper()}{NEXT_STEP[1:]}: {HELP_URL}"],
         "links": [("brief", "BRIEF.md"), ("triage.csv", "../data/3-brief/triage.csv"),
                   ("open questions", "../data/3-brief/open-questions.md")]})
     stages.append({
         "key": "convert", "title": "4. Convert (not built)", "state": "not started",
         "did": ["Nothing. This stage is not part of this work."],
-        "next": ["Would read the approval block and each wave's entry criteria as gates"],
+        "next": ["Would read each wave's entry criteria as gates"],
         "links": [("wave plan", "waves.html")]})
 
     todo = []
@@ -245,9 +238,7 @@ def collect() -> dict:
             todo.append(f"Close {sum(by_file.values())} open entry criteria, in "
                         + ", ".join(f"{f} ({k})" for f, k in sorted(by_file.items()))
                         + " (index.html lists what is asked)")
-    if not approval.get("signed"):
-        todo.append(f"Sign in {C.rel(C.ANSWERS)} (`signed_for:` wave 1 or full plan)")
-    return {"generated": C.now(), "stages": stages, "stale": stale, "todo": todo, "approval": approval,
+    return {"generated": C.now(), "stages": stages, "stale": stale, "todo": todo,
             "model_calls": C.call_summary()}
 
 

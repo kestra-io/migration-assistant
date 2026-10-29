@@ -9,7 +9,9 @@ workflow is missing. What must hold:
 - every answer 1.0.0 recorded is still in answers.yaml, with its item and in the words it was given;
 - an answer whose item this version no longer asks is under `no_longer_asked`, never dropped and never moved to
   another item;
-- nothing is both asked and no longer asked.
+- nothing is both asked and no longer asked;
+- the `signed_for: full plan` 1.0.0 and 1.1.0 wrote loads, counts for nothing, and is not written back (the
+  assessment has no signature since 1.2.0).
 """
 from __future__ import annotations
 
@@ -41,6 +43,7 @@ def _answers(path: str) -> dict[str, dict[str, str]]:
                 walk(it.get("each"))
         walk(doc.get(section))
     out["signed_for"] = doc.get("signed_for")
+    out["text"] = open(path, encoding="utf-8").read()
     out["estate"] = {e["id"]: e for e in doc.get("estate") or []}
     return out
 
@@ -87,7 +90,7 @@ def test_what_is_no_longer_asked_moves_to_no_longer_asked(upgraded):
     assert not asked & set(after["no_longer_asked"])
 
 
-def test_only_what_is_new_is_asked_and_the_signature_stays(upgraded):
+def test_only_what_is_new_is_asked_and_the_signature_is_dropped(upgraded):
     before, after = upgraded
     assert not before["unanswered"]
     new = after["unanswered"]
@@ -98,16 +101,21 @@ def test_only_what_is_new_is_asked_and_the_signature_stays(upgraded):
     assert {"endpoint.ansible-tower", "endpoint.ms-teams", "endpoint.slack"} <= {
         m["id"] for m in est["assume.non-production"].get("each") or []}
     assert "missing.purgeorphanedvolumes" not in new
-    assert after["signed_for"] == "full plan"
+    assert after["signed_for"] is None and not any(ln.startswith("signed_for") for ln in after["text"].splitlines())
 
 
 def test_a_1_1_0_file_still_loads_through_the_public_functions(upgraded):
-    """The closed half reads answers.yaml through your_input.load, items, state and signature: their signatures and
-    their reading of a file written before 1.2.0 hold."""
+    """The closed half reads answers.yaml through your_input.load, items and state: their signatures and their
+    reading of a file written before 1.2.0 hold. A 1.1.0 file ends with `signed_for:`; it loads without a warning
+    and the value is not read (your_input.signature is gone since 1.2.0)."""
     import inspect
 
     from kestra_migration_assistant.vra.stages import your_input as Y
     assert list(inspect.signature(Y.load).parameters) == ["path"]
     assert list(inspect.signature(Y.items).parameters) == []
     assert list(inspect.signature(Y.state).parameters) == ["key", "loaded", "it"]
-    assert list(inspect.signature(Y.signature).parameters) == ["loaded"]
+    assert not hasattr(Y, "signature") and not hasattr(Y, "set_signature")
+    old = os.path.join(CONFORMANCE, "upgrade", "1.0.0", "your-input", "answers.yaml")
+    assert "\nsigned_for: full plan" in open(old, encoding="utf-8").read()
+    loaded = Y.load(old)
+    assert loaded["ok"] and not loaded["warnings"] and "sign" not in loaded and loaded["entries"]

@@ -5,7 +5,6 @@ Every wave entry criterion carries `closes`: the file a person edits and the key
 file is your-input/answers.yaml for everything but an outcome correction (your_input.py):
 
 - answer    a preflight question (Q3, Q4, Q9): an answer closes it.
-- approval  the signature (`signed_for:`): one whose scope covers the wave closes it.
 - review    a spec review (`spec.<workflow>`): an answer closes it, until the spec is regenerated.
 - decision  a choice rather than an answer or a review (a client route, the edition, a timeout policy, how to
             handle a gap, whether a lifecycle group converts whole, a suspected defect, a spec question that
@@ -37,10 +36,6 @@ CORRECTIONS_FILE = "your-input/corrections.yaml"
 def by_answer(q: str) -> dict:
     from .preflight import answer_key
     return {"kind": "answer", "file": ANSWERS_FILE, "field": answer_key(q), "key": q}
-
-
-def by_approval() -> dict:
-    return {"kind": "approval", "file": ANSWERS_FILE, "field": "signed_for", "key": "approval"}
 
 
 def by_review(uid: str, short: str | None = None) -> dict:
@@ -192,7 +187,7 @@ def load(asked: dict[str, dict], loaded: dict | None = None) -> dict:
 
 # ------------------------------------------------------------------ closing
 
-def close(plan: dict, *, answers: dict, reviews: dict, decisions: dict, approval: dict) -> None:
+def close(plan: dict, *, answers: dict, reviews: dict, decisions: dict) -> None:
     """Set each entry criterion's status (open, done, blocked) and note from the files that close it."""
     items = {q["id"]: q for q in answers.get("items") or []}
     for w in plan["waves"]:
@@ -201,15 +196,7 @@ def close(plan: dict, *, answers: dict, reviews: dict, decisions: dict, approval
             kind = c.get("kind")
             e.pop("note", None)
             e["status"] = OPEN
-            if kind == "approval":
-                covered = approval.get("signed") and (approval.get("scope") == "full" or
-                                                      (approval.get("scope") == "wave-1" and w["wave"] == 1))
-                if covered:
-                    e.update(status=DONE, note="signed for " + ("the full plan" if approval["scope"] == "full"
-                                                                 else "Wave 1"))
-                elif approval.get("signed"):
-                    e["note"] = f"the signature covers {approval['scope']} only"
-            elif kind == "answer":
+            if kind == "answer":
                 q = items.get(c["key"]) or {}
                 if q.get("status") == "answered":
                     ans = " ".join(str(q.get("answer") or "").split())

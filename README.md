@@ -2,7 +2,7 @@
 
 Assess your VMware vRA and vRO environment before migrating workflows to [Kestra](https://kestra.io).
 
-The Kestra Migration Assistant reads an export of your existing environment and produces a workflow inventory, migration recommendations, a plan organized into waves, and a brief for the people who need to review and approve it. It works from a vRO `.package`, a Build Tools source tree, or individual `.workflow` files. You can include a vRA export as well. The parser includes safeguards for malformed and potentially hostile export files.
+The Kestra Migration Assistant reads an export of your existing environment and produces a workflow inventory, migration recommendations, a plan organized into waves, and a brief for the people who review it. It works from a vRO `.package`, a Build Tools source tree, or individual `.workflow` files. You can include a vRA export as well. The parser includes safeguards for malformed and potentially hostile export files.
 
 The tool identifies what each workflow does, what triggers it, which systems it interacts with, and which Kestra plugins may cover those integrations. It then assigns each workflow one of eight outcomes: convert, wrapper, near-duplicate, plugin-covered library, needs owner input, manual, rebuild, or retire. A workflow whose recommendation needs a model gets "needs a model" instead. The assessment helps you decide what to migrate, what to consolidate, and where you still need input from an owner. It does not perform the migration.
 
@@ -89,7 +89,7 @@ The tool writes its output to `kestra-assessment/` inside the export folder. If 
 ```
 acme/kestra-assessment/
 ├── index.html     start here: the brief, offline
-├── your-input/    answers.yaml: your answers and sign-off
+├── your-input/    answers.yaml: your answers
 ├── report/        detail pages, rendered reports, and downloadable BRIEF.md
 └── data/          stage outputs (not edited) and the model cache (model-cache/)
 ```
@@ -102,7 +102,7 @@ The questions the brief could not assume, and whatever you skipped, stay in `kes
 kestra-migrate vra run ~/exports/acme
 ```
 
-Every stage runs again, but only work affected by a change is redone. The tool preserves your answers and reuses cached model responses instead of paying for the same analysis again. Once the open questions are resolved, you can sign off on the plan in `answers.yaml`.
+Every stage runs again, but only work affected by a change is redone. The tool preserves your answers and reuses cached model responses instead of paying for the same analysis again. When the brief reads right, the next step is to talk to Kestra about a proof of concept or the migration: [contact us](https://kestra.io/resources/migration/vra/assistant?utm_source=migration-assistant&utm_medium=readme).
 
 ## In a container
 
@@ -212,15 +212,15 @@ Open `kestra-assessment/index.html` to review the assessment offline. The brief 
 
 `report/BRIEF.md` contains the same brief with an appendix.
 
-### Answer questions and approve the plan
+### Answer questions
 
-`your-input/answers.yaml` starts with an `estate` section, then two lists, `open` and `answered`, plus a `signed_for` field. Each item includes an `id`, a plain-language `question`, an `answer`, and, when the tool can recommend one, a `suggested` value.
+`your-input/answers.yaml` starts with an `estate` section, then two lists, `open` and `answered`. Each item includes an `id`, a plain-language `question`, an `answer`, and, when the tool can recommend one, a `suggested` value.
 
 - **`estate`** holds the questions about the whole estate, with their `options`, and what the tool assumes instead of asking (`assumed`). If you know your estate, you can fill this section in before the first run: every run applies it everywhere and asks nothing it settles. An answer can be an option's number, or several numbers when the choices are not exclusive. Under each answer, `closes` lists the questions it settled; under an open one, `settles` lists what its suggestion would settle. Change an answer, and the questions it closed are asked again. Each assumption lists the items it settles under `each:`, with the answer each takes (`assumed:`). To change one, write `answer:` under it. Leave an assumption's own `answer` empty to keep it, or write what to do instead.
 - **`open`** lists what is still unanswered, ordered by what the migration waves depend on. A question that repeats across workflows, such as a possible defect in an action several workflows share, is one entry for all of them.
 - **`waves`** lists, per wave, what is asked when that wave is converted: details of how its flows are built, and the review of a spec the model was less sure of. Answer them then, or now.
 
-To accept a suggestion, write `yes` as the answer. Otherwise, provide your answer directly. On the next run, the tool moves answered items from `open` to `answered`, preserves your text, and keeps each question's ID. The number of questions the brief shows is the number of empty answers in this file. When you're ready to approve the plan, set `signed_for` to `wave 1` or `full plan`.
+To accept a suggestion, write `yes` as the answer. Otherwise, provide your answer directly. On the next run, the tool moves answered items from `open` to `answered`, preserves your text, and keeps each question's ID. The number of questions the brief shows is the number of empty answers in this file.
 
 Code that the workflows call but the export does not hold, such as an action module, a workflow on another vRO cluster, or the configuration elements a module reads at run time, is not a question. The brief lists each one under "Add to the package", with what calls it and how to add it.
 

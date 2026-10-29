@@ -593,7 +593,7 @@ def _criterion_label(e: dict, key: str, by_part: dict, by_name: dict, wf_by_shor
              "mappings": "Image, size and placement of the machines", "ip-allocation": "Who assigns IP addresses",
              "day2-scale": "Scaling on Day 2", "deployment-record": "Which resources belong to each deployment",
              "app": "The App and who uses it", "existing-deployments": "Deployments vRA already made",
-             "writes": "Read and write classification", "signed_for": "The signature covers this wave"}
+             "writes": "Read and write classification"}
     if fam in ("defect", "question", "spec") and parts:
         name = wf_by_short.get(parts[0], parts[0])
         what = {"defect": "Possible defects in", "question": "Spec questions on", "spec": "Spec review of"}[fam]

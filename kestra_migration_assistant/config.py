@@ -37,6 +37,8 @@ DEFAULT_MAX_COST_USD = 20.0
 # The call to action at the end of every report, to the landing page's form. Written here only.
 HELP_URL = "https://kestra.io/resources/migration/vra/assistant?utm_source=migration-assistant&utm_medium=report"
 HELP_ASK = "Need help running it, or want us to run it for you?"
+# What comes after the brief: the migration is agreed with Kestra, with HELP_URL as the way in
+NEXT_STEP = "talk to Kestra about a proof of concept or the migration"
 
 
 # Set by the container image. A Claude Code login cannot be used inside it, and a config file written there is lost

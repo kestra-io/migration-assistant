@@ -3,7 +3,7 @@ index.html is the brief, written the way a person would write it for the custome
 text with an appendix. Both come from one document built here (`document`), so they cannot disagree.
 
 In this order: the title and one opening line (what this is, and what it was built from); the status box (the
-next step, how much is ready today, a stand-in line when an answer or the signature is a stand-in's); what is in
+next step, how much is ready today, a stand-in line when an answer is a stand-in's); what is in
 the estate, as one paragraph; the recommendation (one sentence on the workflows, the Direct and Redesign split,
 two figures, the table merged by kind, its legend); what we need from you, grouped by kind with counts, blocking
 first; the plan, one bullet per wave; and where to check. Every list is grouped and capped (CAPS), so the page
@@ -866,7 +866,7 @@ def _entries_holding(w: dict, brief: dict) -> int:
 
 def _wave_bullet(w: dict, assess: dict, brief: dict, sn: dict) -> str:
     crit = [e for e in w["entry_criteria"] if e.get("status") != "done"
-            and (e.get("closes") or {}).get("kind") not in ("approval", "gate")]
+            and (e.get("closes") or {}).get("kind") != "gate"]
     fams = []
     for e in crit:
         f = _fam(str((e.get("closes") or {}).get("field") or ""))
@@ -922,7 +922,7 @@ def _wave_bullet(w: dict, assess: dict, brief: dict, sn: dict) -> str:
 # ------------------------------------------------------------------ the document
 
 def _status(brief: dict, st: dict, num: dict) -> dict:
-    sign = ((brief.get("input") or {}).get("sign") or brief.get("approval") or {})
+    from kestra_migration_assistant.config import HELP_URL, NEXT_STEP
     pk = len(st.get("package") or [])
     add = f" and add {pk} missing {_s(pk, 'piece')} of code to the package" if pk else ""
     if st["blocking"] and st.get("holding"):
@@ -948,27 +948,17 @@ def _status(brief: dict, st: dict, num: dict) -> dict:
         head = "Next step: nothing from you yet."
         body = f"{_and(st['blocks'])} cannot start until the earlier waves have run. The wave page says what each waits on."
         cls = "todo"
-    elif not st["signed"]:
-        waves = brief["plan"]["waves"]
-        head = "Ready to sign."
-        body = (("Every question is answered. " if not st["open"] else "") + "Signing covers "
-                + ("the full plan, " + _and([f"Wave {w['wave']}" for w in waves]) if len(waves) > 1
-                   else "Wave 1") + ": the waves, their first of a kind and their entry criteria as "
-                "they stand. Sign with `signed_for:` in `your-input/answers.yaml` (`wave 1` or `full plan`)."
-                + (f" Once signed, {_and(st['start'])} can start." if st.get("start") else "")
-                + (f" {st['order']}" if st.get("order") else ""))
-        cls = "todo"
     else:
-        scope = "the full plan" if sign.get("scope") == "full" else "Wave 1"
-        head = f"Ready: {_and(st['start'])} can start." if st.get("start") else "Signed, ready to convert."
-        body = f"Signed for {scope}." + (f" {st['order']}" if st.get("order") else "")
+        head = f"Ready: {_and(st['start'])} can start." if st.get("start") else "The brief is ready."
+        body = (("Every question is answered. " if not st["open"] else "") + (f"{st['order']} " if st.get("order") else "")
+                + f"Next step: [{NEXT_STEP}]({HELP_URL}).")
         cls = "done"
     return {"head": head, "body": body, "cls": cls}
 
 
 def stand_in(brief: dict) -> str:
     inp = brief.get("input") or {}
-    return "Some answers and the signature here are a stand-in's, not the customer's." if inp.get("stand_in") else ""
+    return "Some answers here are a stand-in's, not the customer's." if inp.get("stand_in") else ""
 
 
 def no_model(brief: dict) -> bool:
@@ -1231,8 +1221,8 @@ def document(assess: dict, brief: dict) -> list[tuple]:
         B.append(("ul", nd))
         B.append(("p", "Each is an entry in `your-input/answers.yaml`, except the code to add to the package."))
     else:
-        B.append(("p", "Nothing is open. " + ("Sign in `your-input/answers.yaml` when the plan reads right."
-                                              if not st["signed"] else "The plan is signed.")))
+        from kestra_migration_assistant.config import HELP_URL, NEXT_STEP
+        B.append(("p", f"Nothing is open. Next step: [{NEXT_STEP}]({HELP_URL})."))
     rl = retire_line(assess, brief)
     if rl:
         B.append(("p", rl))
@@ -1264,9 +1254,11 @@ def document(assess: dict, brief: dict) -> list[tuple]:
 
 
 def next_steps() -> list[str]:
-    """What to do with the brief, besides answering: check which workflows still run."""
+    """What to do with the brief, besides answering: check which workflows still run, then talk to Kestra."""
+    from kestra_migration_assistant.config import HELP_URL, NEXT_STEP
     return ["**Check each workflow's run history** in vRO to find those that no longer run, and retire them in "
-            "`your-input/corrections.yaml` (`outcome: Retire`) instead of converting them."]
+            "`your-input/corrections.yaml` (`outcome: Retire`) instead of converting them.",
+            f"**[{NEXT_STEP[:1].upper()}{NEXT_STEP[1:]}]({HELP_URL})**, from this brief."]
 
 
 # ------------------------------------------------------------------ rendering

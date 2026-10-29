@@ -2,7 +2,7 @@
 BRIEF.md, the brief to download: the front page's sections (front.document, so the two cannot disagree), then an
 appendix with every element of the estate in its row and every wave's entry criteria, one line each.
 
-The answers and the signature live in your-input/answers.yaml; this file is regenerated on every run.
+The answers live in your-input/answers.yaml; this file is regenerated on every run.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from . import front as FR
 from . import ids as I
 
 
-def render(r: dict, assess: dict, specs: dict, answers: dict, old_approval: dict) -> str:
+def render(r: dict, assess: dict, specs: dict, answers: dict) -> str:
     """BRIEF.md: the front page and the appendices, ending, like every page, with the one call to action and what
     made it."""
     from kestra_migration_assistant.config import HELP_ASK, HELP_URL
@@ -108,8 +108,7 @@ def closes_key(e: dict) -> str:
     c = e.get("closes") or {}
     if c.get("kind") == "package":
         return ""                       # closed by adding code to the package, not by an answer
-    k = str(c.get("field") or c.get("key") or "")
-    return k if k and c.get("kind") != "approval" else ("signed_for" if c.get("kind") == "approval" else k)
+    return str(c.get("field") or c.get("key") or "")
 
 
 def criterion_label(e: dict, assess: dict) -> str:

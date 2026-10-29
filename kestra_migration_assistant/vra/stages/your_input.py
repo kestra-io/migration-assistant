@@ -19,10 +19,9 @@ your-input/answers.yaml: the one file a person fills in.
         question: Is this export the whole vRO estate?
         answer: yes, the whole estate, from one vRO node
 
-    signed_for: full plan
-
 Two lists, `open` (what a wave waits on first) and `answered`, a third (`no_longer_asked`) when an answered item is
-no longer asked, then `signed_for` (`wave 1` or `full plan`, empty until signed). Each entry is an `id`, one plain
+no longer asked. A `signed_for:` line, which files written by 1.1.0 and earlier end with, is read past and not
+written back (the assessment has no signature since 1.2.0). Each entry is an `id`, one plain
 `question`, a `suggested` value when the code points to one, and the `answer`; a group's items are under its
 `each:` (see "groups" below). Writing `yes` takes the suggested value; any other answer is the answer. One
 comment line at the top, nothing else: the page with an item's context is named in its question only where it
@@ -44,8 +43,8 @@ next to it when it was written (so a later suggestion does not change what was a
 regenerated since is stale until its answer changes).
 
 Before session 2g the file had sections blocking/open/done (or confirm/answer/review), entries keyed by id
-with `confirmed:`, `by:`, `date:` and `note:`, and a `sign:` block. `load()` reads that shape too; the first
-rewrite carries every answer and the signature into this one and keeps the old file as
+with `confirmed:`, `by:`, `date:` and `note:`, and a `sign:` block (ignored). `load()` reads that shape too; the
+first rewrite carries every answer into this one and keeps the old file as
 data/answers.yaml.before-2g. Corrections to what the tool found are not answers: they go in the optional
 your-input/corrections.yaml (corrections.py), which the tool reads but never creates.
 """
@@ -67,7 +66,7 @@ HEADER = "# Answer what's open, then run: "
 
 def header() -> str:
     return HEADER + C.run_command()
-GROUPS = ("confirm", "answer", "review", "sign")
+GROUPS = ("confirm", "answer", "review")
 YES = ("yes", "y", "true", "confirmed", "confirm", "ok", "x")
 TOOL_FIELDS = ("id", "question", "options", "suggested", "assumed", "answer", "needs", "closes", "settles", "each")
 OLD_SECTIONS = ("blocking", "open", "done", "confirm", "answer", "review", "no_longer_asked")
@@ -75,7 +74,6 @@ OLD_FIELDS = ("answer", "confirmed", "by", "date", "note", "spec")    # the old 
 GONE = "No longer asked: "
 SECTIONS = ("estate", "open", "waves", "answered", "no_longer_asked")
 ESTATE_FAMILIES = ("estate", "assume")
-SIGN = {"full": "full plan", "wave-1": "wave 1"}
 
 
 def is_open(answer) -> bool:
@@ -199,7 +197,7 @@ def _read(path: str) -> tuple[dict | None, list[str]]:
     except (OSError, ValueError, yaml.YAMLError) as e:
         return None, [f"{C.rel(path)} could not be read, so nothing in it counts and the tool did not rewrite it: {e}"]
     if not isinstance(data, dict):
-        return None, [f"{C.rel(path)}: expected open, answered and signed_for at the top"]
+        return None, [f"{C.rel(path)}: expected open and answered at the top"]
     return data, []
 
 
@@ -209,14 +207,14 @@ def is_old_format(data: dict) -> bool:
 
 
 def load(path: str | None = None) -> dict:
-    """{"path", "exists", "ok", "old_format", "entries": {id: entry}, "sign": {"signed_for"}, "memo",
+    """{"path", "exists", "ok", "old_format", "entries": {id: entry}, "memo",
     "stand_in", "warnings"}. An entry holds what the file says for one id: answer, question, suggested, and
     any field a person added."""
     path = path or C.ANSWERS
     data, warnings = _read(path)
     reg = registry()
     out: dict[str, Any] = {"path": C.rel(path), "exists": os.path.exists(path), "ok": data is not None, "warnings": warnings,
-           "old_format": False, "entries": {}, "sign": {}, "memo": _memo(reg)}
+           "old_format": False, "entries": {}, "memo": _memo(reg)}
     if data and is_old_format(data):
         out["old_format"] = True
         _from_old(data, reg, out)
@@ -246,7 +244,6 @@ def load(path: str | None = None) -> dict:
                         out["warnings"].append(f"{k} appears twice; the first is read")
                         continue
                     out["entries"][k] = {f: v for f, v in sub.items() if f not in ("id", "each")}
-        out["sign"] = {"signed_for": _text(data.get("signed_for"))}
     texts = " ".join(_text(e.get("answer")) for e in out["entries"].values()).lower()
     out["stand_in"] = out["memo"]["stand_in"] or "stand-in" in texts
     its = items()
@@ -289,12 +286,6 @@ def _from_old(data: dict, reg: dict, out: dict) -> None:
             out["entries"][k] = entry
             if e.get("spec") and not is_open(ans):
                 memo["reviewed"].setdefault(k, {"spec": e["spec"], "answer": _text(ans)})
-    s: Any = data.get("sign") if isinstance(data.get("sign"), dict) else {}
-    cov = str(s.get("covers") or "").lower().replace(" ", "-")
-    scope = "full" if cov in ("full", "full-plan", "all") else ("wave-1" if cov in ("wave-1", "wave1", "1") else None)
-    signed = bool(str(s.get("signed_by") or "").strip() and str(s.get("date") or "").strip() and scope)
-    stand_in = stand_in or "stand-in" in str(s.get("signed_by") or "").lower()
-    out["sign"] = {"signed_for": SIGN[scope] if signed and scope else ""}
     memo["stand_in"] = memo["stand_in"] or stand_in
 
 
@@ -336,17 +327,6 @@ def state(key: str, loaded: dict | None = None, it: dict | None = None) -> dict:
         return rec
     rec.update(state="answered", why=("confirmed" if sug and ans == sug else "answered") + f": {ans}")
     return rec
-
-
-def signature(loaded: dict | None = None) -> dict:
-    """The signature as the approval gate reads it: {present, signed, approved_by, date, scope, block}."""
-    loaded = loaded if loaded is not None else load()
-    raw = str((loaded.get("sign") or {}).get("signed_for") or "")
-    v = raw.lower().replace("-", " ").replace("_", " ").strip()
-    scope = ("full" if v in ("full plan", "full", "all", "the full plan") else
-             "wave-1" if v in ("wave 1", "wave1", "1", "wave one") else None)
-    return {"present": bool(raw), "signed": bool(scope), "approved_by": None, "date": None, "scope": scope,
-            "block": f"signed_for: {raw}"}
 
 
 # ------------------------------------------------------------------ the plain question
@@ -935,8 +915,7 @@ def render(its: list[dict], loaded: dict) -> str:
         for k, e, each in rows:
             L += _entry(k, e, each)
         L.append("")
-    L.append("signed_for:" + _scalar((loaded.get("sign") or {}).get("signed_for") or ""))
-    return "\n".join(L) + "\n"
+    return "\n".join(L).rstrip("\n") + "\n"
 
 
 def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
@@ -1106,7 +1085,7 @@ def _answers_of(text: str | None) -> str:
         return text or ""
     if not isinstance(d, dict) or is_old_format(d):
         return text or ""
-    keep = {"signed_for": d.get("signed_for")}
+    keep: dict[str, Any] = {}
     for k, e in load_text(text or "").items():
         keep[k] = {f: v for f, v in e.items() if f not in ("question", "suggested")}
     return json.dumps(keep, sort_keys=True, default=str)
@@ -1123,14 +1102,13 @@ def fingerprint() -> str:
 def summary(loaded: dict | None = None) -> dict:
     """Per group: open and done items; per family within a group, the counts (the front page groups by it)."""
     loaded = loaded if loaded is not None else load()
-    out: dict[str, Any] = {g: {"open": [], "done": [], "stale": []} for g in GROUPS[:3]}
+    out: dict[str, Any] = {g: {"open": [], "done": [], "stale": []} for g in GROUPS}
     for it in items():
         if it["group"] not in out:
             continue                                          # an assumption: nothing to answer
         st = state(it["key"], loaded, it)
         bucket = "done" if st["state"] in ("answered", "reviewed") else ("stale" if st["state"] == "stale" else "open")
         out[it["group"]][bucket].append({**it, "status": st})
-    out["sign"] = signature(loaded)
     return out
 
 
@@ -1139,7 +1117,7 @@ def summary(loaded: dict | None = None) -> dict:
 def migrate() -> list[str]:
     """
     Carry the answers of an estate written before answers.yaml into it, once: preflight answers.md, the
-    brief's decisions.yaml and reviews.yaml, the BRIEF.md signature. Each old file is renamed `<name>.migrated`
+    brief's decisions.yaml and reviews.yaml (an old BRIEF.md's approval block is not carried). Each old file is renamed `<name>.migrated`
     (kept, read by nothing) once its answers are in. Run after the stages have registered their items, so
     every answer lands on its item; an answer with no item today stays under `answered` as no longer asked.
     Returns one line per file carried.
@@ -1195,16 +1173,6 @@ def migrate() -> list[str]:
                 continue
             n += put(rename_review(str(u)), "yes", e.get("reviewed_by"), e.get("spec"))
         done.append(f"reviews.yaml: {n} review(s)")
-    if "BRIEF.md" in present:
-        from . import brief as B
-        ap = B.parse_approval(open(present["BRIEF.md"]).read())
-        if ap.get("signed") and not signature(loaded)["signed"]:
-            loaded["sign"] = {"signed_for": SIGN.get(ap["scope"], "")}
-            if "stand-in" in str(ap.get("approved_by") or "").lower():
-                memo["stand_in"] = True
-            done.append(f"BRIEF.md: the signature ({ap['scope']})")
-        else:
-            done.append("BRIEF.md: no signature to carry")
     reg = registry()
     reg["_memo"] = memo
     C.write_json(_registry_path(), reg)
@@ -1276,12 +1244,6 @@ def set_answer(key: str, value, path: str | None = None) -> None:
     C.write_text(path, _edit(path, lambda d: _set(d, key, "answer", value)))
 
 
-def set_signature(covers: str, path: str | None = None) -> None:
-    """Sign as a person would: `signed_for:` set to `wave 1`, `full plan`, or empty."""
-    path = path or C.ANSWERS
-    C.write_text(path, _edit(path, lambda d: d.__setitem__("signed_for", SIGN.get(covers, covers) or None)))
-
-
 def _set(d: dict, key: str, field: str, value) -> None:
     for _sec, e in _walk(d):
         if str(e.get("id")) == key:
@@ -1300,7 +1262,7 @@ def _edit(path: str, change) -> str:
     if is_old_format(d):
         d = _yaml(render(items(), loaded)) or {}
     change(d)
-    ld = {"entries": {}, "sign": {"signed_for": _text(d.get("signed_for"))}, "memo": loaded["memo"]}
+    ld: dict[str, Any] = {"entries": {}, "memo": loaded["memo"]}
     order = []
     each: dict[str, list] = {}
     for sec in SECTIONS:
@@ -1321,8 +1283,7 @@ def _edit(path: str, change) -> str:
         for k in rows:
             L += _entry(k, ld["entries"][k], each.get(k))
         L.append("")
-    L.append("signed_for:" + _scalar(ld["sign"]["signed_for"]))
-    return "\n".join(L) + "\n"
+    return "\n".join(L).rstrip("\n") + "\n"
 
 
 def today() -> str:

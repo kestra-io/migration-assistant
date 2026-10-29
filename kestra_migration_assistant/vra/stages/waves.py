@@ -24,7 +24,7 @@ How workflows are grouped (the rule, in four steps)
 3. Budget. The number of waves is capped at ceil(log2(n / 4)) for n waved
    workflows, at least 1 and at most 12: 4 waves for 33 to 64 workflows, 9 for
    1,025 to 2,048, 10 for 2,049 to 4,096. Waves grow with the estate, but slowly,
-   because each wave needs its own owner sign-off and pilot. While there are more
+   because each wave needs its own owner and pilot. While there are more
    groups than the budget, the smallest group is merged into the group that is
    closest: same tier first, then the most shared targets, then the most shared
    domains (the same pattern family), then the smallest.
@@ -253,8 +253,7 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
         owner = [u for u in members if triage[u]["outcome"] == "Needs owner input"]
         lines = sum(wf[u]["script_lines"] + 1 for u in members)
         share = lines / total_lines
-        crit = [{"criterion": "The signature covers this wave", "source": "signature",
-                 "closes": G.by_approval()}]
+        crit: list[dict] = []
         for d in dep_waves:
             crit.append({"criterion": f"Wave {d} has met its exit criteria (it holds workflows this wave calls)",
                          "source": "waves", "closes": _wave_exit(d)})

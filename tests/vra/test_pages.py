@@ -210,12 +210,12 @@ def test_a_2c_estate_is_moved_and_its_answers_carried_into_answers_yaml(tmp_path
     assert flat[P.answer_key("Q3")]["answer"] == "a lab for each system"
     assert flat[P.answer_key("Q9")]["answer"] == "replace"
     assert flat["edition"]["answer"] == "available"
-    assert doc["signed_for"] == "full plan"
+    assert "signed_for" not in doc                                  # the old approval block is not carried
     assert yaml.safe_load(open(old / "your-input" / "corrections.yaml"))["outcomes"]["x"]["outcome"] == "Retire"
     assert (old / "data" / "0-preflight" / "answers.md.migrated").exists()
     assert (old / "data" / "3-brief" / "decisions.yaml.migrated").exists()
     b = json.load(open(old / "data" / "3-brief" / "brief.json"))
-    assert b["approval"]["signed"] and b["approval"]["scope"] == "full"
+    assert "approval" not in b
     # a second run carries nothing again and changes no answer
     before = open(old / "your-input" / "answers.yaml").read()
     assert cli.main(["all", str(src), "--out", str(old), "--no-model"]) == 0

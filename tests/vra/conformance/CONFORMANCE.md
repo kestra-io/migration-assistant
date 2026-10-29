@@ -192,6 +192,6 @@ fifth. Every name is invented. Used by `tests/test_front.py` and `tests/test_wri
   longer holds its workflow in Needs owner input.
 - `tests/test_your_input.py` (`helpers/`): a `suggested` value follows the code until a person answers (`yes`
   takes it); an answered item moves to `answered`, and one no longer asked stays there, its question starting
-  "No longer asked:"; a rewrite of the tool's text keeps the file's time; the signature is `signed_for:`
-  `wave 1` or `full plan`; an old-format file is migrated with every answer and the signature; the
+  "No longer asked:"; a rewrite of the tool's text keeps the file's time; a `signed_for:` line a 1.1.0 file
+  ends with is read past and not written back; an old-format file is migrated with every answer; the
   recommendation counts only client code as client code.

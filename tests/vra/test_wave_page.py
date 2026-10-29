@@ -92,7 +92,6 @@ def test_only_open_criteria_are_listed_and_the_met_ones_fold_into_one_line(estat
     from test_gates import _answer_everything
 
     from kestra_migration_assistant.vra.stages import front as F
-    from kestra_migration_assistant.vra.stages import your_input as Y
     # partly met: what is open is listed, with the entry that closes it, above "k of n met"
     estate("edition", "available")
     page, _ = _waves()
@@ -113,7 +112,6 @@ def test_only_open_criteria_are_listed_and_the_met_ones_fold_into_one_line(estat
     for _ in range(2):
         _answer_everything()
         _waves()
-    Y.set_signature("full")
     page, _ = _waves()
     p = _panels(page)
     m = re.search(r"<details class='met'><summary>(\d+) of (\d+) met</summary>", p[1])

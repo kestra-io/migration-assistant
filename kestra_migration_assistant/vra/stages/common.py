@@ -6,8 +6,8 @@ The stages share the parser, call graph, fingerprints and clusters
 cache and call log at the estate's output folder at runtime.
 
 Every stage reads the previous stage's files from disk and writes its own.
-Human edits live in files a person owns (`answers.md`, `overrides.yaml`,
-the brief's approval block) and are re-read on every run.
+Human edits live in files a person owns (`your-input/answers.yaml`,
+`your-input/corrections.yaml`) and are re-read on every run.
 """
 from __future__ import annotations
 

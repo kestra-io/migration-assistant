@@ -1,13 +1,11 @@
 """
-Stage 2, Brief: triage, waves, an estate recommendation, and the approval gate.
+Stage 2, Brief: triage, waves and an estate recommendation.
 
 Reads Assess (re-running it if a correction is newer), the estate's specs in data/2-understand,
 your-input/answers.yaml and your-input/corrections.yaml. Registers everything it asks a person in
 answers.yaml (your_input.py), and writes brief.json, triage.csv, open-questions.md and walkthroughs.json in
 data/3-brief, and report/BRIEF.md, the brief as a downloadable copy. The front page (index.html) is drawn
 from brief.json by the visuals.
-
-The signature (`signed_for:` in answers.yaml) is the gate a later convert stage reads.
 """
 from __future__ import annotations
 
@@ -27,28 +25,6 @@ from . import reviews as RV
 from . import triage as TR
 from . import triggers as TG
 from . import waves as W
-
-APPROVAL_RE = re.compile(r"<!-- approval:start -->(.*?)<!-- approval:end -->", re.S)
-APPROVAL_BLANK = """```
-Approved by: ________________  Date: __________
-Approval covers: [ ] Wave 1 only   [ ] Full plan
-```"""
-
-
-def parse_approval(text: str) -> dict:
-    """The approval block of a BRIEF.md written before 2026-10-01 (your_input.migrate carries it over)."""
-    m = APPROVAL_RE.search(text or "")
-    block = m.group(1) if m else ""
-    who = re.search(r"Approved by:\s*([^\n]*?)\s+Date:", block)
-    date = re.search(r"Date:\s*([^\n]*)", block)
-    name = (who.group(1) if who else "").strip().strip("_").strip()
-    d = (date.group(1) if date else "").strip().strip("_").strip()
-    wave1 = bool(re.search(r"\[[xX]\]\s*Wave 1 only", block))
-    full = bool(re.search(r"\[[xX]\]\s*Full plan", block))
-    scope = "full" if full else ("wave-1" if wave1 else None)
-    return {"present": bool(m), "signed": bool(name and scope), "approved_by": name or None,
-            "date": d or None, "scope": scope, "block": block.strip()}
-
 
 # ------------------------------------------------------------------ run
 
@@ -161,10 +137,8 @@ def run() -> dict:
     reviews = RV.load(specs, wf, loaded)
     result["reviews"].update(by_uid=reviews["by_uid"],
                              reviewed=sorted(u for u, x in reviews["by_uid"].items() if x["state"] == "reviewed"))
-    approval = Y.signature(loaded)
-    result["approval"] = approval
     decisions = G.load(asked, loaded)
-    G.close(plan, answers=answers, reviews=reviews, decisions=decisions, approval=approval)
+    G.close(plan, answers=answers, reviews=reviews, decisions=decisions)
     for d in defects:
         # each possible defect as it behaves today, and what the conversion does with it
         it = sorted_by_key.get(d["decision"]) or {}
@@ -195,7 +169,7 @@ def run() -> dict:
     C.write_text(os.path.join(C.BRIEF, "open-questions.md"),
                  C.no_em_dashes(open_questions_md(assess, eff, tri, answers, cover)))
     from . import brief_md
-    C.write_text(C.BRIEF_MD, C.no_em_dashes(brief_md.render(result, assess, eff, answers, approval)))
+    C.write_text(C.BRIEF_MD, C.no_em_dashes(brief_md.render(result, assess, eff, answers)))
     return result
 
 
@@ -380,7 +354,7 @@ def input_summary(loaded: dict) -> dict:
     """What a person still has to do in answers.yaml, per group and family (the front page shows it)."""
     from . import your_input as Y
     sm = Y.summary(loaded)
-    out = {"path": C.rel(C.ANSWERS), "warnings": loaded["warnings"], "sign": sm["sign"],
+    out = {"path": C.rel(C.ANSWERS), "warnings": loaded["warnings"],
            "stand_in": bool(loaded.get("stand_in")), "shown": Y.shown(loaded),
            "later": [k for _g, _e, each in Y.deferred(Y.items(), loaded) for k, _ in each]}
     for g in ("confirm", "answer", "review"):

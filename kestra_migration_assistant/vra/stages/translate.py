@@ -280,7 +280,7 @@ def ready(assess: dict, brief: dict, table_: dict) -> dict:
     criterion concerns part of its wave, from what closes it: a defect, spec question or review its workflow; an
     endpoint, TLS, authentication or client route the elements reaching that system; the state store the
     elements keeping that state; the edition the elements on Enterprise-only tasks; the vRA replacement's
-    choices the vRA items; anything else (the signature, Q3, Q4, Q9, the lifecycle group, a wave's exit) the
+    choices the vRA items; anything else (Q3, Q4, Q9, the lifecycle group, a wave's exit) the
     whole wave. Sets each item's `ready` and returns the counts, written into the number.
     """
     wf, targets, atri = assess["workflows"], assess["targets"], brief["action_triage"]
@@ -335,7 +335,7 @@ def ready(assess: dict, brief: dict, table_: dict) -> dict:
         if fam in ("mappings", "ip-allocation", "day2-scale", "app", "existing-deployments", "gap",
                    "deployment-record", "cancel", "failure", "timeout"):
             return {e for e in ids if e.startswith("vra")} or ids
-        return ids                                   # the signature, Q3/Q4/Q9, lifecycle, writes, wave exit
+        return ids                                   # Q3/Q4/Q9, lifecycle, writes, wave exit
 
     blocked: dict[str, list[str]] = {}
     for w in waves:

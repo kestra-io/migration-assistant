@@ -48,8 +48,8 @@ QUESTIONS: list[dict[str, Any]] = [
      "plain": "Is any of it off limits (another team's, frozen, vendor supplied, or being replaced)?"},
     {"id": "Q6", "topic": "owners",
      "question": "Who owns each functional area (for example load balancing, network provisioning, tenant onboarding)? Name a person or team per area.",
-     "why": "Open questions, retire candidates and wave approvals need someone to answer them. The brief lists open questions by area.",
-     "read_by": ["brief: open questions, approval"],
+     "why": "Open questions and retire candidates need someone to answer them. The brief lists open questions by area.",
+     "read_by": ["brief: open questions"],
      "plain": "Who owns each functional area? A person or team for each."},
     {"id": "Q8", "topic": "plugin inventory",
      "question": "Which vRO plugins and versions are installed on each node, and are any custom or in-house plugins in use?",
@@ -573,7 +573,7 @@ def run() -> dict:
         ("/vro-brief", "Ready with gaps" if n_open else "Ready",
          f"{n_open} preflight question(s) open. The retire pass is untestable without history, and wave entry criteria keep the open items as gates."),
         ("convert (not built yet)", "Not ready",
-         "Needs an approved brief, and a non-production instance for every target a wave writes to (Q3)."),
+         "Needs the brief, the migration agreed with Kestra, and a non-production instance for every target a wave writes to (Q3)."),
     ]
 
     result = {

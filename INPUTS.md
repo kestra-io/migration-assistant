@@ -153,8 +153,6 @@ answered:
   - id: q4-off-limits
     question: Is any of it off limits (another team's, frozen, vendor supplied, or being replaced)?
     answer: nothing is off limits
-
-signed_for: full plan
 ```
 
 `estate` comes first: the questions about the whole estate, built from what the code shows. Those the analysis
@@ -176,8 +174,7 @@ settled is asked again. You can fill this section in before the first run.
 that wave is converted (how its flows are built, and the review of a spec written with medium confidence); and
 `answered` lists what already has an answer. Each entry has an `id`, one plain
 `question`, a `suggested` value when the code points to one, and an `answer`. Write `yes` to take the
-suggested value; any other answer is the answer itself. A remark goes in the answer too. `signed_for` is
-`wave 1` or `full plan`, and stays empty until you sign.
+suggested value; any other answer is the answer itself. A remark goes in the answer too.
 
 A question that repeats is asked once: a possible defect or a question about an action several workflows share, or
 the same one on near-duplicate workflows, is one entry `same.<defect or question>.<what>.<kind>`, with its items
@@ -200,7 +197,7 @@ every run: it moves an entry to `answered` once it has an answer, keeps every an
 never drops an id. An answer whose item a run no longer finds moves to a third list, `no_longer_asked`, with
 the question it was given for, and lands on nothing else. A file that does not parse is never rewritten; the
 version before it is kept in `data/answers.yaml.previous`. An `answers.yaml` written by an earlier version is
-moved to this format on the next run, every answer and the signature carried over, and the old file is kept
+moved to this format on the next run, every answer carried over, and the old file is kept
 in `data/`.
 
 The questions are asked from what is on record, and asked again after Assess: with a vRA export read, Q2
@@ -216,7 +213,7 @@ how to get a resource no Kestra task creates, and keep or fix for each suspected
 question with the choices in it, and a suggested value where the tool has a recommendation. After
 `decide each`, a suspected defect reads like this: "The Deployment Registry is read before the teardown gate,
 so an event that should be ignored can still fail the run. Keep the current behavior, or fix it?" (answer
-`keep` or `fix`). The specs' open questions, the spec review and the signature are there too.
+`keep` or `fix`). The specs' open questions and the spec review are there too.
 
 A question that a decision already asks is asked only once, in that decision. A spec question about
 certificate checks goes in the certificate decision, and one about what a failure does goes in the timeout and

@@ -87,12 +87,18 @@ Re-running on a folder that 1.1.0 assessed keeps every answer you gave.
 
 ### Output changes
 
+- Signing is removed: migrations are now agreed with Kestra directly, so the assessment has no signature.
+  `answers.yaml` has no `signed_for` field (a 1.1.0 file that has one still loads; the value is ignored and not
+  written back), `your_input.signature` and `your_input.set_signature` are gone, and no wave has an entry
+  criterion about a signature. `brief.json` has no `approval` or `input.sign`. Where the brief
+  said to sign, it now says the next step is to talk to Kestra about a proof of concept or the migration, with the
+  help link.
 - `answers.yaml`: a new `estate` section at the top (estate questions with `options`, assumptions with `assumed`).
   Entries can carry `closes` (what an answer settled) and `settles` (what an open estate question's suggestion would
   settle). New IDs: `estate.<topic>`, `assume.<topic>`, `same.<defect or question>.<what>.<kind>` (a pattern asked
   once), and from re-planning `same.<what>` and `added.<what>`. A defect or question that is now part of a pattern
   keeps its own ID, under the pattern's entry. `missing.<code>` is no longer asked; an answer to it moves to
-  `no_longer_asked`. A 1.1.0 file loads as before, and `your_input.load`, `items`, `state` and `signature` keep their
+  `no_longer_asked`. A 1.1.0 file loads as before, and `your_input.load`, `items` and `state` keep their
   signatures; `state` now also reports an item another answer settled as answered.
 - `data/3-brief/brief.json`: new `questions` (the counts the file shows), `estate_answers`, `assumptions`,
   `package_additions` and `started_outside`. A wave's criterion for missing code closes by `package` (adding it), not

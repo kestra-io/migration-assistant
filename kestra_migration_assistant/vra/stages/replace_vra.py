@@ -113,7 +113,7 @@ def plan(assess: dict, triage: dict, answers: dict, trigger_plan: dict | None, w
 
 def _wave(n, deps, its, wf, triage, open_q, app_where, blocked, assess) -> dict:
     from . import waves as W
-    crit = [{"criterion": "The signature covers this wave", "source": "signature", "closes": G.by_approval()}]
+    crit: list[dict] = []
     for d in deps:
         crit.append({"criterion": f"Wave {d} has met its exit criteria (its flows are the steps this wave's flow runs)",
                      "source": "waves", "closes": W._wave_exit(d)})
