@@ -568,6 +568,7 @@ def _expands(gid: str, loaded: dict) -> bool:
 def group_question(gid: str, its: list[dict]) -> str:
     n = len(its)
     kind = _kind(gid)
+    first = its[0] if its else {}
     if kind == "same":
         rec = (registry().get("_merges") or {}).get(gid) or {}
         if rec.get("question"):
@@ -575,7 +576,7 @@ def group_question(gid: str, its: list[dict]) -> str:
         wfs = list(dict.fromkeys(w for w in (_workflow_of(it) for it in its) if w))
         where = (f"{len(wfs)} workflows ({', '.join(wfs[:3])}{f' and {len(wfs) - 3} more' if len(wfs) > 3 else ''})"
                  if len(wfs) > 1 else f"{n} places")
-        q = _member_question(its[0])
+        q = _member_question(first) if its else ""
         if all(it.get("family") == "defect" for it in its):
             q = re.sub(r"\s*Keep (?:the current behavior|it as today), or fix it\?$", "", q)
             return f"The same possible defect in {where}: {q} Keep it everywhere, fix it everywhere, or decide each?"
@@ -583,8 +584,8 @@ def group_question(gid: str, its: list[dict]) -> str:
     if kind == "suggested":
         return "Accept every suggested answer below? (yes; to change one, add answer: under it)"
     if kind == "defects":
-        name = _workflow_of(its[0]) or gid.split(".", 1)[1]
-        page = (its[0].get("link") or f"report/workflows/{gid.split('.', 1)[1]}.html")
+        name = _workflow_of(first) or gid.split(".", 1)[1]
+        page = (first.get("link") or f"report/workflows/{gid.split('.', 1)[1]}.html")
         return (f"{n} possible defects in {name}: keep them all, fix them all, or decide each? (they are listed on "
                 f"{page})")
     if kind == "specs":
@@ -695,7 +696,9 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
                 alone.append(m)           # not covered by the group's answer, or reviewed before its spec changed
             else:
                 inside.append(m)
-        e: dict[str, Any] = {"question": group_question(gid, members)}
+        # a group whose members are all settled elsewhere keeps the question it was answered under
+        e: dict[str, Any] = {"question": group_question(gid, members) if members else
+                             str(gold.get("question") or group_question(gid, members))}
         if kind in SETTLED_BY_ONE or not is_open(gold.get("answer")):      # a line of the person's own is kept
             e["answer"] = gold.get("answer")
         e.update({f: v for f, v in gold.items() if f not in TOOL_FIELDS})

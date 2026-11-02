@@ -119,3 +119,25 @@ def test_a_1_1_0_file_still_loads_through_the_public_functions(upgraded):
     assert "\nsigned_for: full plan" in open(old, encoding="utf-8").read()
     loaded = Y.load(old)
     assert loaded["ok"] and not loaded["warnings"] and "sign" not in loaded and loaded["entries"]
+
+
+def test_an_answered_group_whose_members_are_all_settled_elsewhere_keeps_its_answer(tmp_path, monkeypatch):
+    """A 1.1.0 file answered `defects.<workflow>` ("keep them all"); in 1.2.0 an assumption can settle every one of
+    its defects. The group then has no member left to ask: it stays answered, under the question it was answered
+    with, instead of stopping the run (it raised IndexError on the first interactive run of an upgraded folder)."""
+    from kestra_migration_assistant.vra.stages import common as C
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    asked = "2 possible defects in WF A: keep them all, fix them all, or decide each?"
+    path = tmp_path / "answers.yaml"
+    path.write_text(f"open: []\n\nanswered:\n  - id: defects.wf-a\n    question: '{asked}'\n    answer: keep them all\n",
+                    encoding="utf-8")
+    monkeypatch.setattr(C, "DATA", str(tmp_path))
+    monkeypatch.setattr(C, "ANSWERS", str(path))
+    its = [Y.item(f"defect.wf-a.{k}", "defects", f"WF A: possible defect {k}. Keep it as today, or fix it?",
+                  family="defect") for k in ("timing", "naming")]
+    loaded = Y.load()
+    loaded["closed"] = {it["key"]: {"by": "assume.defects", "answer": "keep, as today"} for it in its}
+    opened, answered, _gone = Y.plan(its, loaded)
+    assert not opened
+    assert [(k, e["question"], e["answer"]) for k, e, _ in answered] == [("defects.wf-a", asked, "keep them all")]
+    assert Y.group_question("defects.wf-a", []).startswith("0 possible defects in wf-a")
