@@ -1,7 +1,8 @@
 # The release: runs only on a version tag (v1.0.0, v1.0.0rc1). `make check` also runs on every pull request and
 # push to main (check.yml).
 #
-#   every tag     make check; the wheel and source package, smoke-tested in a clean environment; their SBOM; the
+#   every tag     make check; the wheel and source package; the wheel smoke-tested in a clean environment on Linux,
+#                 macOS and Windows (smoke.yml), before anything is pushed or published; their SBOM; the
 #                 container image for linux/amd64 and linux/arm64, smoke-tested on both, pushed to
 #                 ghcr.io/kestra-io/migration-assistant:<version>, with an SBOM per architecture; SHA256SUMS; a
 #                 GitHub release with all of them attached (a pre-release for a candidate)
@@ -111,11 +112,6 @@ jobs:
         run: |
           make dist
           uv run --frozen python scripts/check_dist.py dist --version "$VERSION"
-      - name: Smoke test, the wheel in a clean environment
-        run: |
-          python3 -m venv "$RUNNER_TEMP/clean"
-          "$RUNNER_TEMP/clean/bin/pip" install --quiet dist/kestra_migration_assistant-*.whl
-          scripts/smoke.sh "$RUNNER_TEMP/smoke" "$VERSION" "$RUNNER_TEMP/clean/bin/kestra-migrate"
       - name: SBOM of the package
         run: scripts/package_sbom.sh dist "dist/kestra-migration-assistant-$VERSION.cdx.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -133,9 +129,18 @@ jobs:
             dist/*.cdx.json
           if-no-files-found: error
 
+  smoke:
+    name: smoke test on three platforms
+    needs: [check, packages]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/smoke.yml
+    with:
+      version: ${{ needs.check.outputs.version }}
+
   image:
     name: container image
-    needs: [check, packages]
+    needs: [check, packages, smoke]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -240,7 +245,7 @@ jobs:
 
   release:
     name: GitHub release
-    needs: [check, packages, image]
+    needs: [check, packages, smoke, image]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
