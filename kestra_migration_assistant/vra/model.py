@@ -604,10 +604,16 @@ class CostNotApproved(BaseException):
     on. A BaseException, so a stage that falls back when a call fails does not swallow it."""
 
 
+# What a run says when the input ended (Ctrl+D, or stdin closed) at a question that leads to billed calls: that is
+# never a yes.
+ENDED = "Stopped before anything was billed."
+
+
 class Gate:
     """Before the first billed call of a run: estimate what the run will still send (`planner(current)` returns
     the calls, the current one among them), say it, and above `max_usd` ask to go on. `confirm` asks the person
-    (a question in, True to go on); None means there is no terminal to ask in, and the run stops. `yes` goes on
+    (a question in, True to go on, None when the input ended: a no); None means there is no terminal to ask in, and
+    the run stops. `yes` goes on
     without asking. Decided once per run: later calls wait for the decision, then follow it."""
 
     def __init__(self, planner, say, *, yes: bool = False, confirm=None, max_usd: float | None = None,
@@ -635,9 +641,10 @@ class Gate:
         est = self.estimate = estimate(calls, s)
         self.say("Estimate: " + estimate_words(est, s))
         if self.always and self.confirm is not None:
-            if self.confirm(f"This will make {ask_words(est, s)}. Continue? Enter or y to continue, n to stop: "):
+            go = self.confirm(f"This will make {ask_words(est, s)}. Continue? Enter or y to continue, n to stop: ")
+            if go:
                 return True
-            self.why = "Stopped before any billed call, as asked. Nothing was billed."
+            self.why = ENDED if go is None else "Stopped before any billed call, as asked. Nothing was billed."
             return False
         cap = s.max_cost_usd if self.max_usd is None else self.max_usd
         if est["usd"] is None or est["usd"] <= cap or self.yes:
@@ -647,9 +654,10 @@ class Gate:
             self.why = (f"Stopped before any billed call: the estimate is above ${cap:g} ({where}). Run it again "
                         "with --yes to go ahead, or raise max_cost_usd.")
             return False
-        if self.confirm(f"That is above ${cap:g} ({where}). Go ahead? [y/N] "):
+        go = self.confirm(f"That is above ${cap:g} ({where}). Go ahead? [y/N] ")
+        if go:
             return True
-        self.why = "Stopped before any billed call, as asked. Nothing was billed."
+        self.why = ENDED if go is None else "Stopped before any billed call, as asked. Nothing was billed."
         return False
 
 

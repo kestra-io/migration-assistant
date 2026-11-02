@@ -49,6 +49,11 @@ class Quit(Exception):
     """The person asked to save and stop asking."""
 
 
+class Ended(Quit):
+    """The input ended (Ctrl+D, or stdin closed): saved and stopped like `q`, and never taken as a yes to anything
+    billed."""
+
+
 class Terminal:
     """Questions and answers in a plain terminal: numbers typed, no arrow keys."""
 
@@ -72,7 +77,8 @@ class Terminal:
         line = self.inp.readline()
         WAITED["seconds"] += time.monotonic() - t0
         if not line:                                     # end of input: save and stop
-            raise Quit()
+            print(file=self.out, flush=True)
+            raise Ended()
         return line.strip()
 
     def pose(self, q: dict, where: str) -> str | None:
@@ -178,7 +184,11 @@ def choose_model(term: Terminal, s):
     """Say which model the run uses; Enter keeps it, c shows the others with their cost and changes it (remembered
     for this estate). Returns the settings to use."""
     from . import model as M
-    a = term.read(f"Using {s.describe()}. Press Enter to continue, or c to change: ").lower()
+    try:
+        a = term.read(f"Using {s.describe()}. Press Enter to continue, or c to change: ").lower()
+    except Quit:                            # end of input: nothing to save, the model stays (the cost is asked later)
+        term.say()
+        return s
     if a not in ("c", "change"):
         return s
     opts = model_choices(s)
@@ -428,14 +438,17 @@ def finish(term: Terminal, index: str) -> None:
 def sharpen(term: Terminal, use_model: bool, qs: list[dict], rewrite) -> dict:
     """Ask the questions offered, q to stop at any point; then re-plan what is left (with a model, one call) and
     write the brief again. Returns {"asked", "answered", "stopped"}."""
+    from . import model
     from .stages import planner
     done = {"asked": 0, "answered": 0, "stopped": False}
     given = []
+    ended = False
     for i, q in enumerate(qs, 1):
         try:
             a = term.pose(_strip_name(q), f"Question {i} of {len(qs)}")
-        except Quit:
+        except Quit as e:
             done["stopped"] = True
+            ended = isinstance(e, Ended)
             break
         done["asked"] += 1
         if a is None:
@@ -447,6 +460,13 @@ def sharpen(term: Terminal, use_model: bool, qs: list[dict], rewrite) -> dict:
     term.say()
     if not given:
         term.say("Nothing answered: the brief stays as it is.")
+        return done
+    if ended and use_model:
+        # updating the brief takes a model call: the input ended, so nothing is billed (the answers are saved)
+        term.say(model.ENDED)
+        term.say(f"Your answers are saved in {C.rel(C.ANSWERS)}. Run the same command again to update the brief with "
+                 "them.")
+        done["ended"] = True
         return done
     term.say("Updating the brief with your answers…")
     r = planner.replan(given, use_model)

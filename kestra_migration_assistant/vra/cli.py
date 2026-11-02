@@ -352,18 +352,27 @@ def cost_gate(yes: bool = False, confirm=None, out=None, always: bool = False):
         PROGRESS.clear()
         print(f"{'Cost':<{width}}  {msg}", file=out, flush=True)
 
-    def ask_terminal(question: str) -> bool:
+    def ask_terminal(question: str) -> bool | None:
+        """True to go on, False when told not to, None at the end of input (Ctrl+D, or stdin closed): never a yes."""
         PROGRESS.clear()
         if always:
             from kestra_migration_assistant.vra import interactive
             print(f"\n{question}", end="", file=out, flush=True)
             t0 = time.monotonic()
             try:
-                return sys.stdin.readline().strip().lower() in ("", "y", "yes")
+                line = sys.stdin.readline()
             finally:
                 interactive.WAITED["seconds"] += time.monotonic() - t0
+            if not line:
+                print(file=out, flush=True)
+                return None
+            return line.strip().lower() in ("", "y", "yes")
         print(f"{'Cost':<{width}}  {question}", end="", file=out, flush=True)
-        return sys.stdin.readline().strip().lower() in ("y", "yes")
+        line = sys.stdin.readline()
+        if not line:
+            print(file=out, flush=True)
+            return None
+        return line.strip().lower() in ("y", "yes")
 
     if confirm is None and sys.stdin is not None and (always or sys.stdin.isatty()):
         confirm = ask_terminal
