@@ -650,3 +650,15 @@ def test_a_question_the_re_planning_added_survives_a_replay_in_a_fresh_folder(tm
     assert _brief(export)["questions"] == _brief(again)["questions"]
     # it has a suggestion, so it is assumed, and listed with its answer under the assumption: the file keeps it
     assert Y.load()["closed"]["added.ca-files"]["by"] == "assume.suggested"
+
+
+def test_in_the_container_the_brief_is_named_from_the_mounted_folder(tmp_path, monkeypatch):
+    """Inside the container a file:// link names a path only the container has (file:///work/...): the run names
+    the brief from the folder that was mounted, and offers no browser."""
+    monkeypatch.setenv("KESTRA_MIGRATE_CONTAINER", "1")
+    export = _export(tmp_path)
+    code, out, person = _typed_run(monkeypatch, export, [""])
+    assert code == 0
+    assert "file://" not in out
+    assert "The brief is in the folder you mounted: review/kestra-assessment/index.html" in out
+    assert out.rstrip().endswith(AGAIN) and not OPENED

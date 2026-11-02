@@ -421,9 +421,17 @@ def finish(term: Terminal, index: str) -> None:
     import pathlib
     import webbrowser
 
+    from kestra_migration_assistant import config as K
+
     from .stages import front as F
     url = pathlib.Path(os.path.abspath(index)).as_uri()
     term.say()
+    if K.in_container():
+        # a file:// link names the path inside the container, which the host does not have: name it from the
+        # folder that was mounted instead
+        print(f"The brief is in the folder you mounted: {C.rel(index)}", file=term.out, flush=True)
+        term.say(F.AGAIN)
+        return
     print(f"The brief: {url}", file=term.out, flush=True)          # one line, never wrapped: terminals make it a link
     if can_open_browser():
         try:
