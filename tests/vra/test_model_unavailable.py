@@ -157,3 +157,34 @@ def test_a_workflow_the_model_could_not_analyze_stops_the_run_before_the_brief(t
     assert "workflows could not be analyzed, so no brief was written" in out
     assert "does not have the expected structure" in out
     assert not _brief_written(export)
+
+
+def test_a_remembered_model_that_cannot_be_used_is_set_aside_not_a_dead_end(tmp_path, monkeypatch):
+    """The export remembers the model chosen in the terminal (data/model.json). If that one cannot be used any more
+    (here: an API key route, and no `anthropic` package), the run says so and starts with the usual model, instead
+    of refusing every run before the person can choose another."""
+    import json as _json
+
+    from kestra_migration_assistant import config as K
+    from kestra_migration_assistant.vra import cli, interactive
+    monkeypatch.setattr(K, "has_anthropic_package", lambda: False, raising=False)
+    monkeypatch.setattr(K, "claude_code_ready", lambda: False)
+    monkeypatch.setitem(sys.modules, "anthropic", None)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-not-a-real-key")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    export = _export(tmp_path)
+    data = os.path.join(export, "kestra-assessment", "data")
+    os.makedirs(data)
+    with open(os.path.join(data, "model.json"), "w", encoding="utf-8") as f:
+        _json.dump({"provider": "anthropic", "model": "claude-haiku-5-5"}, f)
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", out)
+    monkeypatch.setattr(cli, "is_terminal", lambda: True)
+    monkeypatch.setattr(interactive, "can_open_browser", lambda: False)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("\n" * 20))
+    monkeypatch.delenv("VRO_NO_MODEL", raising=False)
+    code = cli.main(["run", export], interactive=True)
+    text = out.getvalue()
+    assert "The model chosen earlier for this export cannot be used: the anthropic provider needs" in text
+    assert code == 2 and "The model cannot be used" in text        # the usual model here is the same key route

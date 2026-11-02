@@ -395,11 +395,20 @@ def set_up_model(args: argparse.Namespace, prog: str, asking: bool = False) -> b
     from kestra_migration_assistant import config as K
     from kestra_migration_assistant.vra import model
     flags = {"provider": args.provider, "model": args.model, "base_url": args.base_url}
+    kept = {}
     if asking and not args.provider and not args.model:
         from kestra_migration_assistant.vra import interactive
-        flags.update(interactive.remembered_model())
+        kept = interactive.remembered_model()
     try:
-        s = K.resolve(flags)
+        s = K.resolve({**flags, **kept})
+        if kept:
+            s.source.update(provider="chosen earlier for this export", model="chosen earlier for this export")
+            why = K.unusable(s)
+            if why:
+                # the model chosen in the terminal for this export cannot be used now: set it aside, so the run
+                # starts with the usual one and the person can choose again (c)
+                print(f"The model chosen earlier for this export cannot be used: {why}")
+                s = K.resolve(flags)
     except K.ConfigError as e:
         print(f"{prog}: {e}", file=sys.stderr)
         return False
