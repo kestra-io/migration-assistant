@@ -37,9 +37,24 @@ def init(force: bool) -> int:
     return 0
 
 
+def _never_fail_on_a_character() -> None:
+    """Output to a pipe or a file is in the system's code page on Windows (cp1252 and the like), which lacks some of
+    the characters a name or a reply can hold: write those as "?" rather than stop the run. A terminal, and UTF-8
+    anywhere, are left as they are."""
+    for stream in (sys.stdout, sys.stderr):
+        enc = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if enc and enc != "utf8" and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
     from kestra_migration_assistant import config as K
     typed = argv is None
+    if typed:
+        _never_fail_on_a_character()
     argv = sys.argv[1:] if argv is None else list(argv)
     ap = argparse.ArgumentParser(
         prog="kestra-migrate",

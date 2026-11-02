@@ -173,7 +173,7 @@ def _old_keys() -> dict[str, str]:
     p = os.path.join(C.ASSESS, "assess.json")
     if not os.path.exists(p):
         return {}
-    wf = json.load(open(p))["workflows"]
+    wf = json.load(open(p, encoding="utf-8"))["workflows"]
     out = {}
     for u, w in wf.items():
         out[u] = G.review_key(w["short"])
@@ -426,7 +426,7 @@ def _calls_since(n: int) -> tuple[int, dict]:
     path = C.STAGE_CALL_LOG
     if not path or not os.path.exists(path):
         return 0, out
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         lines = f.readlines()
     for line in lines[n:]:
         try:
@@ -580,7 +580,7 @@ def stopped_message() -> str:
     import json
     idx = os.path.join(C.WORK, "index.json") if C.WORK else ""
     if ANALYZING["on"] and idx and os.path.exists(idx):
-        uids = [w["uid"] for w in json.load(open(idx))["workflows"]]
+        uids = [w["uid"] for w in json.load(open(idx, encoding="utf-8"))["workflows"]]
         have = sum(1 for u in uids if os.path.exists(os.path.join(C.SPEC_DIR, f"{u}.json")))
         return f"Stopped. {have} of {len(uids)} workflows analyzed and kept. Run again to continue."
     return f"Stopped. Every answer given so far is saved in {C.rel(C.ANSWERS)}. Run again to continue."

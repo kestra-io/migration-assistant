@@ -466,7 +466,7 @@ def write_entry_points(has_vra: bool) -> bool:
         if os.path.exists(path):                # an untouched template (is_filled said so)
             os.remove(path)
         return False
-    if os.path.exists(path) and open(path).read() == entry_points.template():
+    if os.path.exists(path) and open(path, encoding="utf-8").read() == entry_points.template():
         return False
     C.write_text(path, entry_points.template())
     return True

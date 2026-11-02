@@ -454,8 +454,8 @@ def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: b
     written) order a group's writers before its readers and show each reader the writers' specs."""
     spec_dir = spec_dir or os.path.join(out_dir, "spec")
     os.makedirs(spec_dir, exist_ok=True)
-    idx = json.load(open(os.path.join(out_dir, "index.json")))
-    models = {u: json.load(open(os.path.join(out_dir, "model", f"{u}.json")))
+    idx = json.load(open(os.path.join(out_dir, "index.json"), encoding="utf-8"))
+    models = {u: json.load(open(os.path.join(out_dir, "model", f"{u}.json"), encoding="utf-8"))
               for u in uids}
     actions_by_module = actions_index(idx)
 
@@ -558,7 +558,7 @@ def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: b
             for uid in lvl:
                 path = os.path.join(spec_dir, f"{uid}.json")
                 if os.path.exists(path) and uid not in (regenerate or set()):
-                    specs[uid] = json.load(open(path))
+                    specs[uid] = json.load(open(path, encoding="utf-8"))
         return {"contexts": context, "prompt_sha": shas, "order": order, "prompts": prompts,
                 "schema": ESTATE_SPEC_SCHEMA if call_tree else SPEC_SCHEMA}
 
@@ -571,7 +571,7 @@ def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: b
         for uid in lvl:
             path = os.path.join(spec_dir, f"{uid}.json")
             if os.path.exists(path) and uid not in (regenerate or set()):
-                specs[uid] = json.load(open(path))
+                specs[uid] = json.load(open(path, encoding="utf-8"))
             else:
                 todo.append(uid)
         if not todo:
@@ -591,7 +591,7 @@ def cluster_members(c: dict, spec_dir: str) -> list[dict]:
         p = os.path.join(spec_dir, f"{u}.json")
         if not os.path.exists(p):
             continue
-        s = json.load(open(p))
+        s = json.load(open(p, encoding="utf-8"))
         members.append({"uid": u, "purpose": s["purpose"],
                         "inputs": [i["name"] for i in s["inputs"]],
                         "outputs": [o["name"] for o in s["outputs"]],
@@ -615,10 +615,10 @@ def cluster_prompt(c: dict, members: list[dict]) -> str:
 
 def run_clusters(out_dir: str, label: str) -> dict:
     """One summary per cluster, written after the member specs exist."""
-    res = json.load(open(os.path.join(out_dir, "assess", f"clusters-{label}.json")))
+    res = json.load(open(os.path.join(out_dir, "assess", f"clusters-{label}.json"), encoding="utf-8"))
     spec_dir = os.path.join(out_dir, "spec")
     out_path = os.path.join(out_dir, "assess", f"cluster-summaries-{label}.json")
-    summaries = json.load(open(out_path)) if os.path.exists(out_path) else {}
+    summaries = json.load(open(out_path, encoding="utf-8")) if os.path.exists(out_path) else {}
 
     for c in res["clusters"]:
         cid = c["cluster_id"]
@@ -633,7 +633,7 @@ def run_clusters(out_dir: str, label: str) -> dict:
         except Exception as e:
             summaries[cid] = {"name": cid, "what_the_group_does": f"(failed: {e})",
                               "how_members_differ": [], "first_of_a_kind_reason": ""}
-        with open(out_path, "w") as f:
+        with open(out_path, "w", encoding="utf-8") as f:
             json.dump(summaries, f, indent=1)
     return summaries
 
@@ -659,11 +659,11 @@ def run_estate() -> dict:
     clusters_path = os.path.join(C.WORK, "assess", "clusters-estate.json")
     if not (os.path.exists(idx_path) and os.path.exists(clusters_path)):
         raise RuntimeError(f"run `{C.run_command()}`: understand reads Assess's parse and clusters")
-    idx = json.load(open(idx_path))
+    idx = json.load(open(idx_path, encoding="utf-8"))
     uids = sorted(w["uid"] for w in idx["workflows"])
     os.makedirs(C.SPEC_DIR, exist_ok=True)
     prov_path = os.path.join(C.SPEC_DIR, "PROVENANCE.json")
-    prov = json.load(open(prov_path)) if os.path.exists(prov_path) else {"specs": {}, "cluster_summaries": {}}
+    prov = json.load(open(prov_path, encoding="utf-8")) if os.path.exists(prov_path) else {"specs": {}, "cluster_summaries": {}}
 
     M_ = C.model()                      # cache and call log under stages/
     log_before = _log_len(C.STAGE_CALL_LOG)
@@ -698,8 +698,8 @@ def run_estate() -> dict:
         sum(1 for u in missing if os.path.exists(os.path.join(C.SPEC_DIR, f"{u}.json")) and u not in errors)
 
     # cluster summaries
-    clusters = json.load(open(clusters_path))["clusters"]
-    have = json.load(open(C.CLUSTER_SUMMARIES)) if os.path.exists(C.CLUSTER_SUMMARIES) else {}
+    clusters = json.load(open(clusters_path, encoding="utf-8"))["clusters"]
+    have = json.load(open(C.CLUSTER_SUMMARIES, encoding="utf-8")) if os.path.exists(C.CLUSTER_SUMMARIES) else {}
     by_members = {tuple(sorted(v.get("members") or [])): v for v in have.values()}
     out, s_generated = {}, 0
     todo = []
@@ -745,8 +745,8 @@ def run_estate() -> dict:
     # written only when they change: Assess re-runs when either is newer than its output
     for path, obj in ((C.CLUSTER_SUMMARIES, out), (prov_path, prov)):
         text = json.dumps(obj, indent=1)
-        if not os.path.exists(path) or open(path).read() != text:
-            with open(path, "w") as f:
+        if not os.path.exists(path) or open(path, encoding="utf-8").read() != text:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
 
     new = _log_since(C.STAGE_CALL_LOG, log_before)
@@ -773,10 +773,10 @@ def stale_specs(uids: list[str] | None = None, prov: dict | None = None) -> dict
         idx_path = os.path.join(C.WORK, "index.json")
         if not os.path.exists(idx_path):
             return {}
-        uids = sorted(w["uid"] for w in json.load(open(idx_path))["workflows"])
+        uids = sorted(w["uid"] for w in json.load(open(idx_path, encoding="utf-8"))["workflows"])
     if prov is None:
         pp = os.path.join(C.SPEC_DIR, "PROVENANCE.json")
-        prov = json.load(open(pp)) if os.path.exists(pp) else {"specs": {}}
+        prov = json.load(open(pp, encoding="utf-8")) if os.path.exists(pp) else {"specs": {}}
     generated = {u for u in uids if os.path.exists(os.path.join(C.SPEC_DIR, f"{u}.json"))
                  and (prov["specs"].get(u) or {}).get("source", "").startswith("generated")}
     why = {u: "the prompt changed shape" for u in generated
@@ -803,7 +803,7 @@ def input_changes(uids: list[str], check: set[str]) -> dict[str, str]:
                 **_shared_state())
     out = {}
     for u in sorted(check):
-        ctx = (json.load(open(os.path.join(C.SPEC_DIR, f"{u}.json"))).get("context") or {})
+        ctx = (json.load(open(os.path.join(C.SPEC_DIR, f"{u}.json"), encoding="utf-8")).get("context") or {})
         now = probe["contexts"].get(u) or {}
         if ctx.get("prompt_sha"):
             if ctx["prompt_sha"] != probe["prompt_sha"].get(u):
@@ -826,7 +826,7 @@ def _shared_state() -> dict:
     p = os.path.join(C.ASSESS, "assess.json")
     if not os.path.exists(p):
         return {"lifecycle": [], "state": {}}
-    a = json.load(open(p))
+    a = json.load(open(p, encoding="utf-8"))
     return {"lifecycle": a.get("lifecycle_groups") or [],
             "state": {u: w.get("state") or {} for u, w in (a.get("workflows") or {}).items()}}
 
@@ -837,21 +837,21 @@ def _entry_points_by_uid() -> dict:
     p = os.path.join(C.ASSESS, "assess.json")
     if not os.path.exists(p):
         return {}
-    wf = json.load(open(p)).get("workflows") or {}
+    wf = json.load(open(p, encoding="utf-8")).get("workflows") or {}
     return {u: w.get("entry_points") or [] for u, w in wf.items()}
 
 
 def _log_len(path: str) -> int:
     if not os.path.exists(path):
         return 0
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return sum(1 for _ in f)
 
 
 def _log_since(path: str, n: int) -> list[dict]:
     if not os.path.exists(path):
         return []
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         lines = f.readlines()[n:]
     out = []
     for line in lines:

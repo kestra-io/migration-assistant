@@ -168,7 +168,7 @@ def parse_corpus(out_dir: str, sources: dict[str, str], root: str | None = None)
     for w in workflows:
         if not w.get("uid"):
             continue
-        with open(os.path.join(out_dir, "model", f"{w['uid']}.json"), "w") as f:
+        with open(os.path.join(out_dir, "model", f"{w['uid']}.json"), "w", encoding="utf-8") as f:
             json.dump(w, f, indent=1)
 
     index = {
@@ -191,7 +191,7 @@ def parse_corpus(out_dir: str, sources: dict[str, str], root: str | None = None)
             "other_elements": len(other_elements),
         },
     }
-    with open(os.path.join(out_dir, "index.json"), "w") as f:
+    with open(os.path.join(out_dir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f, indent=1)
     return index
 

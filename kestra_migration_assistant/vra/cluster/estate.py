@@ -9,11 +9,11 @@ from .cluster import KNOWN_PLUGIN_PREFIXES
 
 
 def write_estate_report(out_dir: str, label: str, path: str) -> str:
-    res = json.load(open(os.path.join(out_dir, "assess", f"clusters-{label}.json")))
-    idx = json.load(open(os.path.join(out_dir, "index.json")))
+    res = json.load(open(os.path.join(out_dir, "assess", f"clusters-{label}.json"), encoding="utf-8"))
+    idx = json.load(open(os.path.join(out_dir, "index.json"), encoding="utf-8"))
     models = {}
     for u in res["colours"]:
-        models[u] = json.load(open(os.path.join(out_dir, "model", f"{u}.json")))
+        models[u] = json.load(open(os.path.join(out_dir, "model", f"{u}.json"), encoding="utf-8"))
 
     colours = res["colours"]
     totals = Counter(c["band"] for c in colours.values())
@@ -237,6 +237,6 @@ def write_estate_report(out_dir: str, label: str, path: str) -> str:
     A("")
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(L))
     return path

@@ -1151,7 +1151,7 @@ def migrate() -> list[str]:
 
     if "answers.md" in present:
         from . import preflight
-        text = open(present["answers.md"]).read()
+        text = open(present["answers.md"], encoding="utf-8").read()
         parsed = preflight._parse_answers(text)
         wm = re.search(r"^Answered by:[ \t]*(.*)$", text, re.M)
         who = wm.group(1).strip() if wm else ""

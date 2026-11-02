@@ -32,7 +32,7 @@ def _missing_specs() -> list[str]:
     idx = os.path.join(C.WORK, "index.json")
     if not os.path.exists(idx):
         return []
-    uids = sorted(w["uid"] for w in json.load(open(idx))["workflows"])
+    uids = sorted(w["uid"] for w in json.load(open(idx, encoding="utf-8"))["workflows"])
     stale = U.stale_specs(uids)
     return [u for u in uids if not os.path.exists(os.path.join(C.SPEC_DIR, f"{u}.json")) or u in stale]
 
@@ -41,7 +41,7 @@ def _spec_calls(missing: list[str]) -> list[dict]:
     """Each spec to write, with the prompt Understand would send now (its dry run, with the specs it writes again
     left out, as Understand moves them aside first)."""
     from kestra_migration_assistant.vra import understand as U
-    idx = json.load(open(os.path.join(C.WORK, "index.json")))
+    idx = json.load(open(os.path.join(C.WORK, "index.json"), encoding="utf-8"))
     uids = sorted(w["uid"] for w in idx["workflows"])
     dry = U.run(C.WORK, uids, spec_dir=C.SPEC_DIR, call_tree=True, entry_points=U._entry_points_by_uid(), dry=True,
                 regenerate=set(missing), **U._shared_state())
@@ -67,7 +67,7 @@ def _spec_calls(missing: list[str]) -> list[dict]:
 def _summary_calls(written: set[str]) -> list[dict]:
     """A summary for each group with a spec written this run."""
     p = os.path.join(C.WORK, "assess", "clusters-estate.json")
-    groups = json.load(open(p))["clusters"] if os.path.exists(p) else [{"members": sorted(written)}]
+    groups = json.load(open(p, encoding="utf-8"))["clusters"] if os.path.exists(p) else [{"members": sorted(written)}]
     return [{"purpose": "cluster-summary", "chars": SUMMARY_CHARS + SUMMARY_PER_MEMBER * len(g["members"])}
             for g in groups if set(g["members"]) & written]
 
@@ -82,7 +82,7 @@ SORT_CHARS = 16000
 
 def _workflow_count() -> int:
     idx = os.path.join(C.WORK, "index.json")
-    return len(json.load(open(idx))["workflows"]) if os.path.exists(idx) else 0
+    return len(json.load(open(idx, encoding="utf-8"))["workflows"]) if os.path.exists(idx) else 0
 
 
 def _sort_calls(n_workflows: int) -> list[dict]:
@@ -96,7 +96,7 @@ def reanalysis() -> dict:
     group summaries, the domain names, the walkthroughs and the sorting of what is found."""
     from kestra_migration_assistant.vra import model as M
     idx = os.path.join(C.WORK, "index.json")
-    uids = sorted(w["uid"] for w in json.load(open(idx))["workflows"]) if os.path.exists(idx) else []
+    uids = sorted(w["uid"] for w in json.load(open(idx, encoding="utf-8"))["workflows"]) if os.path.exists(idx) else []
     calls = [{"purpose": "understand", "chars": c.get("chars") or len(c["prompt"]) + len(json.dumps(c["schema"]))}
              for c in _spec_calls(uids)] if uids else []
     calls += _summary_calls(set(uids)) + _sort_calls(len(uids))

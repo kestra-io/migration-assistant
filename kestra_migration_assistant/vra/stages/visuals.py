@@ -718,7 +718,7 @@ def explorer_data(assess, brief) -> dict:
 
 
 def explorer(assess, brief) -> str:
-    tpl = open(os.path.join(C.ASSETS, "explorer-viewer.html")).read()
+    tpl = open(os.path.join(C.ASSETS, "explorer-viewer.html"), encoding="utf-8").read()
     marker = "/*__TOPOLOGY_DATA__*/ null"
     assert marker in tpl
     data = C.no_em_dashes(json.dumps(explorer_data(assess, brief), ensure_ascii=False))

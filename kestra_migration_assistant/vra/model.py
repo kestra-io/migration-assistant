@@ -284,7 +284,7 @@ def _log(rec: dict) -> None:
     assert LOG_PATH is not None
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
     with _log_lock:
-        with open(LOG_PATH, "a") as f:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
 
 
@@ -676,7 +676,7 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
     cache_path = os.path.join(CACHE_DIR, f"{key}.json")
     hit_path = _cached_path(prompt, schema, cfg)
     if hit_path:
-        with open(hit_path) as f:
+        with open(hit_path, encoding="utf-8") as f:
             hit = json.load(f)
         _log({"purpose": purpose, "workflow": workflow_id, "key": key, **who,
               "cached": True, "legacy_cache": hit_path != cache_path, "ms": 0, "cost_usd": 0.0,
@@ -757,7 +757,7 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
             rec["schema_errors"] = errs
             _log(rec)
             if not errs:
-                with open(cache_path, "w") as f:
+                with open(cache_path, "w", encoding="utf-8") as f:
                     json.dump({"purpose": purpose, "workflow": workflow_id, **who,
                                "prompt_sha": key, "value": value}, f, indent=1)
                 return value
@@ -877,7 +877,7 @@ def cost_summary() -> dict:
                 "cost_usd": 0.0, "ms": 0, "by_purpose": {}}
     calls, cached, cost, ms = 0, 0, 0.0, 0
     by_purpose: dict[str, dict] = {}
-    with open(LOG_PATH) as f:
+    with open(LOG_PATH, encoding="utf-8") as f:
         for line in f:
             try:
                 r = json.loads(line)
