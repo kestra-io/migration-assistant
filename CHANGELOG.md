@@ -2,150 +2,164 @@
 
 Every release of the Kestra Migration Assistant for vRA. Versions follow [semantic versioning](https://semver.org).
 
-## Unreleased
+## 1.2.0 (2026-11-03)
 
-A brief from every run. After a few questions about the estate and the analysis, the brief is written straight
-away, with every assumption it makes listed in it. Questions only make it sharper: a later run asks them, and none is
-needed.
-Re-running on a folder that 1.1.0 assessed keeps every answer you gave.
+Every run now ends with a brief. In a terminal, the tool asks a few questions about the estate, runs the analysis
+and writes the brief straight away, with every assumption it makes listed in it. Questions only make the brief
+sharper: run the same command again to be asked them, and none is needed. Re-running 1.2.0 on a folder that 1.1.0
+assessed keeps every answer you gave.
 
 ### What's new
 
 - **`kestra-migrate vra run` asks its questions in the terminal.** It starts with the KESTRA wordmark and the
-  version (in Kestra's purple, fading to lavender, where the terminal has color). It first says which model it uses (Enter keeps it,
-  `c` shows the others with their cost and changes it for this export), what it read in each file, what code the
-  workflows call that is not in the package, that it only reads, and that Ctrl+C stops it. Then it asks the few
-  questions about the whole estate that the analysis reads (what starts the workflows, where the converted flows
-  read their settings and get their secrets, calls to other vRO clusters, what looks out of scope), each choice
-  explained in vRO's terms. Before the analysis it says how many model calls it makes and what they cost, and asks.
-  Then it writes the brief at once and stops there: a short summary (the recommendation, the waves, how many
-  workflows convert), the brief's `file://` link, `Open the brief now? (Y/n)` (Enter opens it in the browser), and
-  one line: run the same command again to answer more questions and sharpen the brief. Run again, it asks up to five
-  questions, the ones that change the brief most first, writes it again and ends the same way. Each question has
-  numbered choices, the suggestion first and your own words last; a question whose choices are not exclusive takes
-  several numbers (`2, 4`); `s` skips a question, `q` saves and stops. Every answer is saved at once. `--batch` asks
-  nothing, and a run with no terminal never asks.
-- **The brief assumes what has a sensible answer.** Non-production: a simulated lab first, then a non-production
-  instance where one exists. Certificate and host checks vRO turned off: kept as today, listed as a security note.
-  Off limits: nothing. vRA: replaced by Kestra. Kestra Enterprise Edition: available. What the code suggests: taken.
-  Any other question with a suggestion takes it. The brief lists each assumption, and each answer taken from a
-  suggestion, under "Assumptions", with how to change it in `answers.yaml`. Only a question with no sensible answer
-  (who owns each area, the check of a spec) is left to answer, and none of them is needed to write the brief.
-- **Three questions are no longer asked.** Whether the export is the whole estate (the brief says it covers what is
-  in the export), whether anyone tried to migrate it before, and whether twelve months of run history can be
-  exported (the brief's next steps suggest checking each workflow's run history to find the ones that no longer
-  run). An answer 1.1.0 kept for one stays in `answers.yaml`, no longer asked.
+  version (in Kestra's purple, fading to lavender, where the terminal has color). It says which model it uses (Enter
+  keeps it, `c` lists the others with their cost and changes it for this export), what it read in each file, how
+  many pieces of code the workflows call that aren't in the package, that it only reads, and that Ctrl+C stops it.
+  Then it asks the few questions about the whole estate that the analysis reads: what starts the workflows, where
+  the converted flows read their settings and get their secrets, whether workflows call other vRO clusters, and what
+  looks out of scope (four on our 46-workflow test estate). Each choice says what a Kestra term means in vRO's terms.
+- **It asks before it spends anything.** Before the analysis, it says how many model calls it makes and what they
+  cost, and waits for Enter. In a terminal it asks whatever the estimate, also with `--yes`.
+- **It stops at the brief.** It writes the brief at once and shows a short summary (the recommendation, the waves,
+  how many workflows convert), the brief's `file://` link and `Open the brief now? (Y/n)`; Enter opens it in your
+  browser. Run the same command again, and it asks up to five questions, the ones that change the brief most first,
+  writes the brief again and ends the same way.
+- **Questions look the same everywhere.** Numbered choices, the suggestion first (Enter takes it) and your own words
+  last. A question whose choices aren't exclusive takes several numbers (`2, 4`). `s` skips a question, `q` saves
+  and stops, and every answer is saved at once. `--batch` asks nothing, and a run with no terminal never asks.
+- **The brief assumes what has a sensible answer.** The converted flows do what the workflows do today, so one can
+  be tested against the other: possible defects are kept, certificate and host checks vRO turned off stay off, and
+  vRA's timeouts and failure handling are kept. Flows are tested in a simulated lab first, then against a
+  non-production instance where one exists. Nothing is off limits, Kestra replaces vRA, Kestra Enterprise Edition is
+  available, and any other question with a suggestion takes it. The brief lists each assumption, and each answer
+  taken from a suggestion, under "Assumptions", with how to change it in `answers.yaml`. Only a question with no
+  sensible answer (who owns each area, the check of a spec) is left to you, and none is needed to write the brief.
+- **Notes to fix after the migration.** The brief lists the security problems kept as today (certificate or host
+  checks turned off, a credential written to a log or sent somewhere) and the possible defects that make a workflow
+  fail every time.
+- **Add to the package.** When a workflow calls code the export doesn't hold (an action module at any depth, a
+  workflow on another vRO cluster, the configuration elements a module reads at run time), the brief lists it, with
+  what calls it and how to add it. It's no longer a question.
+- **Every possible defect, by what it does today,** in the brief's Appendix C and on each workflow's page.
 - **A spec check quotes the brief.** "The brief says Add User to AD Group adds one user to one managed Active
-  Directory group. Is that right?", one per workflow, and only in a run after the brief exists.
-- **Notes to fix after the migration.** The brief lists, before anything else it asks, the security problems kept as
-  today (certificate or host checks turned off, a credential written to a log or sent somewhere) and the possible
-  defects that make a workflow fail every time.
-- **A limit stops the run cleanly.** When your Claude plan's limit runs out, the run stops at once and says so,
-  instead of waiting: finished work is kept, and the same command picks up after the limit resets. An API key's rate
-  limit gets one short retry first.
-- **Each step of a long run shows on its one progress line**, with the time it has taken so far ("Analyzing 46
-  workflows: 0 done, 1m 20s"), then "Summarizing 19 groups" and "Preparing the brief".
-- **Today's behavior is kept, and not asked about.** The converted flows do what the workflows do today, so one can
-  be tested against the other. Possible defects are kept, with the ones that fail every time and the security
-  problems listed as notes. A question the code answers today is answered so, vRA's timeouts and failure handling are kept, and a question
-  about a value the sanitized copy hides is not asked. Each is written in `answers.yaml` with the answer it takes,
-  and you can change it there. The brief lists every possible defect by what it does today (Appendix C).
+  Directory group. Is that right?", one per workflow, only in a run after the brief exists, and never for a workflow
+  that is retired or left out of the migration.
+- **One question per pattern.** A possible defect or a question about an action several workflows share, or the
+  same one on near-duplicate workflows, is asked once for all of them.
 - **Details of how a flow is built wait for its wave.** Which servers a flow targets, the shape of an input, and the
-  review of a spec the model was less sure of are asked when the wave is converted (`waves:` in `answers.yaml`).
-- **Ctrl+C stops at once,** during every wait, including the wait after a quota error. The model calls in flight
-  end, none starts after them, and every spec already written is kept. The run says how far it got.
-- **Faster analysis.** Eight model calls run at once instead of four, and the group summaries run in parallel too.
-  Each call's time is the model writing its reply (about a minute on Opus and Haiku alike), not the tool.
-- **One question per pattern.** A possible defect or a question about an action several workflows share, or the same
-  one on near-duplicate workflows, is asked once for all of them.
-- **What the tool assumes instead of asking.** The trust store, retries and counters, and REST hosts made in code
-  have a Kestra equivalent. The brief lists each assumption under "Assumptions", and you can override any of them in
-  `answers.yaml`.
-- **What to add to the package.** When a workflow calls code the export does not hold (an action module at any
-  depth, a workflow on another vRO cluster, the configuration elements a module reads at run time), the brief lists
-  it under "Add to the package", with what calls it and how to add it. It is no longer a question.
+  review of a spec the model was less sure of are asked when the wave is converted.
+- **Three questions are no longer asked:** whether the export is the whole estate (the brief says it covers what is
+  in the export), whether anyone tried to migrate it before, and whether twelve months of run history can be
+  exported (the brief's next steps suggest checking each workflow's run history). An answer 1.1.0 kept for one stays
+  in `answers.yaml`, under `no_longer_asked`.
 - **vRO-only estates.** With no vRA export, the tool asks once what starts the workflows. If it's an external
   platform on the vRO API, or people in the vRO client, that applies to every workflow nothing in the export starts,
   and none is listed as a retire candidate from the call graph alone.
+- **A limit stops the run cleanly.** When your Claude plan's limit runs out, the run stops at once and says so;
+  finished work is kept, and the same command picks up after the limit resets. An API key's rate limit gets one
+  short retry first.
+- **One progress line** for each long step, with the time so far ("Analyzing 46 workflows: 0 done, 1m 20s"). What
+  each step did in detail goes to `kestra-assessment/data/run.log`.
+- **Faster analysis.** Eight model calls run at once instead of four, and the group summaries run in parallel too.
+- **Tested on Linux, macOS and Windows.** Each release installs its wheel in a clean environment and runs it on
+  Ubuntu with Python 3.10, macOS with Python 3.12 and Windows with Python 3.14, and is published only if all three
+  pass.
 
 ### Fixes
 
-- Ctrl+C did not stop a run on macOS while the model calls waited (after a quota error, for up to half an hour): the
-  run waited on them in a way the terminal's Ctrl+C does not reach. Every wait is now in short steps.
-- A path in the terminal could be cut at a hyphen when a line wrapped (`your-` on one line, `input/answers.yaml` on
-  the next). Paths and names are no longer split.
-- The first screen named a question by its number ("(Q8)"). Questions are named in words there and on the pages.
-
-- The brief could say 8 questions while `answers.yaml` held hundreds. The brief counted the file's entries, where a
-  group of questions is one entry, while the file listed every question in it (83 spec questions in one entry on a
-  46-workflow estate) and "decide each" opened every workflow's possible defects. The brief and the status line now
-  count the empty answers in the file, so they always agree.
-- An answered group carried into a fresh folder covered only the questions the first stage to run knew about. It now
-  covers the questions the file lists under it, so the same `answers.yaml` gives the same brief anywhere.
+- **End of input never spends.** Ctrl+D (or stdin closing) at the cost question counted as Enter, which goes on. It
+  now stops before any billed call and says "Stopped before anything was billed." The same at a question whose
+  answer leads to a model call. At the model question it crashed the run; there, as at every other question, it now
+  saves and stops asking, like `q`.
+- **Windows:** the tool wrote its files as UTF-8 but read them back in the system's code page, so `answers.yaml`
+  with an accent or a dash could come back garbled. Every file is now read and written as UTF-8, and output to a
+  pipe never stops on a character the code page lacks.
+- A folder answered with 1.1.0 stopped on its first interactive run with 1.2.0 when a "keep them all" for a
+  workflow's possible defects had nothing left to ask. That answer now stays as it was.
+- In the container, the run ended with a `file:///work/...` link that only exists inside the container. It now
+  names the brief's path in the folder you mounted.
+- Ctrl+C didn't stop a run on macOS while model calls waited (after a quota error, for up to half an hour). Every
+  wait is now in short steps, so it stops at once; the calls in flight end, and every spec already written is kept.
+- The brief could say 8 questions while `answers.yaml` held hundreds: it counted the file's entries, where a group
+  of questions is one entry. The brief and the status line now count the empty answers in the file, so they agree.
+- An answered group carried into a fresh folder covered only the questions the first stage to run knew about. It
+  now covers the questions the file lists under it, so the same `answers.yaml` gives the same brief anywhere.
 - Every file the tool writes is written whole or not at all, so a run stopped half way never leaves `answers.yaml`
   cut short.
+- A path in the terminal could be cut at a hyphen when a line wrapped. Paths and names are no longer split.
+- The first screen named a question by its number ("(Q8)"). Questions are named in words.
 
 ### Output changes
 
-- Signing is removed: migrations are now agreed with Kestra directly, so the assessment has no signature.
-  `answers.yaml` has no `signed_for` field (a 1.1.0 file that has one still loads; the value is ignored and not
-  written back), `your_input.signature` and `your_input.set_signature` are gone, and no wave has an entry
-  criterion about a signature. `brief.json` has no `approval` or `input.sign`. Where the brief
-  said to sign, it now says the next step is to talk to Kestra about a proof of concept or the migration, with the
-  help link.
-- `answers.yaml`: a new `estate` section at the top (estate questions with `options`, assumptions with `assumed`).
-  Entries can carry `closes` (what an answer settled) and `settles` (what an open estate question's suggestion would
-  settle). New IDs: `estate.<topic>`, `assume.<topic>`, `same.<defect or question>.<what>.<kind>` (a pattern asked
-  once), and from re-planning `same.<what>` and `added.<what>`. A defect or question that is now part of a pattern
-  keeps its own ID, under the pattern's entry. `missing.<code>` is no longer asked; an answer to it moves to
-  `no_longer_asked`. A 1.1.0 file loads as before, and `your_input.load`, `items` and `state` keep their
-  signatures; `state` now also reports an item another answer settled as answered.
-- `data/3-brief/brief.json`: new `questions` (the counts the file shows), `estate_answers`, `assumptions`,
-  `package_additions` and `started_outside`. A wave's criterion for missing code closes by `package` (adding it), not
-  by a decision.
-- `answers.yaml` (also new in 1.2.0): a `waves` section, one entry per wave (`wave.<n>`, `wave.none`) with what is
-  asked when it is converted under `each:`. Each assumption lists the items it settles under `each:`, each with
-  `assumed:` (the answer it takes) and no answer line. New assumptions: `assume.defects`, `assume.behavior`,
-  `assume.placeholders`, `assume.timeouts`, `assume.labels`, `assume.specs`, `assume.host-checks`,
-  `assume.non-production` and `assume.suggested` (every other question with a suggestion, listed with the answer it
-  takes). `estate.non-production` and `estate.host-verification` are no longer asked; a file that answers them keeps
-  them, and its answer still counts. `estate.module.*` is no longer asked (an answer to it still settles its
-  module's questions). Preflight's off limits question (`q4-off-limits`) suggests "nothing is off limits", and the vRA
-  question (`q9-vra-front-end`) suggests "replace": both are assumed. Possible defects that fail every time or are a
-  security problem are kept (`assume.defects`) instead of asked. A kept defect's answer reads `keep, as today`;
-  a kept timeout's is its recommendation, with its minutes. An answer that takes several choices joins them with
-  `; `.
-- `data/3-brief/brief.json`: `questions.later` and `input.later` (what waits for a wave); each of
-  `suspected_defects` has `today`, `asked`, `flag` (`security`, `fails` or null: listed as a note), `answer` and
-  `assumed`. The `assume.suggested` entry of `assumptions` has `takes`: each answer taken, with its question.
-- When vRA is replaced, the facts only its conversion needs (vRA's image and flavor mappings, who allocates a static
-  IP, how a resource no Kestra task creates is made) wait for that wave; a canceled create, day 2 scaling and the
-  deployments vRA already made get the suggestion that keeps today's behavior.
-- `vra.model`: a plan limit or quota stops the run (`LimitReached`, a `Stopped`, with `LIMIT["message"]`) instead of
-  waiting; set `model.WAIT_ON_LIMIT = True` to keep backing off and resuming, as 1.1.0 did. The command exits with 75
-  when a limit stopped it.
-- `data/run.log` (new): what each step did in detail. `data/model.json` (new): the model chosen in the terminal for
-  this export. `data/input-items.json`: each defect and spec question has `sort`.
-- The sanitized copy: `schema.org` and a few other public schema hosts are kept, and in a URL whose path is a
-  vendor's documented API path only the host is replaced (`https://<HOST-03>/api/now/table/...`). Placeholders can be
-  numbered differently from 1.1.0.
-- `data/1-assess/patterns.json`: new, the patterns the estate questions are built from.
-- The status line reads "The brief is ready. To start <waves>: answer N questions in answers.yaml" and counts
-  answers, not entries.
+What a program reading the tool's output, or a person editing `answers.yaml`, needs to know.
+
+**Signing is removed.** Migrations are agreed with Kestra directly, so the assessment has no signature.
+`answers.yaml` has no `signed_for` field (a 1.1.0 file that has one still loads; the value is ignored and not
+written back), `your_input.signature` and `your_input.set_signature` are gone, and no wave has an entry criterion
+about a signature. `brief.json` has no `approval` or `input.sign`. Where the brief said to sign, it now says the
+next step is to talk to Kestra about a proof of concept or the migration, with the help link.
+
+**`answers.yaml`, new sections and fields:**
+
+- `estate` (at the top): the estate questions (`estate.<topic>`) with their `options`, and the assumptions
+  (`assume.<topic>`) with `assumed`. An answer can carry `closes` (what it settled), and an open estate question
+  `settles` (what its suggestion would settle). An answer that takes several choices joins them with `; `.
+- `waves`: one entry per wave (`wave.<n>`, `wave.none`), with what's asked when it's converted under `each:`.
+- New IDs: `same.<defect or question>.<what>.<kind>` (a pattern asked once) and, from re-planning, `same.<what>`
+  and `added.<what>`. A defect or question in a pattern keeps its own ID, under the pattern's entry.
+- `missing.<code>` is no longer asked (it's in "Add to the package"); an answer to it moves to `no_longer_asked`,
+  as do answers to the three questions no longer asked (`q1-scope`, `q5-prior-attempts`, `q7-execution-history`).
+- A 1.1.0 file loads as before, and `your_input.load`, `items` and `state` keep their signatures; `state` also
+  reports an item another answer settled as answered.
+
+**The assumptions.** Each lists the items it settles under `each:`, each with `assumed:` (the answer it takes) and
+no answer line; write `answer:` under one to override it. They are `assume.defects` (every possible defect is kept;
+the answer reads `keep, as today`), `assume.behavior`, `assume.placeholders`, `assume.timeouts` (a kept timeout's
+answer is its recommendation, with its minutes), `assume.labels`, `assume.specs`, `assume.host-checks`,
+`assume.non-production` and `assume.suggested` (every other question with a suggestion, with the answer it takes).
+The off limits question (`q4-off-limits`) is assumed "nothing is off limits", and the vRA question
+(`q9-vra-front-end`) "replace", so a brief now plans the vRA replacement waves by default; the facts only their
+conversion needs (image and flavor mappings, who allocates a static IP, how a resource no Kestra task creates is
+made) wait for that wave. `estate.non-production`, `estate.host-verification` and `estate.module.*` are no longer
+asked; a file that answers them keeps its answers, and they still count.
+
+**The brief's new sections:** "Notes to fix after the migration", "Add to the package", "Assumptions", "Your
+answers about the estate" and "Next steps", and in `BRIEF.md`, Appendix C, every possible defect by what it does
+today. The status line reads "The brief is ready. To start <waves>: answer N questions in answers.yaml".
+
+**`data/3-brief/brief.json`:** new `questions` (the counts the file shows, with `later` for what waits for a wave),
+`input.later`, `estate_answers`, `assumptions` (the `assume.suggested` entry has `takes`: each answer taken, with
+its question), `package_additions` and `started_outside`. Each of `suspected_defects` has `today`, `asked`, `flag`
+(`security`, `fails`, or null), `answer` and `assumed`. A wave's criterion for missing code closes by `package`
+(adding the code), not by a decision.
+
+**Public values the sanitizer no longer redacts.** `schema.org`, `purl.org`, `schemas.openxmlformats.org`,
+`xmlns.com` (each with or without `www.`) join the public schema hosts already kept (`www.w3.org`,
+`json-schema.org`, `schemas.microsoft.com` and the like). In a URL to your own server whose path is a vendor's
+documented API path (ServiceNow, F5, Infoblox, AWX, Avi, vCenter, Vault, Nuage, vRA), only the host is replaced:
+`https://<HOST-03>/api/now/table/...`. A webhook URL is still replaced whole. The placeholders in the sanitized copy
+can therefore be numbered differently from 1.1.0, and a model cache made with 1.1.0 misses the prompts that held
+those URLs.
+
+**Other files:** `data/run.log` (new, what each step did), `data/model.json` (new, the model chosen with `c` in the
+terminal for this export), `data/1-assess/patterns.json` (new, the patterns the estate questions are built from),
+and `data/input-items.json` (each defect and spec question has `sort`).
+
+**`vra.model`:** a plan limit or quota stops the run (`LimitReached`, a `Stopped`, with `LIMIT["message"]`) instead
+of waiting; set `model.WAIT_ON_LIMIT = True` to keep backing off and resuming, as 1.1.0 did. The command exits with
+75 when a limit stopped it. `model.pause` and `model.wait_for` are new. `model.Gate`'s `confirm` may return None
+(the input ended), which stops the run like a no.
 
 ### Behavior changes you will notice
 
 - **A run in a terminal asks the estate questions.** To run it unattended, add `--batch`.
-- **Fewer questions, and none needed after the analysis.** On the 46-workflow test estate, the terminal asks 4
-  questions before the analysis, then writes the brief; 1.1.0 left 149 answers to fill in `answers.yaml`. A later
-  run asks at most five questions, and `q` stops them.
-- **The run's own lines are shorter.** One line per step, and one progress line while the workflows are analyzed.
-  What each step did in detail is in `data/run.log`.
-- **Typed in a terminal, `run` asks before any billed call,** whatever the estimate, and also with `--yes`. Add
+- **Fewer questions, and none needed.** On the 46-workflow test estate, the terminal asks 4 questions before the
+  analysis, then writes the brief; 1.1.0 left 149 answers to fill in `answers.yaml`.
+- **Typed in a terminal, `run` asks before any billed call,** whatever the estimate and also with `--yes`. Add
   `--batch` to run without asking.
-- **Answering the estate questions writes the specs again, billed.** The answers are part of each workflow's prompt.
-  The cost estimate shows it before the first call. A run with no estate answers sends the same prompts as 1.1.0,
-  so its cached replies still count.
+- **Answering the estate questions writes the specs again, billed,** because the answers are part of each
+  workflow's prompt. The cost estimate shows it before the first call. A run with no estate answers sends the same
+  prompts as 1.1.0, so its cached replies still count.
 
 ## 1.1.0 (2026-10-24)
 
