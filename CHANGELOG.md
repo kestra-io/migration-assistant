@@ -67,6 +67,18 @@ assessed keeps every answer you gave.
 
 ### Fixes
 
+- **A model that can't be used stops the run and says why.** The Anthropic API key route, in an installation
+  without the `anthropic` extra, failed every call in silence and wrote a "needs a model" brief. Now a provider that
+  can't work on this machine is refused when the run starts, with how to fix it (and the terminal doesn't offer it).
+  A key that is missing or rejected, a model that doesn't exist, or no network stops the run at the first call, in
+  plain words. If a model was chosen and any workflow couldn't be analyzed, no brief is written: the run says how
+  many and why, and keeps what it has. A model remembered for the export that can no longer be used is set aside,
+  with a note, instead of blocking every run.
+- **The tool's own output is never read as input.** A `kestra-assessment.zip` left in the export folder (the results
+  zipped to share them) stopped the run with a traceback. A ZIP that holds a `kestra-assessment/` folder is now
+  skipped like the folder itself, wherever it sits. Any other file the tool can't read no longer stops anything:
+  the first screen and the brief list it under "Not in the package" and "Add to the package", with why, and the run
+  goes on.
 - **End of input never spends.** Ctrl+D (or stdin closing) at the cost question counted as Enter, which goes on. It
   now stops before any billed call and says "Stopped before anything was billed." The same at a question whose
   answer leads to a model call. At the model question it crashed the run; there, as at every other question, it now
@@ -145,7 +157,14 @@ those URLs.
 terminal for this export), `data/1-assess/patterns.json` (new, the patterns the estate questions are built from),
 and `data/input-items.json` (each defect and spec question has `sort`).
 
-**`vra.model`:** a plan limit or quota stops the run (`LimitReached`, a `Stopped`, with `LIMIT["message"]`) instead
+**`data/3-brief/brief.json`** also has `unreadable` (each file in the export folder that couldn't be read, with
+`file` and `why`), and each of `data/0-preflight/preflight.json`'s `export.failures` has `file` and `why`.
+
+**`vra.model`:** a model that can't be used (no key or a rejected one, no such model, the provider's package
+missing, no network) stops the run at the first call: `Unavailable`, a `Stopped`, with its plain-words reason in
+`LIMIT["message"]`; the command exits with 69. When some workflows could not be analyzed, the command exits with 1
+and writes no brief. Both and `LimitReached` are a `Halted`, with the exit code in `LIMIT["code"]`. A plan limit or
+quota stops the run (`LimitReached`, a `Stopped`, with `LIMIT["message"]`) instead
 of waiting; set `model.WAIT_ON_LIMIT = True` to keep backing off and resuming, as 1.1.0 did. The command exits with
 75 when a limit stopped it. `model.pause` and `model.wait_for` are new. `model.Gate`'s `confirm` may return None
 (the input ended), which stops the run like a no.

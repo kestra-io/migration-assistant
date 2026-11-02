@@ -77,13 +77,13 @@ Each question has numbered choices. The first is what the code or the model sugg
 
 A question with a sensible answer isn't asked: the brief assumes it. The converted flows do what the workflows do today, so one can be tested against the other, and fixes come afterwards. Possible defects are kept. One that makes its workflow fail every time, or a security problem such as a credential written to a log, is listed in the brief as a note to fix after the migration. Certificate and host checks that vRO turned off stay off, with a security note. Flows are tested in a simulated lab first, then against a non-production instance where one exists. The brief also assumes that nothing is off limits, that Kestra replaces vRA, that Kestra Enterprise Edition is available, and that what the code suggests is right. It covers what's in the export, and its next steps suggest checking each workflow's run history to find the ones that no longer run. A question about a value the sanitized copy hides isn't asked, since the real value is in the export. A detail of how one flow is built waits for the wave that converts it. Each assumption is written in `answers.yaml` with the answer it takes, and you can change any of them there.
 
-If your Claude plan's limit (or your API key's rate limit) runs out during the analysis, the run stops and says so. Finished work is kept, so run the same command again once the limit resets.
+If your Claude plan's limit (or your API key's rate limit) runs out during the analysis, the run stops and says so. Finished work is kept, so run the same command again once the limit resets. If the model can't be used at all (no API key or a rejected one, a model name that doesn't exist, no network, or the `anthropic` extra not installed), the run stops at the first call and says which, and writes no brief from an analysis that didn't happen.
 
 To answer only in the file, add `--batch`. A run with no terminal attached never asks either.
 
 ## The output folder
 
-The tool writes its output to `kestra-assessment/` inside the export folder, and leaves that folder out when it reads the export. If the export folder isn't writable, choose another location with `--out`.
+The tool writes its output to `kestra-assessment/` inside the export folder, and leaves that folder out when it reads the export, as it does a ZIP of it. If the export folder isn't writable, choose another location with `--out`.
 
 ```
 acme/kestra-assessment/
@@ -102,7 +102,7 @@ The brief follows the terminology of the [vRA migration guide](https://kestra.io
 - **Recommendation:** whether to convert, use a mixed approach, or rebuild; how many workflows need a conversion of their own once near-duplicates and wrappers are counted out; how many elements convert **Direct**, need a **Redesign**, or wait on a decision; and a table of what each element type becomes in Kestra.
 - **What we need from you:** the questions still open, grouped and counted, and the workflows that nothing in the export calls or starts (retire candidates).
 - **Notes to fix after the migration:** the security problems kept as today and the possible defects that make a workflow fail every time.
-- **Add to the package:** code the workflows call that the export doesn't hold, such as an action module, a workflow on another vRO cluster, or the configuration elements a module reads at run time, with what calls it and how to add it. This isn't a question.
+- **Add to the package:** code the workflows call that the export doesn't hold, such as an action module, a workflow on another vRO cluster, or the configuration elements a module reads at run time, with what calls it and how to add it. This isn't a question. Any file in the export folder the tool couldn't read is listed here too, with why (the run goes on without it).
 - **Assumptions:** each one the brief makes, and each answer taken from a suggestion, with how to change it.
 - **Your answers about the estate:** what you said in the estate questions.
 - **The plan:** the proposed waves, with a summary of each.
