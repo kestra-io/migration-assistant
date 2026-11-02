@@ -23,6 +23,20 @@ sys.path.insert(0, ROOT)
 CONFORMANCE = os.path.join(ROOT, "tests", "vra", "conformance")
 
 
+@pytest.fixture(autouse=True)
+def _model_state(monkeypatch):
+    """Each test starts with no run stopped or halted, and with the `anthropic` package counted as installed, so a
+    test that stands in for the Anthropic API does not need the SDK (test_model_unavailable.py checks both cases)."""
+    from kestra_migration_assistant import config as K
+    from kestra_migration_assistant.vra import model as M
+    M.STOP.clear()
+    M.LIMIT["message"] = M.LIMIT["code"] = None
+    monkeypatch.setattr(K, "has_anthropic_package", lambda: True, raising=False)
+    yield
+    M.STOP.clear()
+    M.LIMIT["message"] = M.LIMIT["code"] = None
+
+
 @pytest.fixture(scope="session")
 def conformance_stages(tmp_path_factory):
     built: dict[str, str] = {}

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import sys
 import time
 import zipfile
@@ -106,7 +105,7 @@ def run_stage(s: str) -> str:
         return (f"{_n(len(est), 'estate question')}, {n_open} open; {_n(n_as, 'assumption')}"
                 + (f"; {_n(miss, 'piece')} of code to add to the package" if miss else ""))
     elif s == "understand":
-        from kestra_migration_assistant.vra import understand
+        from kestra_migration_assistant.vra import model, understand
         r = understand.run_estate()
         kept = [k for k, v in r["errors"].items() if "since --no-model" in str(v)]
         unread = [k for k, v in r["errors"].items() if str(v).startswith("needs a model")]
@@ -123,6 +122,15 @@ def run_stage(s: str) -> str:
         for k, v in r["errors"].items():
             if k not in unread:
                 print(f"  {'kept, stale' if 'since --no-model' in str(v) else 'failed'}: {k}: {v}")
+        broken = [k for k in r["errors"] if k not in kept and k not in unread]
+        if broken and not os.environ.get("VRO_NO_MODEL"):
+            # a model was chosen (and, typed in a terminal, its cost agreed): no brief from an analysis that did
+            # not happen, where every workflow it missed would read "needs a model"
+            first = str(r["errors"][broken[0]]).split(": ", 1)[-1][:300]
+            total = len(broken) + have
+            model.halt(f"{len(broken)} of {total} workflows could not be analyzed, so no brief was written. The "
+                       f"first error: {first} Finished work is kept: run the same command again (what failed is "
+                       f"in {C.rel(os.path.join(C.DATA, 'run.log'))}).", model.INCOMPLETE_EXIT)
         failed = len(r["errors"]) - len(kept) - len(unread)
         if unread and not have:
             return f"no specs: what each of the {len(unread)} workflows does needs a model"
@@ -257,7 +265,7 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
         banner.show()
     from kestra_migration_assistant.vra import model
     model.STOP.clear()
-    model.LIMIT["message"] = None
+    model.LIMIT["message"] = model.LIMIT["code"] = None
     if asking:                          # the model chosen for this estate is kept in its output folder
         try:
             C.configure_export(args.export, args.out)
@@ -323,9 +331,9 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
     except (KeyboardInterrupt, model.Stopped):
         model.stop()                    # the calls in flight end now; nothing new starts
         PROGRESS.stop()
-        limit = model.LIMIT["message"]  # the model's limit ran out (any thread may have raised first)
+        limit = model.LIMIT["message"]  # why the run halted (any thread may have raised first): a limit, no model
         print(f"\n{limit or stopped_message()}", flush=True)
-        code = LIMIT_EXIT if limit else 130
+        code = (model.LIMIT["code"] or LIMIT_EXIT) if limit else 130
         if exit_now:
             sys.stderr.flush()
             os._exit(code)              # a call still in flight (an HTTP request) would hold the process otherwise
@@ -395,10 +403,11 @@ def set_up_model(args: argparse.Namespace, prog: str, asking: bool = False) -> b
     except K.ConfigError as e:
         print(f"{prog}: {e}", file=sys.stderr)
         return False
-    if s.provider == "claude-code" and not shutil.which("claude"):
-        print(f"{prog}: provider claude-code ({s.source.get('provider')}) needs the `claude` command, and it is not "
-              "installed. Install Claude Code, or choose another provider (--provider, or the config file: "
-              f"{s.path})", file=sys.stderr)
+    why = K.unusable(s)
+    if why:
+        print(f"{prog}: The model cannot be used ({s.provider}, {s.source.get('provider')}): {why} Or choose another "
+              f"provider (--provider, or the config file: {s.path}), or add --no-model to run without one.",
+              file=sys.stderr)
         return False
     model.configure(s)
     if not s.provider:

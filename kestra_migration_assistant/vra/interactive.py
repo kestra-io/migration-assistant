@@ -172,7 +172,7 @@ def model_choices(s) -> list[dict]:
     if s.provider:
         add(s.provider, s.model, how.get(s.provider) or s.base_url or s.provider)
     claude = s.provider == "claude-code" or (bool(shutil.which("claude")) and not K.in_container())
-    keyed = s.provider == "anthropic" or bool(os.environ.get("ANTHROPIC_API_KEY"))
+    keyed = s.provider == "anthropic" or (bool(os.environ.get("ANTHROPIC_API_KEY")) and K.has_anthropic_package())
     for provider, ok in (("claude-code", claude), ("anthropic", keyed)):
         if ok:
             for m in ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"):
@@ -217,6 +217,10 @@ def choose_model(term: Terminal, s):
             return s
     else:
         s = dataclasses.replace(s, model=o["model"])
+    why = K.unusable(s)
+    if why:
+        term.say(f"That one cannot be used: {why}", "  ")
+        return M.settings()
     M.configure(s)
     remember_model(o["provider"], o["model"])
     term.say(f"Using {s.describe()} for this estate from now on.", "  ")

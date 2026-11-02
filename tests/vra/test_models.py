@@ -33,7 +33,7 @@ def test_provider_selection():
 
 def test_api_key_provider_needs_a_key(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    with pytest.raises(M.ModelError, match="ANTHROPIC_API_KEY"):
+    with pytest.raises(M.Unavailable, match="ANTHROPIC_API_KEY"):
         M.AnthropicAPIProvider({"provider": "anthropic", "auth": "api-key", "model": "m"}).invoke("p", SCHEMA)
 
 
@@ -41,7 +41,7 @@ def test_openai_provider_reads_the_named_variable(monkeypatch):
     monkeypatch.delenv("VRO_TEST_KEY", raising=False)
     s = K.Settings("openai-compatible", model="m", base_url="http://127.0.0.1:9", api_key_env="VRO_TEST_KEY")
     p = M.OpenAICompatibleProvider(M.call_config(s), s)
-    with pytest.raises(M.ModelError, match="VRO_TEST_KEY"):
+    with pytest.raises(M.Unavailable, match="VRO_TEST_KEY"):
         p.invoke("p", SCHEMA)
 
 

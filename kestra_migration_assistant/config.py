@@ -67,6 +67,31 @@ class ConfigError(ValueError):
     pass
 
 
+def has_anthropic_package() -> bool:
+    import importlib.util
+    return importlib.util.find_spec("anthropic") is not None
+
+
+ANTHROPIC_MISSING = ("the anthropic provider needs the `anthropic` package, and this installation does not have it. "
+                     "Install the tool with it: " + install_command("anthropic") + " (with uv; pip and pipx take the "
+                     "same `kestra-migration-assistant[anthropic] @ git+...` form).")
+
+
+def unusable(s: Settings) -> str | None:
+    """Why these settings cannot make a model call on this machine, in plain words, before anything is asked or
+    billed; None when they can (whether the key is accepted is known at the first call)."""
+    import shutil
+    if s.provider == "claude-code" and not shutil.which("claude"):
+        return "Claude Code is not installed (the `claude` command), and the claude-code provider uses it."
+    if s.provider == "anthropic":
+        if not has_anthropic_package():
+            return ANTHROPIC_MISSING
+        if not s.key():
+            return (f"there is no Anthropic API key: {s.api_key_env or 'ANTHROPIC_API_KEY'} is not set in the "
+                    "environment.")
+    return None
+
+
 def in_container() -> bool:
     return os.environ.get(CONTAINER_ENV) == "1"
 

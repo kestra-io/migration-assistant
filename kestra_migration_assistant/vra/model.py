@@ -35,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -184,12 +185,26 @@ def _check_stop() -> None:
         raise Stopped()
 
 
-class LimitReached(Stopped):
-    """The model's quota, plan limit or rate limit ran out: the run stops cleanly, keeping finished work. A Stopped,
-    so every stage passes it up like Ctrl+C; LIMIT["message"] says what to do."""
+class Halted(Stopped):
+    """The run stops for a reason it says once, in LIMIT["message"], with the exit code in LIMIT["code"]: finished
+    work is kept and nothing is written from the analysis after it. A Stopped, so every stage passes it up like
+    Ctrl+C, and a stage that falls back when a call fails does not swallow it."""
 
 
-LIMIT: dict = {"message": None}
+class LimitReached(Halted):
+    """The model's quota, plan limit or rate limit ran out: the same command works once it resets."""
+
+
+class Unavailable(Halted):
+    """The model cannot be used at all: no API key or a rejected one, no such model, the provider's package not
+    installed, or no network. Every call would fail the same way, so the run stops at the first one, before a brief
+    is written without the analysis the person chose a model and agreed the cost for."""
+
+
+LIMIT: dict = {"message": None, "code": None}
+LIMIT_EXIT = 75                 # EX_TEMPFAIL: the limit ran out; the same command works once it resets
+UNAVAILABLE_EXIT = 69           # EX_UNAVAILABLE: the model cannot be used until something is fixed
+INCOMPLETE_EXIT = 1             # some workflows could not be analyzed: no brief from an incomplete analysis
 
 
 def pause(seconds: float) -> None:
@@ -206,12 +221,51 @@ def wait_for(event: threading.Event) -> None:
         _check_stop()
 
 
-def _limit_reached(message: str) -> None:
+def halt(message: str, code: int, kind: type[Halted] = Halted) -> None:
     """Stop every call (the ones in flight end now) and say why, once."""
     if LIMIT["message"] is None:
-        LIMIT["message"] = message
+        LIMIT["message"], LIMIT["code"] = message, code
     stop()
-    raise LimitReached(message)
+    raise kind(message)
+
+
+def _limit_reached(message: str) -> None:
+    halt(message, LIMIT_EXIT, LimitReached)
+
+
+AFTER_FIX = ("Nothing was analyzed with it, and no brief was written from this run; finished work is kept. Fix it, "
+             "then run the same command again.")
+
+
+def unavailable(why: str) -> None:
+    """The model cannot be used (see Unavailable): say why in plain words, and stop."""
+    halt(f"The model cannot be used: {why} {AFTER_FIX}", UNAVAILABLE_EXIT, Unavailable)
+
+
+AUTH_MARKERS = ("authentication", "invalid x-api-key", "invalid api key", "please run /login", "not logged in",
+                "permission_error", "unauthorized", "forbidden")
+NOT_FOUND_MARKERS = ("not_found_error", "model not found", "no such model", "issue with the selected model",
+                     "unknown model", "model_not_found")
+
+
+def unusable(provider: str, model: str, text: str, where: str = "") -> str | None:
+    """Plain words for a provider error that every call would hit (a key missing or rejected, no such model), or
+    None for one that is about this call only."""
+    t = (text or "").lower()
+    status = {int(c) for c in re.findall(r"(?<![\d.])(40[134])(?![\d.])", t)}
+    if (404 in status or any(m in t for m in NOT_FOUND_MARKERS)) and not status & {401, 403}:
+        if provider == "openai-compatible":
+            return (f"{where or 'the server'} has no model named {model}, or the base URL is wrong (it ends in "
+                    f"/v1). Check --model and --base-url, or model and base_url in the config file.")
+        return f"there is no model named {model}. Check --model, or model in the config file."
+    if status & {401, 403} or any(m in t for m in AUTH_MARKERS):
+        if provider == "claude-code":
+            return "your Claude Code login was refused. Run `claude`, log in, and check it with `claude auth status`."
+        if provider == "anthropic":
+            return ("the Anthropic API rejected the API key. Check ANTHROPIC_API_KEY (or the variable api_key_env "
+                    "names in the config file).")
+        return f"{where or 'the server'} rejected the API key. Check OPENAI_API_KEY (or api_key_env in the config file)."
+    return None
 
 
 PLAN_MARKERS = ("session limit", "usage limit", "weekly limit", "hit your", "limit reached", "resets ")
@@ -363,7 +417,7 @@ class ClaudeCodeProvider(Provider):
     def invoke(self, prompt: str, schema: dict) -> dict:
         exe = shutil.which("claude")
         if not exe:
-            raise ModelError("provider claude-code needs the `claude` command, and it is not installed")
+            unavailable("Claude Code is not installed (the `claude` command), and the claude-code provider uses it.")
         args = [exe, "-p", prompt, *BASE_ARGS, "--json-schema", json.dumps(schema), "--model", self.cfg["model"]]
         workdir = tempfile.mkdtemp(prefix="kestra-migrate-call-")
         t0 = time.time()
@@ -385,6 +439,9 @@ class ClaudeCodeProvider(Provider):
         _check_stop()                                   # ended by stop(): its reply, if any, is not used
         wall_ms = int((time.time() - t0) * 1000)
         if proc.returncode != 0 and not out.strip():
+            why = unusable("claude-code", self.cfg["model"], err)
+            if why:
+                unavailable(why)
             raise ModelError(f"claude exited {proc.returncode}: {err[:400]}")
         try:
             env = json.loads(out)
@@ -406,14 +463,13 @@ class AnthropicAPIProvider(Provider):
     def invoke(self, prompt: str, schema: dict) -> dict:
         key = self.settings.key() if self.settings else os.environ.get("ANTHROPIC_API_KEY")
         if not key:
-            raise ModelError("provider anthropic needs an API key (api_key_env in the config file, "
-                             "ANTHROPIC_API_KEY by default)")
+            unavailable("there is no Anthropic API key. Set ANTHROPIC_API_KEY (or the variable api_key_env names in "
+                        "the config file).")
         try:
             import anthropic
-        except ImportError as e:
+        except ImportError:
             from kestra_migration_assistant import config as K
-            raise ModelError(f"provider anthropic needs the `anthropic` package: {K.install_command('anthropic')} "
-                             "(needs git), or pip install anthropic") from e
+            unavailable(K.ANTHROPIC_MISSING)
         client = anthropic.Anthropic(api_key=key, timeout=timeout_of(self.cfg))
         t0 = time.time()
         try:
@@ -426,9 +482,14 @@ class AnthropicAPIProvider(Provider):
             return {"result": f"rate limit: {e}", "is_error": True}
         except anthropic.APIStatusError as e:
             txt = f"{e.status_code}: {e}"
+            if e.status_code in (401, 403):
+                unavailable(unusable("anthropic", self.cfg["model"], "401") or txt)
+            if e.status_code == 404:
+                unavailable(unusable("anthropic", self.cfg["model"], "404") or txt)
             return {"result": ("overloaded " + txt) if e.status_code >= 500 else txt, "is_error": True}
         except anthropic.APIConnectionError as e:
-            raise ModelError(f"cannot reach the Anthropic API: {e}") from e
+            unavailable(f"the Anthropic API cannot be reached ({e}). Check the network connection, or a proxy that "
+                        "blocks api.anthropic.com.")
         if r.stop_reason == "refusal":
             return {"result": "the model declined to answer (refusal)", "is_error": True}
         text = next((b.text for b in r.content if b.type == "text"), "")
@@ -459,7 +520,7 @@ class OpenAICompatibleProvider(Provider):
         if key:
             headers["Authorization"] = f"Bearer {key}"
         elif self.settings and self.settings.api_key_env and self.settings.api_key_env != "OPENAI_API_KEY":
-            raise ModelError(f"api_key_env {self.settings.api_key_env} is not set in the environment")
+            unavailable(f"there is no API key: {self.settings.api_key_env} (api_key_env in the config file) is not set.")
         body: dict = {"model": self.cfg["model"], "messages": [{"role": "user", "content": prompt}],
                       "response_format": {"type": "json_schema",
                                           "json_schema": {"name": "reply", "schema": schema, "strict": False}}}
@@ -472,6 +533,9 @@ class OpenAICompatibleProvider(Provider):
             data = self._post(body, headers)
         if "_status" in data:
             code = data["_status"]
+            if code in (401, 403, 404):
+                unavailable(unusable("openai-compatible", self.cfg["model"], f"{code} {data['_detail']}",
+                                     self.cfg["base_url"]) or f"HTTP {code}: {data['_detail']}")
             quota = "rate limit " if code == 429 else ("overloaded " if code >= 500 else "")
             return {"result": f"{quota}HTTP {code}: {data['_detail']}", "is_error": True}
         cut_short(body["messages"][0]["content"], data.get("usage"), self.cfg["base_url"])
@@ -488,7 +552,9 @@ class OpenAICompatibleProvider(Provider):
         except urllib.error.HTTPError as e:
             return {"_status": e.code, "_detail": e.read()[:300].decode("utf-8", "replace")}
         except urllib.error.URLError as e:
-            raise ModelError(f"{self.cfg['base_url']}: {e.reason}") from e
+            unavailable(f"{self.cfg['base_url']} cannot be reached ({e.reason}). Check that the server is running and "
+                        "the base URL, and the network connection.")
+            raise                                       # not reached: unavailable() raises
         except json.JSONDecodeError as e:
             raise ModelError(f"{self.cfg['base_url']} did not return JSON: {e}") from e
 
@@ -723,6 +789,10 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
                 rec["error"] = text[:300]
                 rec["quota"] = _is_quota(text)
                 _log(rec)
+                why = None if _is_quota(text) else unusable(cfg["provider"] if cfg["auth"] != "claude-code"
+                                                             else "claude-code", cfg["model"], text, cfg.get("base_url") or "")
+                if why:
+                    unavailable(why)
                 if _is_quota(text) and not WAIT_ON_LIMIT:
                     # Not a conversion failure: the run stops cleanly, after one short retry when the limit may lift
                     # in seconds (a rate limit, a busy server)
