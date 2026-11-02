@@ -24,13 +24,14 @@ def fingerprint(spec: dict | None) -> str | None:
     return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()[:12]
 
 
-def input_items(specs: dict[str, dict | None], wf: dict) -> list[dict]:
-    """One review item per spec."""
+def input_items(specs: dict[str, dict | None], wf: dict, tri: dict | None = None) -> list[dict]:
+    """One review item per spec, except for a workflow that is not migrated (retired, or left out by its owner):
+    nobody needs to check a spec nothing is converted from."""
     from . import your_input as Y
     out = []
     for u in sorted(specs, key=lambda u: wf[u]["short"]):
         s = specs[u]
-        if not s:
+        if not s or ((tri or {}).get(u) or {}).get("outcome") == "Retire":
             continue
         conf = s.get("confidence")
         it = Y.item(G.review_key(wf[u]["short"]), "review",

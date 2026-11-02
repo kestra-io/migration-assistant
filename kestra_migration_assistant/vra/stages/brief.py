@@ -122,7 +122,7 @@ def run() -> dict:
     # everything a person answers goes in your-input/answers.yaml; register it, then read it back
     asked = G.entries(plan)
     from . import planner
-    registered = G.input_items(asked) + spec_question_items(qgroups, wf, tri, qkeys, asked) + RV.input_items(specs, wf)
+    registered = G.input_items(asked) + spec_question_items(qgroups, wf, tri, qkeys, asked) + RV.input_items(specs, wf, tri)
     planner.assign_patterns(registered, assess, tri)
     # what keeps today's behavior is assumed, what only a wave's conversion needs waits for it, the rest is asked
     from . import defaults
