@@ -66,7 +66,10 @@ def _parse(pm: dict) -> dict:
     # Script modules again, for their parameter types (the index keeps only the script).
     actions: list[dict] = []
     for label, path in inputs.items():
-        elements, _ = formats.read_any(path)
+        try:
+            elements, _ = formats.read_any(path)
+        except Exception:
+            continue                    # an input that cannot be read: Preflight lists it, with why
         for e in elements:
             if e.kind not in ("ScriptModule", "ScriptingAction"):
                 continue

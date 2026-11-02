@@ -262,12 +262,14 @@ def check_export() -> dict:
     unreadable = sanitized.get("unreadable") or {}
     for label, path in inputs.items():
         if label in unreadable:
-            failures.append({"source": label, "path": C.rel(C.export_of(path)), "error": unreadable[label]})
+            failures.append({"source": label, "path": C.rel(C.export_of(path)), "error": unreadable[label],
+                             "file": os.path.basename(C.export_of(path)), "why": formats.plain_reason(unreadable[label])})
             continue
         try:
             elements, summary = formats.read_any(path)
         except Exception as exc:
-            failures.append({"source": label, "path": C.rel(C.export_of(path)), "error": f"{type(exc).__name__}: {exc}"})
+            failures.append({"source": label, "path": C.rel(C.export_of(path)), "error": f"{type(exc).__name__}: {exc}",
+                             "file": os.path.basename(C.export_of(path)), "why": formats.plain_reason(str(exc))})
             continue
         kinds = Counter(e.kind for e in elements)
         totals.update(kinds)

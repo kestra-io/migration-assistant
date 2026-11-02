@@ -436,7 +436,7 @@ def _sanitize_tree(r: Redactor, src: str, dst: str, rel_label: str, touched: lis
         dirs[:] = [d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(dp, d))
                    and not outdir.skipped(dp, d)]
         for fn in sorted(files):
-            if fn.startswith("."):
+            if fn.startswith(".") or outdir.own_output_zip(os.path.join(dp, fn)):
                 continue
             p = os.path.join(dp, fn)
             rel = os.path.relpath(p, src)

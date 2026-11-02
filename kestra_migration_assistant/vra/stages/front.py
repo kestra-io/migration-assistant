@@ -1312,10 +1312,17 @@ def _estate_blocks(brief: dict) -> list[tuple]:
     """The estate answers and assumptions, and what to add to the package, each under its own heading."""
     B: list[tuple] = []
     pl = package_lines(brief)
+    unread = brief.get("unreadable") or []
+    if pl or unread:
+        B.append(("h2", "Add to the package"))
     if pl:
-        B += [("h2", "Add to the package"),
-              ("p", "These are called by the workflows but are not in the export. No question is asked about them: "
+        B += [("p", "These are called by the workflows but are not in the export. No question is asked about them: "
                     "add each one and run again, and its calls are read like the rest."), ("ul", pl)]
+    if unread:
+        B += [("p", f"{_s(len(unread), 'This file', 'These files')} in the export folder could not be read, so what "
+                    f"{_s(len(unread), 'it holds is', 'they hold is')} not in this brief. Fix or export "
+                    f"{_s(len(unread), 'it', 'each one')} again and run the assessment again."),
+              ("ul", [f"`{u['file']}`: {u['why']}" for u in unread])]
     al = assumption_lines(brief)
     if al:
         B += [("h2", "Assumptions"),

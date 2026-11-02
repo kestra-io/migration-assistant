@@ -262,6 +262,17 @@ def first_screen(term: Terminal, use_model: bool, n_questions: int) -> None:
                  f"{'isn' if one else 'aren'}'t in it. You can carry on: the analysis runs without "
                  f"{'it' if one else 'them'}, but the workflows that call {'it' if one else 'them'} get less certain "
                  f"results. The brief lists {'it' if one else 'each one'} and how to add it.")
+    unread = exp.get("failures") or []
+    if unread:
+        from .parse import formats
+        term.say()
+        one = len(unread) == 1
+        term.say(f"Not in the package: {_n(len(unread), 'file')} in the export folder could not be read, so what "
+                 f"{'it holds' if one else 'they hold'} is not in the assessment. The run goes on without "
+                 f"{'it' if one else 'them'}:")
+        for f in unread:
+            name = f.get("file") or os.path.basename(f.get("path") or f.get("source") or "")
+            term.say(f"- {name}: {f.get('why') or formats.plain_reason(f.get('error') or '')}", "  ")
     term.say()
     if use_model:
         term.say("The assessment only reads these files: it never connects to or runs anything on your systems. Only "

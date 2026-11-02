@@ -403,8 +403,13 @@ def estate_summary(loaded: dict, retired: set[str] | None = None) -> dict:
     pj, aj = os.path.join(C.ASSESS, "patterns.json"), os.path.join(C.ASSESS, "assess.json")
     pat = patterns.run() if not os.path.exists(pj) or C.mtime(pj) < C.mtime(aj) else patterns.load()
     adds = [a for a in pat.get("missing") or [] if not set(a["called_by"]) <= (retired or set())]
+    from ..parse import formats
+    pf = os.path.join(C.PRE, "preflight.json")
+    failed = ((C.read_json(pf).get("export") or {}).get("failures") or []) if os.path.exists(pf) else []
+    unread = [{"file": f.get("file") or os.path.basename(f.get("path") or f["source"]),
+               "why": f.get("why") or formats.plain_reason(f.get("error") or "")} for f in failed]
     return {"questions": Y.count(loaded), "estate_answers": estate, "assumptions": assumed,
-            "package_additions": adds}
+            "package_additions": adds, "unreadable": unread}
 
 
 def _write_csv(assess, tri, act_tri, specs):
