@@ -32,7 +32,6 @@ That's all you need for a first result. If you're logged in to Claude Code, the 
 
 - **[The vRA migration guide](https://kestra.io/resources/migration/vra?utm_source=migration-assistant&utm_medium=readme)**: the full method this tool follows, from assessing your estate to switching vRA off.
 - **[A sample migration brief](https://kestra.io/resources/migration/vra/assistant?utm_source=migration-assistant&utm_medium=readme)**: see what the tool produces before you run it.
-- **Live walkthrough, with Q&A:** from the sample export to a converted flow tested in the VMware Migration Lab. [Europe](https://watch.getcontrast.io/register/kestra-leaving-vra-without-the-big-rewrite), Wednesday, November 4 at 2 PM CET. [Americas](https://watch.getcontrast.io/register/kestra-leaving-vra-without-the-big-rewrite-9061c391), Thursday, November 5 at 11 AM PT.
 - **[Get help running it](https://kestra.io/resources/migration/vra/assistant?utm_source=migration-assistant&utm_medium=readme)**, or ask us to run it for you.
 
 ## What the assessment does
