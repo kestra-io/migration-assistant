@@ -1,0 +1,86 @@
+# The release's smoke test on Linux, macOS and Windows: the built wheel installed in a clean environment, then
+# `kestra-migrate vra run --no-model` on a synthetic conformance estate (scripts/smoke.sh). Python 3.10, the oldest
+# the package supports, on Linux; 3.14, the newest, on Windows.
+#
+#   release.yml   calls it with the wheel the release built; nothing is published unless all three pass
+#   release-*     every push to a release branch builds a wheel here and runs the same test, so a candidate is
+#                 tested on the three platforms before it is tagged
+#
+# Actions are pinned to a commit; the tag they were at is in the comment.
+name: smoke
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: the package version the wheel in the `packages` artifact carries
+        required: true
+        type: string
+  push:
+    branches: ["release-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  wheel:
+    name: build the wheel
+    if: inputs.version == ''
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+      - id: version
+        run: |
+          uv build --quiet --wheel -o dist
+          echo "version=$(uv run --frozen python -c 'import kestra_migration_assistant as k; print(k.__version__)')" \
+            >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-wheel
+          path: dist/*.whl
+          if-no-files-found: error
+
+  smoke:
+    name: smoke test, ${{ matrix.os }}, Python ${{ matrix.python }}
+    needs: wheel
+    # the wheel job is skipped when release.yml calls this with its own wheel
+    if: ${{ !cancelled() && (needs.wheel.result == 'success' || needs.wheel.result == 'skipped') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, python: "3.10"}
+          - {os: macos-latest, python: "3.12"}
+          - {os: windows-latest, python: "3.14"}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash               # Git Bash on Windows: scripts/smoke.sh is a POSIX shell script
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.version != '' && 'packages' || 'smoke-wheel' }}
+          path: dist
+      - name: Smoke test, the wheel in a clean environment
+        env:
+          VERSION: ${{ inputs.version != '' && inputs.version || needs.wheel.outputs.version }}
+        run: |
+          python -m venv "$RUNNER_TEMP/clean"
+          bin="$RUNNER_TEMP/clean/bin"
+          [ -d "$bin" ] || bin="$RUNNER_TEMP/clean/Scripts"          # Windows
+          "$bin/python" -c 'import sys; print("Python", sys.version)'
+          "$bin/python" -m pip install --quiet dist/kestra_migration_assistant-*.whl
+          scripts/smoke.sh "$RUNNER_TEMP/smoke" "$VERSION" "$bin/kestra-migrate"

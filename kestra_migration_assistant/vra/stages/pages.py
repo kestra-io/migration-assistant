@@ -146,7 +146,7 @@ HEAD_SLOT = "<!--report-source-->"
 
 def _edit_note(rel: str) -> str:
     if rel.endswith("BRIEF.md"):
-        return ("The brief to download; answers and the signature go in your-input/answers.yaml. "
+        return ("The brief to download; answers go in your-input/answers.yaml. "
                 "This page is a copy, regenerated on every run.")
     if rel.endswith("WALKTHROUGH.md"):
         return "Hand-written; this page is a copy."

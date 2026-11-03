@@ -98,7 +98,7 @@ the brief can only say which workflows nothing *in the export* calls, not which 
 
 | Missing from the export | Why it matters | How to get it **(to confirm with a vRO expert)** | Preflight question |
 |---|---|---|---|
-| **Run history**, twelve months: workflow ID, start time, result | The retire rule ("no executions in twelve months") cannot be tested without it | vRO workflow tokens (the Orchestrator REST API `/vco/api/workflows/{id}/executions`, or the vRO database), or vRA deployment and request history. A CSV is enough | Q7 |
+| **Run history**, twelve months: workflow ID, start time, result | The retire rule ("no executions in twelve months") cannot be tested without it | vRO workflow tokens (the Orchestrator REST API `/vco/api/workflows/{id}/executions`, or the vRO database), or vRA deployment and request history. Check it for each workflow, and retire the ones that no longer run in `corrections.yaml` | The brief's next steps (no longer asked since 1.2.0) |
 | **vRA catalog items** and the workflows behind them | These are entry points: a workflow a catalog item starts is used even if nothing in vRO calls it | The `.vra-ng` content export (section 4), or `entry-points.yaml` | Q2 |
 | **Event broker subscriptions** | Also entry points (for example a workflow that runs after every VM is provisioned). They feed the trigger plan (the vRA flow page): what starts each workflow, whether vRA waits for it, and how that maps in Kestra. They never decide the workflow's outcome, which is judged on its logic | The `.vra-ng` content export (section 4), or `entry-points.yaml` | Q2 |
 | **Whether vRA stays** as the front end or is replaced | Kept, each subscription calls a Kestra webhook; replaced, catalog items become Kestra Apps and cloud templates flows | A decision, not an export | Q9 |
@@ -113,34 +113,74 @@ the only file in `your-input/`. It looks like this:
 ```yaml
 # Answer what's open, then run: kestra-migrate vra run acme
 
+estate:
+  - id: estate.config
+    question: 36 workflows call modules named getEndpoint and getDatacenterSettings, which pick a configuration element at run time (under Infra/Endpoints and Infra/Datacenters), for each environment or site. Where should the converted flows read those settings?
+    options:
+      - 'namespace variables, one set per environment: values a flow reads by name, like the attributes of a configuration element, set once for production and once for each other environment'
+      - 'Kestra''s KV store, one entry per element: key-value pairs a flow reads and can also change while it runs, like a configuration element a workflow writes to'
+    suggested: 'namespace variables, one set per environment: values a flow reads by name, like the attributes of a configuration element, set once for production and once for each other environment'
+    answer: 1
+    closes:
+      - question.create-dns-record.endpoint-identity
+      - question.provision-linux-vm-dr-site.endpoint-identity
+  - id: assume.defects
+    assumed: 'Possible defects are kept: the converted flows do what the workflows do today, so one can be tested against the other, and fixes come afterwards as changes of their own. Each is listed below as it behaves today; to fix one, write `answer: fix` under it.'
+    answer:
+    each:
+      - id: defect.lb-create-load-balancer.other
+        question: The virtual server is pointed at the pool before any members are added. Keep it as today, or fix it?
+        assumed: keep, as today
+
 open:
   - id: suggested
     question: 'Accept every suggested answer below? (yes; to change one, add answer: under it)'
     answer:
     each:
-      - id: tls.f5-bigip
-        question: Do the calls to F5 BIG-IP check its certificate? (vRO's do not)
-        suggested: check it (the CA goes in the Kestra setup)
       - id: lifecycle.l1
         question: Do the 4 workflows of lifecycle group L1 convert and switch over together?
         suggested: together
-  - id: defects.lb-create-load-balancer
-    question: '3 possible defects in LB - Create Load Balancer: keep them all, fix them all, or decide each? (they are listed on report/workflows/lb-create-load-balancer.html)'
-    answer:
+
+waves:
+  - id: wave.1
+    question: 'Asked when Wave 1 is converted: how its flows are built. Answer them then, or now.'
+    each:
+      - id: question.lb-add-machine-to-pool.data-shape
+        question: 'LB - Add Machine To Pool: Do the registry fields names.monitorPath (F5) and names.monitor (Avi) always exist for their provider?'
+        answer:
 
 answered:
-  - id: q1-scope
-    question: Is this export the whole vRO estate?
-    answer: yes, the whole estate, from one vRO node
-
-signed_for: full plan
+  - id: q4-off-limits
+    question: Is any of it off limits (another team's, frozen, vendor supplied, or being replaced)?
+    answer: nothing is off limits
 ```
 
-`open` lists what is still unanswered, with what a wave waits on first, and `answered` lists what already has an
-answer. Each entry has an `id`, one plain
+`estate` comes first: the questions about the whole estate, built from what the code shows. Those the analysis
+reads are asked before it (what starts the workflows, where settings and secrets come from, calls to other vRO
+clusters, workflows that look out of scope); those only the plan needs are asked after it (which systems have a
+non-production instance, whether to check certificates where vRO turned the check off). Then what the tool assumes
+instead of asking: the vRO mechanics with a Kestra equivalent (the trust store, retries and counters, REST hosts made
+in code), and what keeps today's behavior (possible defects, what the code answers today, values the sanitized copy
+hides, vRA's timeouts, the read and write labels, the specs written with high confidence). An estate answer is one of
+its `options`, its number (several numbers when the choices are not exclusive, written `2, 4`), `yes` for the
+suggested one, or your own words. It applies to every workflow: `closes` lists the items it settled, and those are
+not asked again. While an estate question is open, `settles` lists what its suggested answer would settle, and those
+are not asked one by one either. Change an answer and what it closed is asked again. An assumption lists the items it
+settles under `each:`, each with the answer it takes (`assumed:`): write `answer:` under one to override it for that
+item. An assumption holds while its own `answer` is empty (or `yes`); any other answer overrides it, and what it
+settled is asked again. You can fill this section in before the first run.
+
+`open` lists what is still unanswered, with what a wave waits on first; `waves` lists, per wave, what is asked when
+that wave is converted (how its flows are built, and the review of a spec written with medium confidence); and
+`answered` lists what already has an answer. Each entry has an `id`, one plain
 `question`, a `suggested` value when the code points to one, and an `answer`. Write `yes` to take the
-suggested value; any other answer is the answer itself. A remark goes in the answer too. `signed_for` is
-`wave 1` or `full plan`, and stays empty until you sign.
+suggested value; any other answer is the answer itself. A remark goes in the answer too.
+
+A question that repeats is asked once: a possible defect or a question about an action several workflows share, or
+the same one on near-duplicate workflows, is one entry `same.<defect or question>.<what>.<kind>`, with its items
+under `each:`. In an interactive run, the planning every few answers can also merge questions into one `same.<what>`
+entry, close a question with an answer already given (listed under that answer's `closes`), reword one, or add one
+(`added.<what>`); the IDs still say what a question is about, never its place.
 
 What is settled together is one entry, with its items under `each:`. `suggested` holds every value the code
 suggests: `yes` takes them all, and any one can still be given its own `answer:`. `defects.<workflow>` takes
@@ -157,23 +197,23 @@ every run: it moves an entry to `answered` once it has an answer, keeps every an
 never drops an id. An answer whose item a run no longer finds moves to a third list, `no_longer_asked`, with
 the question it was given for, and lands on nothing else. A file that does not parse is never rewritten; the
 version before it is kept in `data/answers.yaml.previous`. An `answers.yaml` written by an earlier version is
-moved to this format on the next run, every answer and the signature carried over, and the old file is kept
+moved to this format on the next run, every answer carried over, and the old file is kept
 in `data/`.
 
 The questions are asked from what is on record, and asked again after Assess: with a vRA export read, Q2
 asks only for what an export cannot hold (vRO scheduled tasks and policies, the ITSM, REST callers); Q3
-names the systems the tool found; Q7 names any run-history files in the folder; Q8 suggests the vRO plugins
+names the systems the tool found; Q8 suggests the vRO plugins
 the code uses, for you to answer `yes` or correct. Q9 takes keep, replace, or replace vRA with a bridge that
 forwards vRA's requests to Kestra until users move to the new front end. A `.vra-ng` in the estate folder is read (section 4). Other files (a run-history CSV) can go there
 too; Preflight lists them as "other files" and they are not parsed yet.
 
 Later, the brief asks in the same `answers.yaml` for the decisions its waves wait for: a client route for a
-system with no Kestra plugin, whether Enterprise Edition is available, a timeout policy for each blocking step,
+system with no Kestra plugin, whether Enterprise Edition is available (assumed: it is), a timeout policy for each blocking step,
 how to get a resource no Kestra task creates, and keep or fix for each suspected defect. Each is a plain
 question with the choices in it, and a suggested value where the tool has a recommendation. After
 `decide each`, a suspected defect reads like this: "The Deployment Registry is read before the teardown gate,
 so an event that should be ignored can still fail the run. Keep the current behavior, or fix it?" (answer
-`keep` or `fix`). The specs' open questions, the spec review and the signature are there too.
+`keep` or `fix`). The specs' open questions and the spec review are there too.
 
 A question that a decision already asks is asked only once, in that decision. A spec question about
 certificate checks goes in the certificate decision, and one about what a failure does goes in the timeout and

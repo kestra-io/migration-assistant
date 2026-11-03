@@ -24,7 +24,7 @@ How workflows are grouped (the rule, in four steps)
 3. Budget. The number of waves is capped at ceil(log2(n / 4)) for n waved
    workflows, at least 1 and at most 12: 4 waves for 33 to 64 workflows, 9 for
    1,025 to 2,048, 10 for 2,049 to 4,096. Waves grow with the estate, but slowly,
-   because each wave needs its own owner sign-off and pilot. While there are more
+   because each wave needs its own owner and pilot. While there are more
    groups than the budget, the smallest group is merged into the group that is
    closest: same tier first, then the most shared targets, then the most shared
    domains (the same pattern family), then the smallest.
@@ -68,7 +68,8 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
     specs: uid -> spec (each suspected defect is a preserve-or-fix decision); question_keys: (uid, question) ->
     the answers.yaml key of the grouped question (one key for a question several workflows ask)."""
     from . import triggers as TG
-    reviewed = (reviews or {}).get("by_uid") or {}
+    # a review on record (answered, or stale since): whether the file listed the item before does not count
+    reviewed = {u for u, r in ((reviews or {}).get("by_uid") or {}).items() if r.get("state") != "open"}
     front = (trigger_plan or {}).get("front_end")
     replacing = front in TG.REPLACING and bool(
         ((assess.get("entry_points") or {}).get("model") or {}).get("cloud_templates"))
@@ -252,14 +253,13 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
         owner = [u for u in members if triage[u]["outcome"] == "Needs owner input"]
         lines = sum(wf[u]["script_lines"] + 1 for u in members)
         share = lines / total_lines
-        crit = [{"criterion": "The signature covers this wave", "source": "signature",
-                 "closes": G.by_approval()}]
+        crit: list[dict] = []
         for d in dep_waves:
             crit.append({"criterion": f"Wave {d} has met its exit criteria (it holds workflows this wave calls)",
                          "source": "waves", "closes": _wave_exit(d)})
         for t in writes:
             crit.append({"criterion": f"A non-production {targets[t]['name']} is named for this wave to write to",
-                         "source": "preflight Q3", "closes": G.by_answer("Q3")})
+                         "source": "the question about non-production instances", "closes": G.by_answer("Q3")})
         for t in ts:
             crit.append({"criterion": f"{targets[t]['name']}: the instance this wave's flows call is named (base URL "
                                       "or host) and its credentials are stored as Kestra secrets",
@@ -330,12 +330,8 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                                                      why="a blocking question in the workflow's spec; the "
                                                          "decision is the answer")})
             for x in ev.get("missing", []):
-                crit.append({"criterion": f"Owner supplies {x}, called by {_nm(wf, u)}, or says what it does (not in the export)",
-                             "source": "unexported calls",
-                             "closes": G.by_decision(f"missing.{G.key_part(x)}",
-                                                     f"{x} is called by {wf[u].get('name') or u} but is not in the export. "
-                                                     "Add it to the export folder and run again, or say what it does.",
-                                                     ["exported", "described in the answer", "not needed"])})
+                crit.append({"criterion": f"{x}, called by {_nm(wf, u)}, is added to the package (it is not in the "
+                                          "export)", "source": "unexported calls", "closes": G.by_package(x)})
         for u in spec_review:
             crit.append({"criterion": f"Owner reviews the spec for {_nm(wf, u)} (spec confidence medium)",
                          "source": "spec review" if u in reviewed else "spec", "closes": G.by_review(u, _sh(wf, u))})
@@ -343,8 +339,8 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                 if e.get("kind") == "subscription" and not e.get("disabled")]
         if subs:
             crit.append({"criterion": "The trigger plan for this wave's subscriptions is agreed: vRA calls Kestra's "
-                                      "webhook, or vRA is replaced and each event becomes a step (preflight Q9)",
-                         "source": "preflight Q9", "closes": G.by_answer("Q9")})
+                                      "webhook, or vRA is replaced and each event becomes a step",
+                         "source": "the question whether vRA stays", "closes": G.by_answer("Q9")})
         for u, e in subs:
             # replaced: a step of the vRA replacement wave instead; with a bridge, the webhook in between too
             if e.get("blocking") and (not replacing or front == TG.BRIDGE):
@@ -393,7 +389,7 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                 listing = "; ".join(f"{_nm(wf, u)}: {', '.join(k)}" for u, k in sorted(typed.items()))
                 crit.append({"criterion": "Each flow takes typed inputs instead of vRA's event payload (" + listing
                                           + "); the payload parsing is not converted",
-                             "source": "preflight Q9",
+                             "source": "the question whether vRA stays",
                              "closes": G.by_decision(
                                  f"typed-inputs.wave-{n}",
                                  "With vRA replaced, which typed inputs does each flow take? Proposed from the payload "
@@ -422,8 +418,8 @@ def plan(assess: dict, triage: dict[str, dict], answers: dict, reviews: dict | N
                                  why="the converter builds one or the other; the spec found it in the code",
                                  plain=defect_question(_short_name(wf, u), d["what"], _names(assess)))})
         if "Q4" in open_q:
-            crit.append({"criterion": "Preflight Q4 answered: none of these workflows is off limits",
-                         "source": "preflight Q4", "closes": G.by_answer("Q4")})
+            crit.append({"criterion": "Answered: none of these workflows is off limits",
+                         "source": "the question whether anything is off limits", "closes": G.by_answer("Q4")})
         # Pilot: the safest member to learn from. Convert with a high-confidence spec first,
         # then the fewest writes, then nothing it calls inside the wave. A workflow nothing calls or starts (a
         # retire candidate) is the last choice: it may be retired. In a lifecycle group the member with the

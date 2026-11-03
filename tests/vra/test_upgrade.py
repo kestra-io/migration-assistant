@@ -9,7 +9,9 @@ workflow is missing. What must hold:
 - every answer 1.0.0 recorded is still in answers.yaml, with its item and in the words it was given;
 - an answer whose item this version no longer asks is under `no_longer_asked`, never dropped and never moved to
   another item;
-- nothing is both asked and no longer asked.
+- nothing is both asked and no longer asked;
+- the `signed_for: full plan` 1.0.0 and 1.1.0 wrote loads, counts for nothing, and is not written back (the
+  assessment has no signature since 1.2.0).
 """
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ import os
 import shutil
 
 import pytest
+import webhooks as W
 import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -40,6 +43,8 @@ def _answers(path: str) -> dict[str, dict[str, str]]:
                 walk(it.get("each"))
         walk(doc.get(section))
     out["signed_for"] = doc.get("signed_for")
+    out["text"] = open(path, encoding="utf-8").read()
+    out["estate"] = {e["id"]: e for e in doc.get("estate") or []}
     return out
 
 
@@ -48,7 +53,7 @@ def upgraded(tmp_path_factory):
     from kestra_migration_assistant import cli
     export = tmp_path_factory.mktemp("upgrade") / "upgrade"
     for label in ("detection", "triage"):
-        shutil.copytree(os.path.join(CONFORMANCE, label, "vro"), export / label)
+        W.copy(os.path.join(CONFORMANCE, label, "vro"), export / label)
     shutil.copytree(os.path.join(CONFORMANCE, "upgrade", "1.0.0"), export / "kestra-assessment")
     before = _answers(str(export / "kestra-assessment" / "your-input" / "answers.yaml"))
     old = os.environ.get("VRO_NO_MODEL")
@@ -85,10 +90,54 @@ def test_what_is_no_longer_asked_moves_to_no_longer_asked(upgraded):
     assert not asked & set(after["no_longer_asked"])
 
 
-def test_only_what_is_new_is_asked_and_the_signature_stays(upgraded):
+def test_only_what_is_new_is_asked_and_the_signature_is_dropped(upgraded):
     before, after = upgraded
     assert not before["unanswered"]
     new = after["unanswered"]
-    assert new and not new & set(before["answered"])        # nothing 1.0.0 had answered is asked again
-    assert {"endpoint.ansible-tower", "endpoint.ms-teams", "endpoint.slack", "missing.purgeorphanedvolumes"} <= new
-    assert after["signed_for"] == "full plan"
+    assert not new & set(before["answered"])                # nothing 1.0.0 had answered is asked again
+    # 1.2.0: the new systems' endpoints are assumed (the lab first, then non-production where it exists), each listed
+    # under the assumption; missing code is not asked: it is listed
+    est = after["estate"]
+    assert {"endpoint.ansible-tower", "endpoint.ms-teams", "endpoint.slack"} <= {
+        m["id"] for m in est["assume.non-production"].get("each") or []}
+    assert "missing.purgeorphanedvolumes" not in new
+    assert after["signed_for"] is None and not any(ln.startswith("signed_for") for ln in after["text"].splitlines())
+
+
+def test_a_1_1_0_file_still_loads_through_the_public_functions(upgraded):
+    """The closed half reads answers.yaml through your_input.load, items and state: their signatures and their
+    reading of a file written before 1.2.0 hold. A 1.1.0 file ends with `signed_for:`; it loads without a warning
+    and the value is not read (your_input.signature is gone since 1.2.0)."""
+    import inspect
+
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    assert list(inspect.signature(Y.load).parameters) == ["path"]
+    assert list(inspect.signature(Y.items).parameters) == []
+    assert list(inspect.signature(Y.state).parameters) == ["key", "loaded", "it"]
+    assert not hasattr(Y, "signature") and not hasattr(Y, "set_signature")
+    old = os.path.join(CONFORMANCE, "upgrade", "1.0.0", "your-input", "answers.yaml")
+    assert "\nsigned_for: full plan" in open(old, encoding="utf-8").read()
+    loaded = Y.load(old)
+    assert loaded["ok"] and not loaded["warnings"] and "sign" not in loaded and loaded["entries"]
+
+
+def test_an_answered_group_whose_members_are_all_settled_elsewhere_keeps_its_answer(tmp_path, monkeypatch):
+    """A 1.1.0 file answered `defects.<workflow>` ("keep them all"); in 1.2.0 an assumption can settle every one of
+    its defects. The group then has no member left to ask: it stays answered, under the question it was answered
+    with, instead of stopping the run (it raised IndexError on the first interactive run of an upgraded folder)."""
+    from kestra_migration_assistant.vra.stages import common as C
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    asked = "2 possible defects in WF A: keep them all, fix them all, or decide each?"
+    path = tmp_path / "answers.yaml"
+    path.write_text(f"open: []\n\nanswered:\n  - id: defects.wf-a\n    question: '{asked}'\n    answer: keep them all\n",
+                    encoding="utf-8")
+    monkeypatch.setattr(C, "DATA", str(tmp_path))
+    monkeypatch.setattr(C, "ANSWERS", str(path))
+    its = [Y.item(f"defect.wf-a.{k}", "defects", f"WF A: possible defect {k}. Keep it as today, or fix it?",
+                  family="defect") for k in ("timing", "naming")]
+    loaded = Y.load()
+    loaded["closed"] = {it["key"]: {"by": "assume.defects", "answer": "keep, as today"} for it in its}
+    opened, answered, _gone = Y.plan(its, loaded)
+    assert not opened
+    assert [(k, e["question"], e["answer"]) for k, e, _ in answered] == [("defects.wf-a", asked, "keep them all")]
+    assert Y.group_question("defects.wf-a", []).startswith("0 possible defects in wf-a")

@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dunes-script-module name="middle" result-type="string" api-version="6.0.0" id="a7000005-0000-4000-8000-000000000002" version="1.0.0" allowed-operations="vef"><description/><param n="x" t="string"/><script encoded="false"><![CDATA[return System.getModule("com.example.layer3").inner(x);]]></script></dunes-script-module>

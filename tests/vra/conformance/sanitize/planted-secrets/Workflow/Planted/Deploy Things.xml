@@ -39,7 +39,7 @@ var password = "Hunter2!Winter";
 var token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ2cm8ifQ.c2lnbmF0dXJlc2lnbmF0dXJl";
 var account = "CORP\\svc-vro-deploy";
 var url = "https://avi-ctrl.lab.example.net/api/pool?name=" + vmName;
-var teams = "https://acme.webhook.office.com/webhookb2/planted-not-a-real-hook";
+var teams = "@WEBHOOK:teams-planted@";
 var req = new RESTRequest("POST", url);
 req.setHeader("Authorization", "Bearer AbCdEf0123456789XyZabcdEF0123");
 req.setHeader("X-Backup", "10.20.30.40");

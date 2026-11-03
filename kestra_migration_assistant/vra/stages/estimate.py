@@ -32,7 +32,7 @@ def _missing_specs() -> list[str]:
     idx = os.path.join(C.WORK, "index.json")
     if not os.path.exists(idx):
         return []
-    uids = sorted(w["uid"] for w in json.load(open(idx))["workflows"])
+    uids = sorted(w["uid"] for w in json.load(open(idx, encoding="utf-8"))["workflows"])
     stale = U.stale_specs(uids)
     return [u for u in uids if not os.path.exists(os.path.join(C.SPEC_DIR, f"{u}.json")) or u in stale]
 
@@ -41,7 +41,7 @@ def _spec_calls(missing: list[str]) -> list[dict]:
     """Each spec to write, with the prompt Understand would send now (its dry run, with the specs it writes again
     left out, as Understand moves them aside first)."""
     from kestra_migration_assistant.vra import understand as U
-    idx = json.load(open(os.path.join(C.WORK, "index.json")))
+    idx = json.load(open(os.path.join(C.WORK, "index.json"), encoding="utf-8"))
     uids = sorted(w["uid"] for w in idx["workflows"])
     dry = U.run(C.WORK, uids, spec_dir=C.SPEC_DIR, call_tree=True, entry_points=U._entry_points_by_uid(), dry=True,
                 regenerate=set(missing), **U._shared_state())
@@ -67,9 +67,42 @@ def _spec_calls(missing: list[str]) -> list[dict]:
 def _summary_calls(written: set[str]) -> list[dict]:
     """A summary for each group with a spec written this run."""
     p = os.path.join(C.WORK, "assess", "clusters-estate.json")
-    groups = json.load(open(p))["clusters"] if os.path.exists(p) else [{"members": sorted(written)}]
+    groups = json.load(open(p, encoding="utf-8"))["clusters"] if os.path.exists(p) else [{"members": sorted(written)}]
     return [{"purpose": "cluster-summary", "chars": SUMMARY_CHARS + SUMMARY_PER_MEMBER * len(g["members"])}
             for g in groups if set(g["members"]) & written]
+
+
+# An interactive run re-plans the questions every few answers with one call of about this size; cli.py sets how many
+# it expects (REPLAN_CALLS) before the first billed call.
+REPLAN_CHARS = 9000
+REPLAN_CALLS = 0
+# Sorting what the analysis found (defaults.py): a batch of about forty questions and possible defects per call.
+SORT_CHARS = 16000
+
+
+def _workflow_count() -> int:
+    idx = os.path.join(C.WORK, "index.json")
+    return len(json.load(open(idx, encoding="utf-8"))["workflows"]) if os.path.exists(idx) else 0
+
+
+def _sort_calls(n_workflows: int) -> list[dict]:
+    from . import defaults
+    return [{"purpose": "stages-questions", "chars": SORT_CHARS}] * defaults.calls_expected(n_workflows)
+
+
+def reanalysis() -> dict:
+    """What analyzing every workflow again costs, as when an estate answer changes what every spec's prompt carries:
+    each spec, priced by its prompt today (the answers make it a new prompt, so none comes from the cache), the
+    group summaries, the domain names, the walkthroughs and the sorting of what is found."""
+    from kestra_migration_assistant.vra import model as M
+    idx = os.path.join(C.WORK, "index.json")
+    uids = sorted(w["uid"] for w in json.load(open(idx, encoding="utf-8"))["workflows"]) if os.path.exists(idx) else []
+    calls = [{"purpose": "understand", "chars": c.get("chars") or len(c["prompt"]) + len(json.dumps(c["schema"]))}
+             for c in _spec_calls(uids)] if uids else []
+    calls += _summary_calls(set(uids)) + _sort_calls(len(uids))
+    calls += [{"purpose": "stages-domain-names", "chars": DOMAIN_NAMES_CHARS},
+              {"purpose": "stages-walkthroughs", "chars": WALKTHROUGHS_CHARS}]
+    return M.estimate(calls, M.settings())
 
 
 def planned(current: dict) -> list[dict]:
@@ -77,10 +110,14 @@ def planned(current: dict) -> list[dict]:
     missing = _missing_specs()
     step = current["purpose"]
     calls: list[dict] = [] if step == "understand" else [current]
+    calls += [{"purpose": "replan", "chars": REPLAN_CHARS}] * max(0, REPLAN_CALLS - (step == "replan"))
+    if step == "replan":
+        return calls
     if missing and step in ("stages-domain-names", "understand"):
         calls += _spec_calls(missing)
         calls += _summary_calls(set(missing))
         calls.append({"purpose": "stages-domain-names", "chars": DOMAIN_NAMES_CHARS})   # again, from the specs
+        calls += _sort_calls(len(missing))
     elif step == "cluster-summary":
         calls.append({"purpose": "stages-domain-names", "chars": DOMAIN_NAMES_CHARS})
     if step != "stages-walkthroughs":

@@ -95,14 +95,16 @@ def test_q3_names_the_systems_detected(with_vra):
 
 def test_q8_is_prefilled_from_the_code_and_left_for_the_customer_to_confirm(with_vra):
     q = with_vra["q"]["Q8"]
-    # a confirm item: the code's list pre-filled, open until the customer confirms or corrects it
+    # a confirm item: the code's list pre-filled. After Preflight alone it is open, in the group of suggestions with
+    # off limits (Q4) and vRA (Q9), which one yes takes; from the interview on it is assumed (test_interactive)
     assert "HTTP-REST" in q["question"] and "callApi" in q["found"] and q["suggested"] == "HTTP-REST plugin (built in)"
     assert q["status"] == "open" and q["answer"] == ""
     import yaml
     doc = yaml.safe_load(with_vra["file"])
     assert Y.entry_of(doc, q["key"]) == {"question": "The code uses these vRO plugins: HTTP-REST plugin (built in). "
                                                      "Is that the list?",
-                                         "suggested": "HTTP-REST plugin (built in)", "answer": None}
+                                         "suggested": "HTTP-REST plugin (built in)"}
+    assert Y.entry_of(doc, "suggested")["answer"] is None
 
 
 def test_q9_offers_replace_with_a_bridge(with_vra):
@@ -131,7 +133,7 @@ def test_the_static_questions_contradict_these_findings():
          "systems": [("Infoblox", "the workflows' code")], "plugins": {"HTTP-REST plugin (built in)": ["callApi"]},
          "history_files": ["runs.csv"]}
     got = P.contradictions(P.QUESTIONS, f)
-    assert [g.split(" ", 1)[0] for g in got] == ["Q2", "Q3", "Q8", "Q7"], got
+    assert [g.split(" ", 1)[0] for g in got] == ["Q2", "Q3", "Q8"], got         # Q7 (run history) is no longer asked
     assert P.contradictions(P.questions_for(f), f) == []
 
 
@@ -170,3 +172,18 @@ def test_q3_asks_only_for_systems_no_endpoint_question_names():
     assert "Avi" not in got and "F5" not in got
     # with no endpoint item, Q3 asks about every system it found
     assert all(n in Y._member_question(q3, [q3]) for n, _ in f["systems"])
+
+
+def test_whole_estate_prior_attempts_and_run_history_are_no_longer_asked(tmp_path):
+    """1.2.0: the brief covers what is in the export (no question about scope), a prior attempt changes no wave, and
+    the brief's next steps say to check each workflow's run history instead of asking whether it can be exported."""
+    from kestra_migration_assistant.vra.stages import facts
+    from kestra_migration_assistant.vra.stages import preflight as P
+    f = {"history_files": ["runs.csv"]}
+    asked = {q["id"] for q in P.questions_for(f)}
+    assert not {"Q1", "Q5", "Q7"} & asked and {"Q2", "Q3", "Q4", "Q6", "Q8", "Q9"} <= asked
+    text = " ".join(q.get("plain") or q["question"] for q in P.QUESTIONS).lower()
+    for gone in ("whole vro estate", "migrate or rewrite", "twelve months"):
+        assert gone not in text, gone
+    said = facts.estate({}, {"items": []})["history_sentence"]
+    assert "covers what is in the export" in said and "open" not in said

@@ -6,8 +6,8 @@ The stages share the parser, call graph, fingerprints and clusters
 cache and call log at the estate's output folder at runtime.
 
 Every stage reads the previous stage's files from disk and writes its own.
-Human edits live in files a person owns (`answers.md`, `overrides.yaml`,
-the brief's approval block) and are re-read on every run.
+Human edits live in files a person owns (`your-input/answers.yaml`,
+`your-input/corrections.yaml`) and are re-read on every run.
 """
 from __future__ import annotations
 
@@ -436,28 +436,41 @@ def ensure(*dirs: str) -> None:
 
 
 def read_json(path: str):
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
-def write_json(path: str, obj) -> str:
+def _atomic(path: str, write) -> str:
+    """Write a file whole or not at all: into a temporary file next to it, then moved over it in one step, so a
+    run stopped half way (a crash, Ctrl-C) never leaves a file cut short."""
     ensure(os.path.dirname(path))
-    with open(path, "w") as f:
+    tmp = f"{path}.tmp-{os.getpid()}"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            write(f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return path
+
+
+def write_json(path: str, obj) -> str:
+    def w(f):
         json.dump(obj, f, indent=1, sort_keys=False, default=str)
         f.write("\n")
-    return path
+    return _atomic(path, w)
 
 
 def write_text(path: str, text: str) -> str:
-    ensure(os.path.dirname(path))
-    with open(path, "w") as f:
-        f.write(text if text.endswith("\n") else text + "\n")
-    return path
+    return _atomic(path, lambda f: f.write(text if text.endswith("\n") else text + "\n"))
 
 
 def write_csv(path: str, rows: list[dict], fields: list[str]) -> str:
     ensure(os.path.dirname(path))
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
         for r in rows:
@@ -469,7 +482,7 @@ def load_yaml(path: str):
     import yaml
     if not os.path.exists(path):
         return None
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -533,9 +546,24 @@ def set_progress(fn) -> None:
 
 
 def progress(msg: str) -> None:
-    """One line on what a long stage is doing now (a spec written, with its time). Silent outside `run`."""
+    """One line on what a long stage is doing now (a spec written, with its time). Silent outside `run`, which
+    writes these lines to the run's log file (data/run.log), not to the terminal."""
     if _PROGRESS:
         _PROGRESS(msg)
+
+
+# How far a long step is, for the one progress line `run` shows ("Analyzing 46 workflows: 19 done.").
+_TICK = None
+
+
+def set_tick(fn) -> None:
+    global _TICK
+    _TICK = fn
+
+
+def tick(what: str, done: int, total: int) -> None:
+    if _TICK:
+        _TICK(what, done, total)
 
 
 def mtime(path: str) -> float:
@@ -566,7 +594,7 @@ def call_summary() -> dict:
     calls = billed = cached = 0
     cost = 0.0
     purposes: dict[str, int] = {}
-    with open(STAGE_CALL_LOG) as f:
+    with open(STAGE_CALL_LOG, encoding="utf-8") as f:
         for line in f:
             try:
                 r = json.loads(line)

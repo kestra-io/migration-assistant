@@ -13,7 +13,8 @@ mkdir -p "$dir/helpers"
 cp -R "$here/tests/vra/conformance/helpers/vro" "$dir/helpers/vro"
 cp -R "$here/tests/vra/conformance/helpers/vra" "$dir/helpers/helpers-vra"
 cd "$dir"
-"$@" --version | grep -qx "kestra-migrate $version" || { echo "smoke: expected kestra-migrate $version"; exit 1; }
+# tr: on Windows a program's output to a pipe ends its lines with CR LF
+"$@" --version | tr -d '\r' | grep -qx "kestra-migrate $version" || { echo "smoke: expected kestra-migrate $version"; exit 1; }
 "$@" vra run helpers --no-model
 out="helpers/kestra-assessment"
 for f in index.html report/BRIEF.md your-input/answers.yaml; do

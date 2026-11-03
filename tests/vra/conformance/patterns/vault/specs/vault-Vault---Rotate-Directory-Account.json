@@ -1,0 +1,14 @@
+{
+  "workflow_uid": "vault-Vault---Rotate-Directory-Account",
+  "purpose": "Vault - Rotate Directory Account, for the vault pattern fixture.",
+  "confidence": "high",
+  "open_questions": [
+    {
+      "question": "Where does the converted flow get the directory service account password?",
+      "why_it_matters": "credentials",
+      "theme": "credentials"
+    }
+  ],
+  "suspected_defects": [],
+  "external_systems": []
+}

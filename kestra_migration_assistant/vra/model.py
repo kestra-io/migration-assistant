@@ -22,7 +22,11 @@ ask(purpose, workflow_id, prompt, schema) -> dict validated against schema
 - Structured output is enforced twice: the provider is given the JSON schema,
   and the reply is validated here. On a validation failure the call is retried
   once with the validation error appended, then raises.
-- At most MAX_PARALLEL calls in flight; quota and rate limits back off and resume.
+- At most MAX_PARALLEL calls in flight. When the plan's limit or quota runs out, the run stops cleanly
+  (LimitReached), keeping finished work; an API key's rate limit gets one short retry first. A program that runs
+  unattended can set WAIT_ON_LIMIT to back off and resume instead.
+- Every wait is short steps, so Ctrl+C stops the run at once, even while workers wait (on macOS a wait without a
+  timeout does not see Ctrl+C).
 - Every call is appended to the call log with purpose, provider, model,
   workflow, ms and cost.
 """
@@ -31,7 +35,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
@@ -48,7 +54,10 @@ from . import safety
 CACHE_DIR: str | None = None
 LOG_PATH: str | None = None
 LEGACY_BACKEND = "claude-code-headless"     # the cache key every call before the model settings used
-MAX_PARALLEL = 4
+# Calls in flight at once. A spec takes 20 to 115 seconds, and nearly all of it is the model writing its reply (measured
+# in 1.2.0: a claude process starts in about one second; Haiku writes about 230 tokens a second and thinks more,
+# Opus about 110 and thinks less, so both take about a minute), so a run's time is mostly how many run at once.
+MAX_PARALLEL = 8
 TIMEOUT_S = 2700                            # a whole flow of 80+ tasks takes longer than 15 minutes
 
 # USD per million tokens (input, output), for the call log when a provider reports tokens, not cost.
@@ -112,9 +121,17 @@ BASE_ARGS = [
     "--tools", "",
 ]
 
-# Quota back-off. Headless `claude -p` shares the interactive session's quota,
-# so a long run will hit a session limit partway through. That is backpressure,
-# not failure: wait and resume.
+# When the quota or plan limit runs out: stop cleanly (the person runs the same command again once it resets), or,
+# with WAIT_ON_LIMIT, back off and resume (a program that runs unattended for hours). Headless `claude -p` shares
+# the interactive session's quota, so a long run can hit a session limit partway through.
+WAIT_ON_LIMIT = False
+RATE_RETRY_S = 20.0               # an API key's rate limit, or a busy server: one short wait, then stop
+STEP_S = 0.2                      # every wait is steps this long, so Ctrl+C is seen at once
+PLAN_LIMIT = "You've hit your Claude plan's limit. Finished work is kept. Run the same command again after it resets."
+RATE_LIMIT = ("You've hit your API key's rate limit. Finished work is kept. Run the same command again in a few "
+              "minutes.")
+SERVER_LIMIT = ("The model's server is refusing more calls (rate limit, or too busy). Finished work is kept. Run the "
+                "same command again in a few minutes.")
 QUOTA_BACKOFF_S = [60, 120, 300, 600, 900, 1800, 1800, 1800]
 QUOTA_WAIT_BUDGET_S = 4 * 3600
 
@@ -134,6 +151,137 @@ _quota_generation = 0
 
 class ModelError(RuntimeError):
     pass
+
+
+class Stopped(BaseException):
+    """The person stopped the run (Ctrl+C): no call starts after it, and the calls in flight are ended. A
+    BaseException, so a stage that falls back when a call fails does not swallow it."""
+
+
+# Set by stop(): every call checks it before it starts, and run_parallel starts no job after it.
+STOP = threading.Event()
+_procs: set = set()
+_procs_lock = threading.Lock()
+
+
+def stop() -> None:
+    """End the run's model calls at once: no new call starts, and every claude process still running is ended (each
+    runs in a session of its own, so the terminal's Ctrl+C does not reach it, and nothing is left running)."""
+    STOP.set()
+    with _procs_lock:
+        live = list(_procs)
+    for p in live:
+        try:
+            if hasattr(os, "killpg"):
+                os.killpg(p.pid, signal.SIGKILL)
+            else:
+                p.kill()
+        except (OSError, ProcessLookupError):
+            pass
+
+
+def _check_stop() -> None:
+    if STOP.is_set():
+        raise Stopped()
+
+
+class Halted(Stopped):
+    """The run stops for a reason it says once, in LIMIT["message"], with the exit code in LIMIT["code"]: finished
+    work is kept and nothing is written from the analysis after it. A Stopped, so every stage passes it up like
+    Ctrl+C, and a stage that falls back when a call fails does not swallow it."""
+
+
+class LimitReached(Halted):
+    """The model's quota, plan limit or rate limit ran out: the same command works once it resets."""
+
+
+class Unavailable(Halted):
+    """The model cannot be used at all: no API key or a rejected one, no such model, the provider's package not
+    installed, or no network. Every call would fail the same way, so the run stops at the first one, before a brief
+    is written without the analysis the person chose a model and agreed the cost for."""
+
+
+LIMIT: dict = {"message": None, "code": None}
+LIMIT_EXIT = 75                 # EX_TEMPFAIL: the limit ran out; the same command works once it resets
+UNAVAILABLE_EXIT = 69           # EX_UNAVAILABLE: the model cannot be used until something is fixed
+INCOMPLETE_EXIT = 1             # some workflows could not be analyzed: no brief from an incomplete analysis
+
+
+def pause(seconds: float) -> None:
+    """Wait, in short steps, so Ctrl+C (in the main thread) and stop() (in a worker) end the wait at once."""
+    end = time.monotonic() + seconds
+    while (left := end - time.monotonic()) > 0:
+        if STOP.wait(min(STEP_S, left)):
+            raise Stopped()
+
+
+def wait_for(event: threading.Event) -> None:
+    """event.wait(), in short steps (see pause)."""
+    while not event.wait(STEP_S):
+        _check_stop()
+
+
+def halt(message: str, code: int, kind: type[Halted] = Halted) -> None:
+    """Stop every call (the ones in flight end now) and say why, once."""
+    if LIMIT["message"] is None:
+        LIMIT["message"], LIMIT["code"] = message, code
+    stop()
+    raise kind(message)
+
+
+def _limit_reached(message: str) -> None:
+    halt(message, LIMIT_EXIT, LimitReached)
+
+
+AFTER_FIX = ("Nothing was analyzed with it, and no brief was written from this run; finished work is kept. Fix it, "
+             "then run the same command again.")
+
+
+def unavailable(why: str) -> None:
+    """The model cannot be used (see Unavailable): say why in plain words, and stop."""
+    halt(f"The model cannot be used: {why} {AFTER_FIX}", UNAVAILABLE_EXIT, Unavailable)
+
+
+AUTH_MARKERS = ("authentication", "invalid x-api-key", "invalid api key", "please run /login", "not logged in",
+                "permission_error", "unauthorized", "forbidden")
+NOT_FOUND_MARKERS = ("not_found_error", "model not found", "no such model", "issue with the selected model",
+                     "unknown model", "model_not_found")
+
+
+def unusable(provider: str, model: str, text: str, where: str = "") -> str | None:
+    """Plain words for a provider error that every call would hit (a key missing or rejected, no such model), or
+    None for one that is about this call only."""
+    t = (text or "").lower()
+    status = {int(c) for c in re.findall(r"(?<![\d.])(40[134])(?![\d.])", t)}
+    if (404 in status or any(m in t for m in NOT_FOUND_MARKERS)) and not status & {401, 403}:
+        if provider == "openai-compatible":
+            return (f"{where or 'the server'} has no model named {model}, or the base URL is wrong (it ends in "
+                    f"/v1). Check --model and --base-url, or model and base_url in the config file.")
+        return f"there is no model named {model}. Check --model, or model in the config file."
+    if status & {401, 403} or any(m in t for m in AUTH_MARKERS):
+        if provider == "claude-code":
+            return "your Claude Code login was refused. Run `claude`, log in, and check it with `claude auth status`."
+        if provider == "anthropic":
+            return ("the Anthropic API rejected the API key. Check ANTHROPIC_API_KEY (or the variable api_key_env "
+                    "names in the config file).")
+        return f"{where or 'the server'} rejected the API key. Check OPENAI_API_KEY (or api_key_env in the config file)."
+    return None
+
+
+PLAN_MARKERS = ("session limit", "usage limit", "weekly limit", "hit your", "limit reached", "resets ")
+
+
+def limit_message(provider: str, text: str) -> str:
+    """What the person is told when calls are refused for a limit."""
+    if provider == "claude-code" or any(m in (text or "").lower() for m in PLAN_MARKERS):
+        return PLAN_LIMIT
+    return RATE_LIMIT if provider == "anthropic" else SERVER_LIMIT
+
+
+def _plan_limit(provider: str, text: str) -> bool:
+    """A limit that does not lift in seconds: the Claude plan's (or a quota). A rate limit or a busy server may."""
+    t = (text or "").lower()
+    return any(m in t for m in PLAN_MARKERS) or "quota" in t
 
 
 class SchemaError(ValueError):
@@ -190,7 +338,7 @@ def _log(rec: dict) -> None:
     assert LOG_PATH is not None
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
     with _log_lock:
-        with open(LOG_PATH, "a") as f:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
 
 
@@ -269,23 +417,36 @@ class ClaudeCodeProvider(Provider):
     def invoke(self, prompt: str, schema: dict) -> dict:
         exe = shutil.which("claude")
         if not exe:
-            raise ModelError("provider claude-code needs the `claude` command, and it is not installed")
+            unavailable("Claude Code is not installed (the `claude` command), and the claude-code provider uses it.")
         args = [exe, "-p", prompt, *BASE_ARGS, "--json-schema", json.dumps(schema), "--model", self.cfg["model"]]
         workdir = tempfile.mkdtemp(prefix="kestra-migrate-call-")
         t0 = time.time()
+        _check_stop()
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                                text=True, cwd=workdir, start_new_session=True)
+        with _procs_lock:
+            _procs.add(proc)
         try:
-            proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout_of(self.cfg), cwd=workdir)
+            out, err = proc.communicate(timeout=timeout_of(self.cfg))
         except subprocess.TimeoutExpired as e:
+            proc.kill()
+            proc.communicate()
             raise ModelError(f"no reply within {timeout_of(self.cfg)} s (timeout_s in the config file)") from e
         finally:
+            with _procs_lock:
+                _procs.discard(proc)
             shutil.rmtree(workdir, ignore_errors=True)
+        _check_stop()                                   # ended by stop(): its reply, if any, is not used
         wall_ms = int((time.time() - t0) * 1000)
-        if proc.returncode != 0 and not proc.stdout.strip():
-            raise ModelError(f"claude exited {proc.returncode}: {proc.stderr[:400]}")
+        if proc.returncode != 0 and not out.strip():
+            why = unusable("claude-code", self.cfg["model"], err)
+            if why:
+                unavailable(why)
+            raise ModelError(f"claude exited {proc.returncode}: {err[:400]}")
         try:
-            env = json.loads(proc.stdout)
+            env = json.loads(out)
         except json.JSONDecodeError as e:
-            raise ModelError(f"claude did not return JSON: {e}: {proc.stdout[:300]}") from e
+            raise ModelError(f"claude did not return JSON: {e}: {out[:300]}") from e
         env["_wall_ms"] = wall_ms
         return env
 
@@ -302,14 +463,13 @@ class AnthropicAPIProvider(Provider):
     def invoke(self, prompt: str, schema: dict) -> dict:
         key = self.settings.key() if self.settings else os.environ.get("ANTHROPIC_API_KEY")
         if not key:
-            raise ModelError("provider anthropic needs an API key (api_key_env in the config file, "
-                             "ANTHROPIC_API_KEY by default)")
+            unavailable("there is no Anthropic API key. Set ANTHROPIC_API_KEY (or the variable api_key_env names in "
+                        "the config file).")
         try:
             import anthropic
-        except ImportError as e:
+        except ImportError:
             from kestra_migration_assistant import config as K
-            raise ModelError(f"provider anthropic needs the `anthropic` package: {K.install_command('anthropic')} "
-                             "(needs git), or pip install anthropic") from e
+            unavailable(K.ANTHROPIC_MISSING)
         client = anthropic.Anthropic(api_key=key, timeout=timeout_of(self.cfg))
         t0 = time.time()
         try:
@@ -322,9 +482,14 @@ class AnthropicAPIProvider(Provider):
             return {"result": f"rate limit: {e}", "is_error": True}
         except anthropic.APIStatusError as e:
             txt = f"{e.status_code}: {e}"
+            if e.status_code in (401, 403):
+                unavailable(unusable("anthropic", self.cfg["model"], "401") or txt)
+            if e.status_code == 404:
+                unavailable(unusable("anthropic", self.cfg["model"], "404") or txt)
             return {"result": ("overloaded " + txt) if e.status_code >= 500 else txt, "is_error": True}
         except anthropic.APIConnectionError as e:
-            raise ModelError(f"cannot reach the Anthropic API: {e}") from e
+            unavailable(f"the Anthropic API cannot be reached ({e}). Check the network connection, or a proxy that "
+                        "blocks api.anthropic.com.")
         if r.stop_reason == "refusal":
             return {"result": "the model declined to answer (refusal)", "is_error": True}
         text = next((b.text for b in r.content if b.type == "text"), "")
@@ -355,7 +520,7 @@ class OpenAICompatibleProvider(Provider):
         if key:
             headers["Authorization"] = f"Bearer {key}"
         elif self.settings and self.settings.api_key_env and self.settings.api_key_env != "OPENAI_API_KEY":
-            raise ModelError(f"api_key_env {self.settings.api_key_env} is not set in the environment")
+            unavailable(f"there is no API key: {self.settings.api_key_env} (api_key_env in the config file) is not set.")
         body: dict = {"model": self.cfg["model"], "messages": [{"role": "user", "content": prompt}],
                       "response_format": {"type": "json_schema",
                                           "json_schema": {"name": "reply", "schema": schema, "strict": False}}}
@@ -368,6 +533,9 @@ class OpenAICompatibleProvider(Provider):
             data = self._post(body, headers)
         if "_status" in data:
             code = data["_status"]
+            if code in (401, 403, 404):
+                unavailable(unusable("openai-compatible", self.cfg["model"], f"{code} {data['_detail']}",
+                                     self.cfg["base_url"]) or f"HTTP {code}: {data['_detail']}")
             quota = "rate limit " if code == 429 else ("overloaded " if code >= 500 else "")
             return {"result": f"{quota}HTTP {code}: {data['_detail']}", "is_error": True}
         cut_short(body["messages"][0]["content"], data.get("usage"), self.cfg["base_url"])
@@ -384,7 +552,9 @@ class OpenAICompatibleProvider(Provider):
         except urllib.error.HTTPError as e:
             return {"_status": e.code, "_detail": e.read()[:300].decode("utf-8", "replace")}
         except urllib.error.URLError as e:
-            raise ModelError(f"{self.cfg['base_url']}: {e.reason}") from e
+            unavailable(f"{self.cfg['base_url']} cannot be reached ({e.reason}). Check that the server is running and "
+                        "the base URL, and the network connection.")
+            raise                                       # not reached: unavailable() raises
         except json.JSONDecodeError as e:
             raise ModelError(f"{self.cfg['base_url']} did not return JSON: {e}") from e
 
@@ -473,9 +643,26 @@ def estimate_words(est: dict, s: K.Settings) -> str:
     if est["usd"] is None:
         return f"{calls}{cached}. There is no price on record for {name}, so no estimate in dollars."
     if s.provider == "claude-code":
-        return (f"{calls}, about ${est['usd']:.2f} at {name}'s API prices{cached}. With your Claude Code login "
+        return (f"{calls}, {_about(est['usd'])} at {name}'s API prices{cached}. With your Claude Code login "
                 "this is not billed separately: it counts against your Claude plan.")
-    return f"{calls}, about ${est['usd']:.2f} at {name}'s API prices{cached}."
+    return f"{calls}, {_about(est['usd'])} at {name}'s API prices{cached}."
+
+
+def _about(usd: float) -> str:
+    """A cost in words: never "about $0.00" for calls that cost something."""
+    if usd < 0.005:
+        return "under $0.01"                # a billed call is never free, however small its estimate
+    return f"about ${usd:.2f}" if usd < 10 else f"about ${usd:.0f}"
+
+
+def ask_words(est: dict, s: K.Settings) -> str:
+    """The estimate as the interactive run asks it: "87 model calls, about $15"."""
+    n = est["billed"]
+    calls = f"{n} model call{'s' if n != 1 else ''}"
+    if est["usd"] is None:
+        return f"{calls} (there is no price on record for {model_name(s.model or '')})"
+    plan = " (with your Claude Code login it counts against your Claude plan)" if s.provider == "claude-code" else ""
+    return f"{calls}, {_about(est['usd'])}{plan}"
 
 
 class CostNotApproved(BaseException):
@@ -483,14 +670,22 @@ class CostNotApproved(BaseException):
     on. A BaseException, so a stage that falls back when a call fails does not swallow it."""
 
 
+# What a run says when the input ended (Ctrl+D, or stdin closed) at a question that leads to billed calls: that is
+# never a yes.
+ENDED = "Stopped before anything was billed."
+
+
 class Gate:
     """Before the first billed call of a run: estimate what the run will still send (`planner(current)` returns
     the calls, the current one among them), say it, and above `max_usd` ask to go on. `confirm` asks the person
-    (a question in, True to go on); None means there is no terminal to ask in, and the run stops. `yes` goes on
+    (a question in, True to go on, None when the input ended: a no); None means there is no terminal to ask in, and
+    the run stops. `yes` goes on
     without asking. Decided once per run: later calls wait for the decision, then follow it."""
 
-    def __init__(self, planner, say, *, yes: bool = False, confirm=None, max_usd: float | None = None):
+    def __init__(self, planner, say, *, yes: bool = False, confirm=None, max_usd: float | None = None,
+                 always: bool = False):
         self.planner, self.say, self.yes, self.confirm, self.max_usd = planner, say, yes, confirm, max_usd
+        self.always = always            # the interactive run: ask whatever the estimate (and --yes)
         self.lock = threading.Lock()
         self.decided: bool | None = None
         self.estimate: dict | None = None
@@ -511,6 +706,12 @@ class Gate:
             self.say(f"(the run's other calls could not be estimated: {type(e).__name__}: {e})")
         est = self.estimate = estimate(calls, s)
         self.say("Estimate: " + estimate_words(est, s))
+        if self.always and self.confirm is not None:
+            go = self.confirm(f"This will make {ask_words(est, s)}. Continue? Enter or y to continue, n to stop: ")
+            if go:
+                return True
+            self.why = ENDED if go is None else "Stopped before any billed call, as asked. Nothing was billed."
+            return False
         cap = s.max_cost_usd if self.max_usd is None else self.max_usd
         if est["usd"] is None or est["usd"] <= cap or self.yes:
             return True
@@ -519,9 +720,10 @@ class Gate:
             self.why = (f"Stopped before any billed call: the estimate is above ${cap:g} ({where}). Run it again "
                         "with --yes to go ahead, or raise max_cost_usd.")
             return False
-        if self.confirm(f"That is above ${cap:g} ({where}). Go ahead? [y/N] "):
+        go = self.confirm(f"That is above ${cap:g} ({where}). Go ahead? [y/N] ")
+        if go:
             return True
-        self.why = "Stopped before any billed call, as asked. Nothing was billed."
+        self.why = ENDED if go is None else "Stopped before any billed call, as asked. Nothing was billed."
         return False
 
 
@@ -548,25 +750,30 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
     cache_path = os.path.join(CACHE_DIR, f"{key}.json")
     hit_path = _cached_path(prompt, schema, cfg)
     if hit_path:
-        with open(hit_path) as f:
+        with open(hit_path, encoding="utf-8") as f:
             hit = json.load(f)
         _log({"purpose": purpose, "workflow": workflow_id, "key": key, **who,
               "cached": True, "legacy_cache": hit_path != cache_path, "ms": 0, "cost_usd": 0.0,
               "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
         return hit["value"]
 
+    _check_stop()
     if GATE is not None:
         GATE.before_billed(purpose, prompt, schema, cfg, s)
+    _check_stop()
     backend = provider_for(cfg, s)
     attempt_prompt = prompt
     last_errs: list[str] = []
     quota_attempt = 0
+    rate_retried = False
     with _sem:
         attempt = 0
         while attempt <= retries:
-            _quota_gate.wait()            # park while another thread backs off
+            wait_for(_quota_gate)         # park while another thread backs off
             gen_before = _quota_generation
+            _check_stop()
             env = backend.invoke(attempt_prompt, schema)
+            _check_stop()
             cost = env.get("total_cost_usd") or 0.0
             ms = env.get("duration_api_ms") or env.get("_wall_ms") or 0
             text = env.get("result") or ""
@@ -582,6 +789,18 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
                 rec["error"] = text[:300]
                 rec["quota"] = _is_quota(text)
                 _log(rec)
+                why = None if _is_quota(text) else unusable(cfg["provider"] if cfg["auth"] != "claude-code"
+                                                             else "claude-code", cfg["model"], text, cfg.get("base_url") or "")
+                if why:
+                    unavailable(why)
+                if _is_quota(text) and not WAIT_ON_LIMIT:
+                    # Not a conversion failure: the run stops cleanly, after one short retry when the limit may lift
+                    # in seconds (a rate limit, a busy server)
+                    if not rate_retried and not _plan_limit(cfg["provider"], text):
+                        rate_retried = True
+                        pause(RATE_RETRY_S)
+                        continue
+                    _limit_reached(limit_message(cfg["provider"], text))
                 if _is_quota(text):
                     # Not a schema retry and not a conversion failure. Wait and
                     # try the same prompt again; `attempt` is deliberately not
@@ -616,7 +835,7 @@ def ask(purpose: str, workflow_id: str, prompt: str, schema: dict,
             rec["schema_errors"] = errs
             _log(rec)
             if not errs:
-                with open(cache_path, "w") as f:
+                with open(cache_path, "w", encoding="utf-8") as f:
                     json.dump({"purpose": purpose, "workflow": workflow_id, **who,
                                "prompt_sha": key, "value": value}, f, indent=1)
                 return value
@@ -655,10 +874,12 @@ def _quota_backoff(purpose: str, workflow_id: str, attempt: int, detail: str,
               "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
         print(f"[model] quota exhausted ({detail[:80]}); waiting {wait}s then "
               f"resuming", flush=True)
-        time.sleep(wait)
-        _quota_waited_s += wait
-        _quota_generation += 1
-        _quota_gate.set()
+        try:
+            pause(wait)
+        finally:
+            _quota_waited_s += wait
+            _quota_generation += 1
+            _quota_gate.set()             # stopped or not, nobody stays parked on the gate
         return True
 
 
@@ -686,19 +907,32 @@ def run_parallel(jobs, worker, max_workers: int = MAX_PARALLEL):
     def guarded(job):
         if quota_hit.is_set():
             raise QuotaError("skipped: batch stopped after a quota error")
+        _check_stop()
         try:
             return worker(job)
         except QuotaError:
             quota_hit.set()
             raise
 
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+    from concurrent.futures import wait as _wait_futures
+    ex = ThreadPoolExecutor(max_workers=max_workers)
+    try:
         futs = {ex.submit(guarded, j): j for j in jobs}
         for fut, job in futs.items():
+            while not fut.done():
+                _wait_futures([fut], timeout=STEP_S)      # in steps: a wait without a timeout misses Ctrl+C
             try:
                 results[_job_key(job)] = fut.result()
+            except Stopped:
+                raise
             except Exception as e:
                 errors[_job_key(job)] = f"{type(e).__name__}: {e}"
+    except (KeyboardInterrupt, Stopped):
+        # Ctrl+C: the jobs not started never start, the calls in flight end now, and what finished is kept
+        stop()
+        ex.shutdown(wait=False, cancel_futures=True)
+        raise
+    ex.shutdown(wait=True)
     if quota_hit.is_set():
         errors["_quota"] = ("backend ran out of quota; the batch was stopped. "
                             "Rerun the same command once quota returns: finished "
@@ -721,7 +955,7 @@ def cost_summary() -> dict:
                 "cost_usd": 0.0, "ms": 0, "by_purpose": {}}
     calls, cached, cost, ms = 0, 0, 0.0, 0
     by_purpose: dict[str, dict] = {}
-    with open(LOG_PATH) as f:
+    with open(LOG_PATH, encoding="utf-8") as f:
         for line in f:
             try:
                 r = json.loads(line)

@@ -2,6 +2,40 @@
 
 Every release of the Kestra Migration Assistant for vRA. Versions follow [semantic versioning](https://semver.org).
 
+## 1.2.0 (2026-11-03)
+
+One command takes you from an export to a brief. `kestra-migrate vra run` asks a few questions about the estate first
+(four on our 46-workflow test estate), tells you what the analysis costs before anything is billed, then runs it and
+writes the brief straight away, with every assumption it made listed in it. Run the same command again to answer the
+questions that change the brief most and sharpen it.
+
+### Fixes
+
+- Ctrl+D (or input closing) at the cost question now stops before anything is billed. It used to go on.
+- A model that can't be used (no key or a rejected one, a model that doesn't exist, the `anthropic` package missing,
+  no network) stops the run and says why in plain words.
+- If any workflow couldn't be analyzed, no brief is written. 1.1.0 wrote a partial one.
+- A zipped copy of the results (`kestra-assessment.zip`) left in the export folder no longer crashes the run, and a
+  file the tool can't read is listed in the brief, with why, while the run goes on.
+- On Windows, files are read and written as UTF-8, so an `answers.yaml` with an accent or a dash no longer comes back
+  garbled.
+- In the container, the run ends with the brief's path in the folder you mounted, instead of a `file:///work/...`
+  link that only exists inside the container.
+
+### If you're upgrading
+
+Update a uv installation from `@main` with `uv tool upgrade kestra-migration-assistant` (it keeps its extras), or
+pull the image `ghcr.io/kestra-io/migration-assistant:1.2.0`. Run 1.2.0 on a folder 1.1.0 assessed and every answer
+you gave is kept. A `signed_for` line in `answers.yaml` still loads, but it's ignored and dropped the next time the
+file is written.
+
+The Anthropic API key route needs the `anthropic` extra, and 1.2.0 refuses that route when it's missing. The Claude
+Code login and OpenAI-compatible providers don't need it.
+
+```bash
+uv tool install 'kestra-migration-assistant[anthropic] @ git+https://github.com/kestra-io/migration-assistant@main'
+```
+
 ## 1.1.0 (2026-10-24)
 
 Fixes found by running the assistant on a 46-workflow test estate, five more systems named, and one change to how
@@ -26,6 +60,12 @@ generic HTTP requests or nothing at all:
   write to the directory.
 
 ### Fixes
+
+- Ctrl+C did not stop a run on macOS while the model calls waited (after a quota error, for up to half an hour): the
+  run waited on them in a way the terminal's Ctrl+C does not reach. Every wait is now in short steps.
+- A path in the terminal could be cut at a hyphen when a line wrapped (`your-` on one line, `input/answers.yaml` on
+  the next). Paths and names are no longer split.
+- The first screen named a question by its number ("(Q8)"). Questions are named in words there and on the pages.
 
 - The brief's opening sentence read "This estate provisions an add user to AD group, ..." when catalog items are
   named for what they do. Such an estate now opens with "Users request 16 Service Broker catalog items, such as

@@ -87,7 +87,9 @@ A small raw XML tree with known fake hosts, IPs, URLs, emails, a service account
 password and a bearer token in scripts, attribute values, a configuration element (including a
 SecureString) and a presentation default. `tests/test_sanitize.py` asserts every one is gone from
 the sanitized copy and that the item graph, bindings and script structure are unchanged. Every
-value in it is invented; none is a real host or credential.
+value in it is invented; none is a real host or credential. Its Slack and Teams webhook URLs (and
+those of `detection/`) are markers, `@WEBHOOK:<name>@`, that `tests/vra/webhooks.py` fills in a copy
+at run time, so no file holds a whole webhook URL for a secret scanner to flag.
 
 ### vRA export (`vra/`)
 
@@ -190,6 +192,6 @@ fifth. Every name is invented. Used by `tests/test_front.py` and `tests/test_wri
   longer holds its workflow in Needs owner input.
 - `tests/test_your_input.py` (`helpers/`): a `suggested` value follows the code until a person answers (`yes`
   takes it); an answered item moves to `answered`, and one no longer asked stays there, its question starting
-  "No longer asked:"; a rewrite of the tool's text keeps the file's time; the signature is `signed_for:`
-  `wave 1` or `full plan`; an old-format file is migrated with every answer and the signature; the
+  "No longer asked:"; a rewrite of the tool's text keeps the file's time; a `signed_for:` line a 1.1.0 file
+  ends with is read past and not written back; an old-format file is migrated with every answer; the
   recommendation counts only client code as client code.

@@ -177,6 +177,8 @@ def entry_key(key: str) -> str:
     """The answers.yaml entry a customer answers an item under: `defect.<workflow>.…` -> `defects.<workflow>`,
     `question.…` -> `questions`; any other key is its own entry."""
     fam, _, rest = key.partition(".")
+    if fam == "package":
+        return "code to add to the package"
     if fam == "defect" and rest:
         return "defects." + rest.split(".")[0]
     if fam == "question" and rest:

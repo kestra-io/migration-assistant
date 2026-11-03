@@ -1,0 +1,8 @@
+{
+  "workflow_uid": "multinode-Remote---Local-Step",
+  "purpose": "Remote - Local Step, for the multinode pattern fixture.",
+  "confidence": "high",
+  "open_questions": [],
+  "suspected_defects": [],
+  "external_systems": []
+}

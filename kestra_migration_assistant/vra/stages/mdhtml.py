@@ -5,8 +5,7 @@ It covers what the stages' Markdown uses, and nothing else: ATX headings, paragr
 numbered lists (nested by indentation, with [ ] / [x] task boxes), pipe tables with an alignment row,
 fenced code (a `mermaid` fence becomes a diagram), block quotes, horizontal rules, and inline code,
 links, bold and italics. HTML in the source is shown as text, never run: a report can quote a vRO
-name or a model-written sentence, and neither may inject markup. HTML comments are dropped (the
-brief's approval markers and preflight's "why it matters" notes are for the Markdown reader).
+name or a model-written sentence, and neither may inject markup. HTML comments are dropped (preflight's "why it matters" notes are for the Markdown reader).
 """
 from __future__ import annotations
 

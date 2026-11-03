@@ -224,7 +224,24 @@ def spec_prompt(m: dict, callees: list[dict], acts: list[dict], omitted: list[di
         model_json=safety.wrap("workflow", json.dumps(_trim_model(m), indent=1)),
         callee_block=_callee_block(callees),
         action_block=_action_block(acts, omitted) + _entry_block(entry or []) + _elements_block(elements or [])
-        + _sharing_block(sharing or [])))
+        + _sharing_block(sharing or []) + (_owner_block(owner_context()) if estate else "")))
+
+
+def owner_context() -> str:
+    """What the owner said about the whole estate (interview.context(), sanitized). Empty when nothing is answered,
+    so the prompt is the same as before and its cached reply still counts."""
+    from kestra_migration_assistant.vra.stages import common as C
+    if not C.ESTATE or not C.ANSWERS:
+        return ""
+    from kestra_migration_assistant.vra.stages import interview
+    return interview.context()
+
+
+def _owner_block(text: str) -> str:
+    if not text:
+        return ""
+    return ("\nWHAT THE OWNER SAID ABOUT THE WHOLE ESTATE (context for every workflow: do not ask again what it "
+            "settles):\n" + safety.wrap("estate answers", text) + "\n")
 
 
 # Elements a prompt shows: every element in a category the workflow or an action it reaches opens. A text
@@ -426,8 +443,8 @@ def actions_index(idx: dict) -> dict[str, list[dict]]:
 
 def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: bool = False,
         entry_points: dict | None = None, regenerate: set | None = None, dry: bool = False,
-        lifecycle: list[dict] | None = None, state: dict | None = None) -> dict:
-    """Specs for `uids`, leaves first. With `call_tree`, each prompt carries every action the workflow
+        lifecycle: list[dict] | None = None, state: dict | None = None, on_written=None) -> dict:
+    """Specs for `uids`, leaves first. `on_written(uid)` is called as each spec is written. With `call_tree`, each prompt carries every action the workflow
     reaches (action_tree) and what starts it (`entry_points`: uid -> list); without it, only the actions it
     calls directly (the closed benchmark's prompt, unchanged). `regenerate`: uids whose spec on disk is
     replaced. `dry`: call no model; build each prompt from the specs on disk (but those in `regenerate`) and
@@ -437,8 +454,8 @@ def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: b
     written) order a group's writers before its readers and show each reader the writers' specs."""
     spec_dir = spec_dir or os.path.join(out_dir, "spec")
     os.makedirs(spec_dir, exist_ok=True)
-    idx = json.load(open(os.path.join(out_dir, "index.json")))
-    models = {u: json.load(open(os.path.join(out_dir, "model", f"{u}.json")))
+    idx = json.load(open(os.path.join(out_dir, "index.json"), encoding="utf-8"))
+    models = {u: json.load(open(os.path.join(out_dir, "model", f"{u}.json"), encoding="utf-8"))
               for u in uids}
     actions_by_module = actions_index(idx)
 
@@ -523,12 +540,15 @@ def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: b
         if uid in context:
             # what the prompt carried, and what it left out: a reader of the spec sees the gaps
             spec = dict(spec, context=context[uid])
-        with open(os.path.join(spec_dir, f"{uid}.json"), "w") as f:
-            json.dump(spec, f, indent=1)
+        # whole or not at all: a run stopped with Ctrl+C keeps every spec written, and never half of one
+        C._atomic(os.path.join(spec_dir, f"{uid}.json"), lambda f: json.dump(spec, f, indent=1))
         with lock:
             written["n"] += 1
             C.progress(f"wrote spec {written['n']} of {len(to_write)}: {models[uid].get('name') or uid} "
                        f"({time.monotonic() - t0:.1f}s)")
+            C.tick("workflows", written["n"], len(to_write))
+            if on_written:
+                on_written(uid)
         return spec
 
     if dry:
@@ -538,19 +558,20 @@ def run(out_dir: str, uids: list[str], spec_dir: str | None = None, call_tree: b
             for uid in lvl:
                 path = os.path.join(spec_dir, f"{uid}.json")
                 if os.path.exists(path) and uid not in (regenerate or set()):
-                    specs[uid] = json.load(open(path))
+                    specs[uid] = json.load(open(path, encoding="utf-8"))
         return {"contexts": context, "prompt_sha": shas, "order": order, "prompts": prompts,
                 "schema": ESTATE_SPEC_SCHEMA if call_tree else SPEC_SCHEMA}
 
     if to_write:
         C.progress(f"writing {len(to_write)} spec{'s' if len(to_write) != 1 else ''}, "
                    f"up to {min(M.MAX_PARALLEL, len(to_write))} at a time")
+        C.tick("workflows", 0, len(to_write))
     for lvl in levels:
         todo = []
         for uid in lvl:
             path = os.path.join(spec_dir, f"{uid}.json")
             if os.path.exists(path) and uid not in (regenerate or set()):
-                specs[uid] = json.load(open(path))
+                specs[uid] = json.load(open(path, encoding="utf-8"))
             else:
                 todo.append(uid)
         if not todo:
@@ -570,7 +591,7 @@ def cluster_members(c: dict, spec_dir: str) -> list[dict]:
         p = os.path.join(spec_dir, f"{u}.json")
         if not os.path.exists(p):
             continue
-        s = json.load(open(p))
+        s = json.load(open(p, encoding="utf-8"))
         members.append({"uid": u, "purpose": s["purpose"],
                         "inputs": [i["name"] for i in s["inputs"]],
                         "outputs": [o["name"] for o in s["outputs"]],
@@ -594,10 +615,10 @@ def cluster_prompt(c: dict, members: list[dict]) -> str:
 
 def run_clusters(out_dir: str, label: str) -> dict:
     """One summary per cluster, written after the member specs exist."""
-    res = json.load(open(os.path.join(out_dir, "assess", f"clusters-{label}.json")))
+    res = json.load(open(os.path.join(out_dir, "assess", f"clusters-{label}.json"), encoding="utf-8"))
     spec_dir = os.path.join(out_dir, "spec")
     out_path = os.path.join(out_dir, "assess", f"cluster-summaries-{label}.json")
-    summaries = json.load(open(out_path)) if os.path.exists(out_path) else {}
+    summaries = json.load(open(out_path, encoding="utf-8")) if os.path.exists(out_path) else {}
 
     for c in res["clusters"]:
         cid = c["cluster_id"]
@@ -612,7 +633,7 @@ def run_clusters(out_dir: str, label: str) -> dict:
         except Exception as e:
             summaries[cid] = {"name": cid, "what_the_group_does": f"(failed: {e})",
                               "how_members_differ": [], "first_of_a_kind_reason": ""}
-        with open(out_path, "w") as f:
+        with open(out_path, "w", encoding="utf-8") as f:
             json.dump(summaries, f, indent=1)
     return summaries
 
@@ -638,11 +659,11 @@ def run_estate() -> dict:
     clusters_path = os.path.join(C.WORK, "assess", "clusters-estate.json")
     if not (os.path.exists(idx_path) and os.path.exists(clusters_path)):
         raise RuntimeError(f"run `{C.run_command()}`: understand reads Assess's parse and clusters")
-    idx = json.load(open(idx_path))
+    idx = json.load(open(idx_path, encoding="utf-8"))
     uids = sorted(w["uid"] for w in idx["workflows"])
     os.makedirs(C.SPEC_DIR, exist_ok=True)
     prov_path = os.path.join(C.SPEC_DIR, "PROVENANCE.json")
-    prov = json.load(open(prov_path)) if os.path.exists(prov_path) else {"specs": {}, "cluster_summaries": {}}
+    prov = json.load(open(prov_path, encoding="utf-8")) if os.path.exists(prov_path) else {"specs": {}, "cluster_summaries": {}}
 
     M_ = C.model()                      # cache and call log under stages/
     log_before = _log_len(C.STAGE_CALL_LOG)
@@ -658,14 +679,18 @@ def run_estate() -> dict:
             old_dir = os.path.join(C.SPEC_DIR, "previous")
             os.makedirs(old_dir, exist_ok=True)
             os.replace(os.path.join(C.SPEC_DIR, f"{u}.json"), os.path.join(old_dir, f"{u}.json"))
-        res = run(C.WORK, uids, spec_dir=C.SPEC_DIR, call_tree=True, entry_points=_entry_points_by_uid(),
-                  **_shared_state())
-        errors = res["errors"]
-        for u in missing:
-            if os.path.exists(os.path.join(C.SPEC_DIR, f"{u}.json")):
+        prov_lock = threading.Lock()
+
+        def written(u: str) -> None:
+            # recorded as each spec is written, so a run stopped half way (Ctrl+C) keeps the record of what it wrote
+            with prov_lock:
                 prov["specs"][u] = {"source": "generated by Understand (kestra_migration_assistant/vra/understand.py PROMPT)",
                                     "generated": C.now(), "model": M_.settings().model,
                                     "context": PROMPT_CONTEXT}
+                C.write_json(prov_path, prov)
+        res = run(C.WORK, uids, spec_dir=C.SPEC_DIR, call_tree=True, entry_points=_entry_points_by_uid(),
+                  on_written=written, **_shared_state())
+        errors = res["errors"]
     elif missing:
         errors = {u: ("needs a model: this run has none" if u not in stale else f"spec is stale ({stale_why[u]}); kept, "
                       "since --no-model") for u in missing}
@@ -673,10 +698,11 @@ def run_estate() -> dict:
         sum(1 for u in missing if os.path.exists(os.path.join(C.SPEC_DIR, f"{u}.json")) and u not in errors)
 
     # cluster summaries
-    clusters = json.load(open(clusters_path))["clusters"]
-    have = json.load(open(C.CLUSTER_SUMMARIES)) if os.path.exists(C.CLUSTER_SUMMARIES) else {}
+    clusters = json.load(open(clusters_path, encoding="utf-8"))["clusters"]
+    have = json.load(open(C.CLUSTER_SUMMARIES, encoding="utf-8")) if os.path.exists(C.CLUSTER_SUMMARIES) else {}
     by_members = {tuple(sorted(v.get("members") or [])): v for v in have.values()}
     out, s_generated = {}, 0
+    todo = []
     for c in clusters:
         key = tuple(sorted(c["members"]))
         cid = c["cluster_id"]
@@ -688,22 +714,39 @@ def run_estate() -> dict:
         members = cluster_members(c, C.SPEC_DIR)
         if not members or os.environ.get("VRO_NO_MODEL"):
             continue
+        todo.append({"id": cid, "key": key, "c": c, "members": members})
+
+    summed = {"n": 0}
+    sum_lock = threading.Lock()
+
+    def summarize(job: dict) -> dict:
         t0 = time.monotonic()
-        try:
-            v = M.ask("cluster-summary", f"{C.ESTATE}/{cid}", cluster_prompt(c, members), CLUSTER_SCHEMA)
-        except Exception as e:
-            errors[f"cluster {cid}"] = f"{type(e).__name__}: {e}"
+        v = M.ask("cluster-summary", f"{C.ESTATE}/{job['id']}", cluster_prompt(job["c"], job["members"]), CLUSTER_SCHEMA)
+        with sum_lock:
+            summed["n"] += 1
+            C.progress(f"wrote the summary of group {job['id']} ({time.monotonic() - t0:.1f}s)")
+            C.tick("groups", summed["n"], len(todo))
+        return v
+    # the group summaries, in parallel like the specs (one after the other, 19 of them took four minutes)
+    if todo:
+        C.tick("groups", 0, len(todo))
+    got, errs = M.run_parallel(todo, summarize) if todo else ({}, {})
+    for job in todo:
+        cid = job["id"]
+        if cid in errs:
+            errors[f"cluster {cid}"] = errs[cid]
             continue
-        out[cid] = {**v, "members": list(key)}
-        C.progress(f"wrote the summary of group {cid} ({time.monotonic() - t0:.1f}s)")
+        if cid not in got:
+            continue
+        out[cid] = {**got[cid], "members": list(job["key"])}
         prov["cluster_summaries"][cid] = {"source": "generated by Understand (cluster_prompt)",
-                                          "generated": C.now(), "members": list(key)}
+                                          "generated": C.now(), "members": list(job["key"])}
         s_generated += 1
     # written only when they change: Assess re-runs when either is newer than its output
     for path, obj in ((C.CLUSTER_SUMMARIES, out), (prov_path, prov)):
         text = json.dumps(obj, indent=1)
-        if not os.path.exists(path) or open(path).read() != text:
-            with open(path, "w") as f:
+        if not os.path.exists(path) or open(path, encoding="utf-8").read() != text:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
 
     new = _log_since(C.STAGE_CALL_LOG, log_before)
@@ -730,10 +773,10 @@ def stale_specs(uids: list[str] | None = None, prov: dict | None = None) -> dict
         idx_path = os.path.join(C.WORK, "index.json")
         if not os.path.exists(idx_path):
             return {}
-        uids = sorted(w["uid"] for w in json.load(open(idx_path))["workflows"])
+        uids = sorted(w["uid"] for w in json.load(open(idx_path, encoding="utf-8"))["workflows"])
     if prov is None:
         pp = os.path.join(C.SPEC_DIR, "PROVENANCE.json")
-        prov = json.load(open(pp)) if os.path.exists(pp) else {"specs": {}}
+        prov = json.load(open(pp, encoding="utf-8")) if os.path.exists(pp) else {"specs": {}}
     generated = {u for u in uids if os.path.exists(os.path.join(C.SPEC_DIR, f"{u}.json"))
                  and (prov["specs"].get(u) or {}).get("source", "").startswith("generated")}
     why = {u: "the prompt changed shape" for u in generated
@@ -760,7 +803,7 @@ def input_changes(uids: list[str], check: set[str]) -> dict[str, str]:
                 **_shared_state())
     out = {}
     for u in sorted(check):
-        ctx = (json.load(open(os.path.join(C.SPEC_DIR, f"{u}.json"))).get("context") or {})
+        ctx = (json.load(open(os.path.join(C.SPEC_DIR, f"{u}.json"), encoding="utf-8")).get("context") or {})
         now = probe["contexts"].get(u) or {}
         if ctx.get("prompt_sha"):
             if ctx["prompt_sha"] != probe["prompt_sha"].get(u):
@@ -783,7 +826,7 @@ def _shared_state() -> dict:
     p = os.path.join(C.ASSESS, "assess.json")
     if not os.path.exists(p):
         return {"lifecycle": [], "state": {}}
-    a = json.load(open(p))
+    a = json.load(open(p, encoding="utf-8"))
     return {"lifecycle": a.get("lifecycle_groups") or [],
             "state": {u: w.get("state") or {} for u, w in (a.get("workflows") or {}).items()}}
 
@@ -794,21 +837,21 @@ def _entry_points_by_uid() -> dict:
     p = os.path.join(C.ASSESS, "assess.json")
     if not os.path.exists(p):
         return {}
-    wf = json.load(open(p)).get("workflows") or {}
+    wf = json.load(open(p, encoding="utf-8")).get("workflows") or {}
     return {u: w.get("entry_points") or [] for u, w in wf.items()}
 
 
 def _log_len(path: str) -> int:
     if not os.path.exists(path):
         return 0
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return sum(1 for _ in f)
 
 
 def _log_since(path: str, n: int) -> list[dict]:
     if not os.path.exists(path):
         return []
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         lines = f.readlines()[n:]
     out = []
     for line in lines:

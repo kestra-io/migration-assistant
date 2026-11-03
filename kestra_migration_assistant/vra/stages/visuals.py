@@ -289,11 +289,11 @@ def call_graph(assess, brief) -> str:
     n_ep = assess["counts"].get("entry_points", 0)
     if n_ep:
         note = (f"{n_ep} entry point(s) are on record, from the vRA export and <code>entry-points.yaml</code> "
-                "(preflight Q2). The first graph shows what starts each workflow from outside vRO. A workflow "
+                "(the question what starts the workflows from outside vRO). The first graph shows what starts each workflow from outside vRO. A workflow "
                 "no other workflow calls and no entry point starts may be started by hand or be unused; only an "
                 "owner can tell which.")
     else:
-        note = ("This export has no catalog items, subscriptions or schedules (preflight Q2 is open), so an "
+        note = ("This export has no catalog items, subscriptions or schedules (the question what starts the workflows from outside vRO is open), so an "
                 "<b>entry point</b> here means a workflow that no other workflow in the export calls. Clusters "
                 "holding one have a highlighted border. Some are real entry points; some may be unused. Only an "
                 "owner can tell which.")
@@ -557,7 +557,7 @@ def criteria_lines(w: dict, assess: dict) -> list[tuple[str, str, str, str]]:
             g["per"][short] = g["per"].get(short, 0) + 1
             if e["status"] != "done":
                 g["keys"].append(I.entry_key(key))
-        elif c.get("kind") == "gate":
+        elif c.get("kind") in ("gate", "package"):
             pass                                     # its label says it all
         elif key and key not in g["keys"]:
             g["keys"].append(key)
@@ -593,7 +593,7 @@ def _criterion_label(e: dict, key: str, by_part: dict, by_name: dict, wf_by_shor
              "mappings": "Image, size and placement of the machines", "ip-allocation": "Who assigns IP addresses",
              "day2-scale": "Scaling on Day 2", "deployment-record": "Which resources belong to each deployment",
              "app": "The App and who uses it", "existing-deployments": "Deployments vRA already made",
-             "writes": "Read and write classification", "signed_for": "The signature covers this wave"}
+             "writes": "Read and write classification"}
     if fam in ("defect", "question", "spec") and parts:
         name = wf_by_short.get(parts[0], parts[0])
         what = {"defect": "Possible defects in", "question": "Spec questions on", "spec": "Spec review of"}[fam]
@@ -622,7 +622,7 @@ def _criterion_label(e: dict, key: str, by_part: dict, by_name: dict, wf_by_shor
         name = next((s for n, s in by_name.items() if n in e["criterion"]), m.group(1) if m else "")
         return f"Non-production {name}".strip(), f"{key}:{name}"
     if fam.startswith("q9"):
-        return "Whether vRA stays or is replaced (preflight Q9)", key
+        return "Whether vRA stays or is replaced", key
     m = re.match(r"q(\d+)-", fam)
     if m:
         return f"Preflight Q{m.group(1)}: " + fam.split("-", 1)[1].replace("-", " "), key
@@ -718,7 +718,7 @@ def explorer_data(assess, brief) -> dict:
 
 
 def explorer(assess, brief) -> str:
-    tpl = open(os.path.join(C.ASSETS, "explorer-viewer.html")).read()
+    tpl = open(os.path.join(C.ASSETS, "explorer-viewer.html"), encoding="utf-8").read()
     marker = "/*__TOPOLOGY_DATA__*/ null"
     assert marker in tpl
     data = C.no_em_dashes(json.dumps(explorer_data(assess, brief), ensure_ascii=False))
@@ -851,7 +851,14 @@ def workflow_page(u: str, assess: dict, brief: dict) -> str:
                   + ", ".join(f"<code>{C.esc(c['key'])}</code>" for c in covered if c["question"] == q) + "</li>"
                   for q in sorted(cov_q))
     mine = [x for x in brief.get("suspected_defects") or [] if x["workflow"] == u]
-    defects = "".join(f"<li>{C.esc(x['what'])} <span class='muted'>Evidence: {C.esc(x.get('evidence') or '')}</span>"
+    def kept(x: dict) -> str:
+        a = str(x.get("answer") or "")
+        return (" <b>Kept, as today.</b>" if x.get("assumed") or a.startswith("keep") else
+                " <b>Fixed in the conversion.</b>" if a.startswith("fix") else "")
+    defects = "".join(f"<li>{C.esc(x.get('today') or x['what'])}{kept(x)}"
+                      + (f" <span class='muted'>Found in the code: {C.esc(x['what'])}</span>"
+                         if x.get("today") and x.get("today") != x["what"] else "")
+                      + f" <span class='muted'>Evidence: {C.esc(x.get('evidence') or '')}</span>"
                       + (f"<br>{C.esc(x['question'])}" if x.get("question") else "")
                       + (" <span class='muted'>Asked once, in the certificate decisions: "
                          + ", ".join(f"<code>{C.esc(k)}</code>" for k in x["covered_by"]) + "</span></li>"
@@ -866,7 +873,9 @@ def workflow_page(u: str, assess: dict, brief: dict) -> str:
     eps = "; ".join(C.esc(f"{e['kind']} {e['name']}" + (f" on {e['event_topic']}" if e.get("event_topic") else "")
                           + (" (blocking)" if e.get("blocking") else "")
                           + (f", when {e['condition']}" if e.get("condition") else ""))
-                    for e in w_eps(w)) or "none on record"
+                    for e in w_eps(w)) or (f"{(brief.get('started_outside') or {}).get('answer')} (your answer about "
+                                           "the estate)" if (brief.get("started_outside") or {}).get("all")
+                                           else "none on record")
     doc_note = ""
     if w["doc_order_would_mislead"]:
         doc_note = (f"<div class='note'>The first task in the file is <code>{C.esc(w['first_task_in_doc_order'])}</code>, "
@@ -1093,14 +1102,14 @@ def vra_view(assess, brief) -> str:
     if not views:
         body = ("<h1>vRA view</h1><div class=\"note\">No vRA content is on record: no .vra-ng export in the estate "
                 "folder and no catalog item, cloud template or subscription in <code>entry-points.yaml</code> "
-                "(preflight Q2). Nothing here to show.</div>")
+                "(the question what starts the workflows from outside vRO). Nothing here to show.</div>")
         return TH.page("vRA view", body, active="vra.html")
-    choice = {TG.KEEP: "vRA stays as the front end (preflight Q9): subscriptions call Kestra's webhook.",
-              TG.REPLACE: "vRA is replaced (preflight Q9): the catalog item becomes a Kestra App, the cloud template "
+    choice = {TG.KEEP: "vRA stays as the front end (your answer, or what the brief assumes): subscriptions call Kestra's webhook.",
+              TG.REPLACE: "vRA is replaced (your answer, or what the brief assumes): the catalog item becomes a Kestra App, the cloud template "
                           "a flow, each event below a step in it.",
-              TG.BRIDGE: "vRA is replaced, with a bridge until then (preflight Q9): subscriptions call Kestra's "
+              TG.BRIDGE: "vRA is replaced, with a bridge until then (your answer): subscriptions call Kestra's "
                          "webhook while the replacement is built, then each event below becomes a step.",
-              TG.BOTH: "Preflight Q9 (keep vRA or replace it) is open, so the plan below shows both."}[tp["front_end"]]
+              TG.BOTH: "Whether vRA stays or is replaced is open, so the plan below shows both."}[tp["front_end"]]
     parts = [f"""<h1>vRA flow</h1>
 <p>How a request becomes machines and what the workflows do with them: the catalog item and its form, the cloud
 template and what it creates, then the lifecycle events in the order vRA fires them, each with the workflow its

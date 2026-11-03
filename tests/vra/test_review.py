@@ -204,18 +204,28 @@ def test_3_a_question_asked_for_several_workflows_of_one_group_is_listed_once(es
     assert "Applies to: Dns - Create Zone" in estate["oq"] and "also asked for Dns - Register Host" in estate["oq"]
 
 
-def test_3_suspected_defects_are_their_own_list_and_a_decision_each(estate):
+def test_3_suspected_defects_are_their_own_list_and_kept_as_today(estate):
+    from kestra_migration_assistant.vra.stages import your_input as Y
     d = estate["brief"]["suspected_defects"]
     assert [(x["workflow"], x["n"]) for x in d] == [(CREATE, 1), (DELETE, 1), (DELETE, 2)]
-    assert "possible defects** in two workflows, one entry per workflow" in estate["md"]
     assert "## Suspected defects" in estate["oq"]
     dec = _decisions(estate)
     k = d[1]["decision"]
-    assert k in dec and dec[k]["closes"]["options"] == ["keep", "fix"]
-    # in answers.yaml, one plain question with the choice in it
-    q = dec[k]["closes"]["plain"]
-    assert q.startswith("Possible defect in ") and q.endswith(". Keep the current behavior, or fix it?")
-    assert "(" not in q
+    assert k in dec and dec[k]["closes"]["options"] == ["keep", "fix"]       # still a decision of its wave
+    # none fails every time or is a security problem: each is kept, as today, and answers.yaml says so under the
+    # assumption, described by what it does, with the answer it takes
+    doc = Y._yaml(open(C.ANSWERS, encoding="utf-8").read())
+    kept = next(e for e in doc["estate"] if e["id"] == "assume.defects")
+    assert {m["id"] for m in kept["each"]} == {x["decision"] for x in d}
+    assert all(m["assumed"] == "keep, as today" and "answer" not in m for m in kept["each"])
+    assert all(m["question"].endswith(". Keep it as today, or fix it?") for m in kept["each"])
+    assert not any(str(e["id"]).startswith(("defect", "same.defect")) for e in doc["open"] or [])
+    st = Y.state(k)
+    assert st["state"] == "answered" and st["answer"].startswith("keep")    # what the conversion reads
+    assert "kept as they are today" in estate["md"]
+    # every one is listed in the brief, by what it does today, with what the conversion does with it
+    appendix = estate["md"].split("## Appendix C. Possible defects", 1)[1]
+    assert appendix.count("(kept, as today)") == len(d)
 
 
 # ------------------------------------------------------------ 4. stale specs reported by status and brief
@@ -416,8 +426,8 @@ def test_13_rewriting_the_questions_keeps_the_answers_file_time(estate):
     from kestra_migration_assistant.vra.stages import preflight as P
     path = C.ANSWERS
     txt = open(path).read()
-    assert "    question: Is this export the whole" in txt
-    open(path, "w").write(txt.replace("    question: Is this export the whole", "    question: (old wording) Is this export the whole", 1))
+    assert "    question: Who owns each functional area" in txt
+    open(path, "w").write(txt.replace("    question: Who owns each functional area", "    question: (old wording) Who owns each functional area", 1))
     os.utime(path, (1_000_000_000, 1_000_000_000))
     P.refresh_questions()
     assert "(old wording)" not in open(path).read() and os.path.getmtime(path) == 1_000_000_000

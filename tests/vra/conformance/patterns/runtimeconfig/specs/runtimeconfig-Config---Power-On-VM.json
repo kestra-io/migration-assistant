@@ -1,0 +1,14 @@
+{
+  "workflow_uid": "runtimeconfig-Config---Power-On-VM",
+  "purpose": "Config - Power On VM, for the runtimeconfig pattern fixture.",
+  "confidence": "high",
+  "open_questions": [
+    {
+      "question": "Which vCenter does Power On VM use in each region and cluster?",
+      "why_it_matters": "the converted flow needs the host",
+      "theme": "endpoint identity"
+    }
+  ],
+  "suspected_defects": [],
+  "external_systems": []
+}

@@ -17,6 +17,7 @@ import yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
+from kestra_migration_assistant.config import HELP_URL
 from kestra_migration_assistant.vra.stages import common as C
 from kestra_migration_assistant.vra.stages import gates as G
 from kestra_migration_assistant.vra.stages import your_input as Y
@@ -75,7 +76,7 @@ def test_every_criterion_names_the_file_and_field_that_close_it(estate):
     crit = _criteria(b)
     assert crit and any(w.get("kind") == "vra-replacement" for w in b["plan"]["waves"])
     files = {G.ANSWERS_FILE, G.CORRECTIONS_FILE}
-    keys = set(_flat()) | {"signed_for"}
+    keys = set(_flat())
     for n, e in crit:
         c = e.get("closes")
         if c and c["kind"] == "gate":           # an earlier wave's exit: the migration closes it, nobody answers it
@@ -115,6 +116,10 @@ def test_answers_yaml_lists_every_decision_with_options(estate):
     for k in asked:
         rec = G.entries(b["plan"])[k].get("recommended")
         e = Y.entry_of(d, k)
+        if "assumed" in e:                  # assumed (a timeout kept, as today): the answer it takes, no line to fill
+            assert set(e) == {"question", "assumed"} and Y.section_of(d, k) == "estate", k
+            assert not rec or e["assumed"] == rec, k
+            continue
         assert set(e) <= {"question", "suggested", "answer"} and e["question"] and e.get("answer") is None, k
         if rec:
             assert e["suggested"] == rec, k
@@ -127,7 +132,11 @@ def test_answers_yaml_lists_every_decision_with_options(estate):
 def test_a_decision_closes_every_criterion_it_covers(estate):
     b, _ = estate()
     ed = [(n, e) for n, e in _criteria(b) if e["closes"]["key"] == "edition"]
-    assert ed and all(e["status"] == "open" for _, e in ed)
+    assert ed and all(e["status"] == "done" for _, e in ed)             # Enterprise Edition is assumed (assume.edition)
+    Y.set_answer("assume.edition", "not available")                     # the assumption overridden: the edition as said
+    b, _ = estate()
+    assert all(e["status"] == "blocked" for _, e in _criteria(b) if e["closes"]["key"] == "edition")
+    Y.set_answer("assume.edition", "")
     _fill({"edition": {"decision": "available"}})
     b, md = estate()
     ed = [(n, e) for n, e in _criteria(b) if e["closes"]["key"] == "edition"]
@@ -199,15 +208,12 @@ def test_answers_close_the_preflight_criteria(estate):
     assert all(e["status"] == "done" for e in q9)
 
 
-def test_the_signature_closes_the_approval_gate_of_the_waves_it_covers(estate):
-    from kestra_migration_assistant.vra.stages import your_input as Y
-    estate()
-    Y.set_signature("wave-1")
-    assert _doc()["signed_for"] == "wave 1"
-    b, _ = estate()
-    by_wave = {n: e for n, e in _criteria(b) if e["closes"]["kind"] == "approval"}
-    assert by_wave[1]["status"] == "done" and by_wave[1]["note"] == "signed for Wave 1"
-    assert all(e["status"] == "open" and "wave-1 only" in e["note"] for n, e in by_wave.items() if n != 1)
+def test_no_wave_waits_on_a_signature(estate):
+    """Since 1.2.0 the migration is agreed with Kestra directly: no criterion, field or page asks for a signature."""
+    b, md = estate()
+    assert not [e for _, e in _criteria(b) if e["closes"]["kind"] == "approval" or "signature" in e["criterion"]]
+    assert "signed_for" not in _doc() and "signed_for" not in open(C.ANSWERS).read()
+    assert not re.search(r"(?<!-)\bsign(ed|ing|ature)?\b(?!\s+in\b)", md, re.I)     # "sign in" is vRO's
 
 
 def test_replacement_wave_decisions_carry_a_recommendation(estate):
@@ -247,7 +253,7 @@ def test_a_delete_path_step_does_not_run_the_create_cleanup():
 def _answer_everything():
     """Answer every open entry as a person would: yes to the suggestions and the specs, keep all to each workflow's
     defects, and a stand-in answer to everything asked one by one."""
-    for e in _doc()["open"] or []:
+    for e in (_doc()["open"] or []) + (_doc().get("waves") or []):
         k = e["id"]
         if "each" in e and "answer" not in e:
             for m in e["each"]:
@@ -275,7 +281,8 @@ def test_a_wave_exit_is_a_gate_the_migration_closes_not_an_open_item(estate):
     assert _doc()["open"] == []
     st = S.status_of(b)
     assert st["open"] == 0 and not st["blocking"] and not st["blocks"]
-    assert st["line"] == "Ready to sign. Once signed, Wave 1 can start. Wave 2 starts once Wave 1 is done."
+    assert st["line"] == ("The brief is ready: Wave 1 can start. Wave 2 starts once Wave 1 is done. Next step: "
+                          f"talk to Kestra about a proof of concept or the migration ({HELP_URL}).")
     # the gate stays on the waves page and in BRIEF.md's appendix, in one plain sentence
     assert "- open: Starts once Wave 1 is migrated and verified" in md.split("## Appendix B", 1)[1]
     V.run()
@@ -285,8 +292,6 @@ def test_a_wave_exit_is_a_gate_the_migration_closes_not_an_open_item(estate):
     assert "<code>wave-exit.1</code>" not in waves
     page = open(C.INDEX).read()
     text = F.text_of(page)
-    assert "Ready to sign." in text and "Wave 2 starts once Wave 1 is done." in text and "Nothing is open." in text
+    assert "Ready: Wave 1 can start." in text and "Wave 2 starts once Wave 1 is done." in text
+    assert re.search(r"Nothing is open. Next step: talk to Kestra about a proof of concept or the migration ?\.", text)
     assert "wave-exit" not in page and "exit criteria" not in text
-    Y.set_signature("full plan")
-    b, _ = estate()
-    assert S.status_of(b)["line"] == "Ready: Wave 1 can start. Wave 2 starts once Wave 1 is done."

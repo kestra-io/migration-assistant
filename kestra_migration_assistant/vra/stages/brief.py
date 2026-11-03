@@ -1,13 +1,11 @@
 """
-Stage 2, Brief: triage, waves, an estate recommendation, and the approval gate.
+Stage 2, Brief: triage, waves and an estate recommendation.
 
 Reads Assess (re-running it if a correction is newer), the estate's specs in data/2-understand,
 your-input/answers.yaml and your-input/corrections.yaml. Registers everything it asks a person in
 answers.yaml (your_input.py), and writes brief.json, triage.csv, open-questions.md and walkthroughs.json in
 data/3-brief, and report/BRIEF.md, the brief as a downloadable copy. The front page (index.html) is drawn
 from brief.json by the visuals.
-
-The signature (`signed_for:` in answers.yaml) is the gate a later convert stage reads.
 """
 from __future__ import annotations
 
@@ -28,28 +26,6 @@ from . import triage as TR
 from . import triggers as TG
 from . import waves as W
 
-APPROVAL_RE = re.compile(r"<!-- approval:start -->(.*?)<!-- approval:end -->", re.S)
-APPROVAL_BLANK = """```
-Approved by: ________________  Date: __________
-Approval covers: [ ] Wave 1 only   [ ] Full plan
-```"""
-
-
-def parse_approval(text: str) -> dict:
-    """The approval block of a BRIEF.md written before 2026-10-01 (your_input.migrate carries it over)."""
-    m = APPROVAL_RE.search(text or "")
-    block = m.group(1) if m else ""
-    who = re.search(r"Approved by:\s*([^\n]*?)\s+Date:", block)
-    date = re.search(r"Date:\s*([^\n]*)", block)
-    name = (who.group(1) if who else "").strip().strip("_").strip()
-    d = (date.group(1) if date else "").strip().strip("_").strip()
-    wave1 = bool(re.search(r"\[[xX]\]\s*Wave 1 only", block))
-    full = bool(re.search(r"\[[xX]\]\s*Full plan", block))
-    scope = "full" if full else ("wave-1" if wave1 else None)
-    return {"present": bool(m), "signed": bool(name and scope), "approved_by": name or None,
-            "date": d or None, "scope": scope, "block": block.strip()}
-
-
 # ------------------------------------------------------------------ run
 
 def run() -> dict:
@@ -60,7 +36,8 @@ def run() -> dict:
     answers = preflight.load_answers()
     wf = assess["workflows"]
     by_short = {w["short"]: u for u, w in wf.items()}
-    overrides = corrections.outcomes(by_short)
+    from . import interview
+    overrides = {**interview.scope_outcomes(by_short), **corrections.outcomes(by_short)}
 
     fok = {c["cluster_id"]: c["first_of_a_kind"] for c in assess["clusters"]}
     specs = {u: C.spec(u) for u in wf}
@@ -94,6 +71,14 @@ def run() -> dict:
     attach_covers(plan, cover, wf)
 
     retire = [x for x in (TR.retire_candidate(w, eff[u]) for u, w in wf.items()) if x]
+    outside = interview.started_by()
+    if outside and outside["all"]:
+        retire = []                     # anything may be started from outside: run history tells which are unused
+    named = {by_short[s] for s in interview.scope_unsure() if s in by_short}
+    for u in sorted(named - {x["uid"] for x in retire}):
+        # found by name, and the owner is not sure: listed for its owner to confirm
+        retire.append({"uid": u, "why": "its name or folder says it is an old copy or a test; its owner confirms",
+                       "supporting": ["the owner was not sure (estate.scope)"]})
     retire_actions = [a["key"] for a in assess["actions"] if not a["called"]]
     defects = suspected_defects(assess, specs)
     asked_now = G.entries(plan)
@@ -124,6 +109,7 @@ def run() -> dict:
         "retire_candidates": retire, "retire_candidate_actions": retire_actions,
         "plan": plan, "recommendation": rec, "walkthroughs": flows, "trigger_plan": trigger_plan,
         "open_preflight_items": answers["open"],
+        "started_outside": outside,
         "stale_specs": stale,
         "open_questions": {"asked": sum(len(g["workflows"]) for g in qgroups), "grouped": len(qgroups),
                            "groups": qgroups,
@@ -135,17 +121,37 @@ def run() -> dict:
 
     # everything a person answers goes in your-input/answers.yaml; register it, then read it back
     asked = G.entries(plan)
-    Y.register("brief", G.input_items(asked) + spec_question_items(qgroups, wf, tri, qkeys, asked)
-               + RV.input_items(specs, wf))
+    from . import planner
+    registered = G.input_items(asked) + spec_question_items(qgroups, wf, tri, qkeys, asked) + RV.input_items(specs, wf, tri)
+    planner.assign_patterns(registered, assess, tri)
+    # what keeps today's behavior is assumed, what only a wave's conversion needs waits for it, the rest is asked
+    from . import defaults
+    defaults.sort(registered, wf)
+    defaults.wave_of(registered, plan, wf)
+    Y.register("assumed", defaults.assumptions(registered + [it for it in Y.items() if it.get("section") in
+                                                             ("preflight", "replan")]), write=False)
+    Y.register("brief", registered)
+    sorted_by_key = {it["key"]: it for it in registered}
     Y.register_unblocks(preflight_unblocks(plan))
     loaded = Y.load()
     reviews = RV.load(specs, wf, loaded)
     result["reviews"].update(by_uid=reviews["by_uid"],
                              reviewed=sorted(u for u, x in reviews["by_uid"].items() if x["state"] == "reviewed"))
-    approval = Y.signature(loaded)
-    result["approval"] = approval
     decisions = G.load(asked, loaded)
-    G.close(plan, answers=answers, reviews=reviews, decisions=decisions, approval=approval)
+    G.close(plan, answers=answers, reviews=reviews, decisions=decisions)
+    for d in defects:
+        # each possible defect as it behaves today, and what the conversion does with it
+        it = sorted_by_key.get(d["decision"]) or {}
+        st = Y.state(d["decision"], loaded, it) if it else {"state": "open", "answer": None}
+        d["today"] = it.get("today") or d["what"]
+        d["asked"] = defaults.asked(it) if it else False
+        srt = it.get("sort") or {}
+        d["flag"] = ("security" if srt.get("security") else "fails" if srt.get("always_fails") else None) \
+            if d["asked"] else None             # kept like the rest, and listed first in the brief as a note
+        d["in_plan"] = bool(it)                     # its workflow is in a wave: the conversion decides it
+        d["answer"] = st["answer"] if st["state"] == "answered" else None
+        d["assumed"] = st["state"] == "answered" and "(assumed" in str((loaded.get("closed") or {}).get(
+            d["decision"], {}).get("answer") or "")
     result["decisions"] = {"path": decisions["path"], "asked": asked, "by_key": decisions["by_key"],
                            "warnings": decisions["warnings"]}
     result["input"] = input_summary(loaded)
@@ -154,6 +160,7 @@ def run() -> dict:
     translate.ready(assess, result, translation)
     result["translation"] = translation
     result["input"] = input_summary(loaded)
+    result.update(estate_summary(loaded, {wf[u]["name"] for u, t in tri.items() if t["outcome"] == "Retire"}))
     from . import front
     rec["produced_by"] = front.recommendation_text(assess, result)
     C.write_json(os.path.join(C.BRIEF, "brief.json"), result)
@@ -162,7 +169,7 @@ def run() -> dict:
     C.write_text(os.path.join(C.BRIEF, "open-questions.md"),
                  C.no_em_dashes(open_questions_md(assess, eff, tri, answers, cover)))
     from . import brief_md
-    C.write_text(C.BRIEF_MD, C.no_em_dashes(brief_md.render(result, assess, eff, answers, approval)))
+    C.write_text(C.BRIEF_MD, C.no_em_dashes(brief_md.render(result, assess, eff, answers)))
     return result
 
 
@@ -347,8 +354,9 @@ def input_summary(loaded: dict) -> dict:
     """What a person still has to do in answers.yaml, per group and family (the front page shows it)."""
     from . import your_input as Y
     sm = Y.summary(loaded)
-    out = {"path": C.rel(C.ANSWERS), "warnings": loaded["warnings"], "sign": sm["sign"],
-           "stand_in": bool(loaded.get("stand_in")), "shown": Y.shown(loaded)}
+    out = {"path": C.rel(C.ANSWERS), "warnings": loaded["warnings"],
+           "stand_in": bool(loaded.get("stand_in")), "shown": Y.shown(loaded),
+           "later": [k for _g, _e, each in Y.deferred(Y.items(), loaded) for k, _ in each]}
     for g in ("confirm", "answer", "review"):
         fam: dict[str, dict] = {}
         for bucket in ("open", "stale", "done"):
@@ -364,6 +372,44 @@ def input_summary(loaded: dict) -> dict:
         out[g] = {"open": sum(len(f["open"]) for f in fam.values()), "done": sum(f["done"] for f in fam.values()),
                   "families": fam}
     return out
+
+
+def estate_summary(loaded: dict, retired: set[str] | None = None) -> dict:
+    """What applies estate-wide, for the pages: the counts answers.yaml shows (your_input.count, so the brief and the
+    file always agree), the estate answers and what each settled, the assumptions and whether each holds, and what to
+    add to the package (patterns.py)."""
+    from . import interview, patterns
+    from . import your_input as Y
+    its = Y.items()
+    shut = Y.closers(loaded)
+    estate, assumed = [], []
+    for it in its:
+        k = it["key"]
+        e = loaded["entries"].get(k) or {}
+        if it.get("family") == "estate":
+            estate.append({"id": k, "question": it.get("question") or it["ask"],
+                           "answer": interview.answer_of(it, e), "settles": len(shut.get(k) or [])})
+        elif it.get("family") == "assume":
+            over = interview.answer_of(it, e)
+            rec = {"id": k, "assumed": it.get("assumed"), "holds": over is None, "instead": over,
+                   "where": it.get("where") or [], "settles": len(shut.get(k) or [])}
+            if k == "assume.suggested":
+                # each answer it takes, for the brief to list: they shape the plan (vRA replaced, nothing off limits)
+                by_key = {x["key"]: x for x in its}
+                rec["takes"] = [{"id": m, "question": Y.question_of(by_key[m]) if m in by_key else m,
+                                 "answer": Y._assumed_words(loaded["closed"][m]["answer"])}
+                                for m in shut.get(k) or [] if m in (loaded.get("closed") or {})]
+            assumed.append(rec)
+    pj, aj = os.path.join(C.ASSESS, "patterns.json"), os.path.join(C.ASSESS, "assess.json")
+    pat = patterns.run() if not os.path.exists(pj) or C.mtime(pj) < C.mtime(aj) else patterns.load()
+    adds = [a for a in pat.get("missing") or [] if not set(a["called_by"]) <= (retired or set())]
+    from ..parse import formats
+    pf = os.path.join(C.PRE, "preflight.json")
+    failed = ((C.read_json(pf).get("export") or {}).get("failures") or []) if os.path.exists(pf) else []
+    unread = [{"file": f.get("file") or os.path.basename(f.get("path") or f["source"]),
+               "why": f.get("why") or formats.plain_reason(f.get("error") or "")} for f in failed]
+    return {"questions": Y.count(loaded), "estate_answers": estate, "assumptions": assumed,
+            "package_additions": adds, "unreadable": unread}
 
 
 def _write_csv(assess, tri, act_tri, specs):
@@ -447,7 +493,8 @@ def recommend(assess, tri, act_tri, answers, number: dict | None = None) -> dict
                       "Real reuse. Converting a first of a kind unlocks the rest of its cluster.")},
         {"signal": "Open preflight items",
          "value": f"{len(answers['open'])} of {len(answers['items'])}",
-         "reads_as": "Every wave that writes to a target is gated on Q3; the retire pass on Q2 and Q7."},
+         "reads_as": "Every wave that writes to a target is gated on where it runs before production; the retire pass on what starts "
+                     "the workflows and on run history."},
     ]
     share_mr = manual_rebuild / n
     reuse = top5 / n
@@ -714,7 +761,7 @@ def open_questions_md(assess, specs, tri, answers, cover=None) -> str:
         mine = [g for g in groups if set(g["workflows"]) & set(by_dom[did])]
         n = sum(len(g["wordings"]) for g in mine)
         L += [f"### {d['name']} ({len(mine)} question{'s' if len(mine) != 1 else ''}"
-              + (f", asked {n} times across the specs" if n != len(mine) else "") + "; owner: preflight Q6)", ""]
+              + (f", asked {n} times across the specs" if n != len(mine) else "") + "; owner: as named in answers.yaml)", ""]
         for g in mine:
             flag = " (blocking)" if g["blocking"] else ""
             who = ", ".join(f"{wf[u]['name']} ({tri[u]['outcome']})" for u in g["workflows"])

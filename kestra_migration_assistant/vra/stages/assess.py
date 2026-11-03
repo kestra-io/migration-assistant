@@ -66,7 +66,10 @@ def _parse(pm: dict) -> dict:
     # Script modules again, for their parameter types (the index keeps only the script).
     actions: list[dict] = []
     for label, path in inputs.items():
-        elements, _ = formats.read_any(path)
+        try:
+            elements, _ = formats.read_any(path)
+        except Exception:
+            continue                    # an input that cannot be read: Preflight lists it, with why
         for e in elements:
             if e.kind not in ("ScriptModule", "ScriptingAction"):
                 continue
@@ -863,9 +866,14 @@ def domain_names_prompt(payload: list[dict]) -> str:
         + safety.wrap("domains and cluster summaries", json.dumps(payload, indent=1)))
 
 
+# False while the interactive run reads the export, before anything may be billed: the names are made with the
+# analysis (cli.py runs Assess again then), and until then the code's labels stand in.
+NAME_DOMAINS = True
+
+
 def _name_domains(keys, by_key, cres, summaries, tinv) -> dict:
     """One model call: a short name and one sentence per domain, from cached cluster summaries."""
-    if os.environ.get("VRO_NO_MODEL"):
+    if os.environ.get("VRO_NO_MODEL") or not NAME_DOMAINS:
         cached = os.path.join(C.ASSESS, "domain-names.json")
         return C.read_json(cached).get("names", {}) if os.path.exists(cached) else {}
     payload = []

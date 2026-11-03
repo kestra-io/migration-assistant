@@ -155,6 +155,6 @@ def similarity(fa: dict, fb: dict) -> tuple[float, dict]:
 def load_fingerprints(model_dir: str, uids: list[str]) -> dict[str, dict]:
     out = {}
     for uid in uids:
-        with open(os.path.join(model_dir, f"{uid}.json")) as f:
+        with open(os.path.join(model_dir, f"{uid}.json"), encoding="utf-8") as f:
             out[uid] = fingerprint(json.load(f))
     return out

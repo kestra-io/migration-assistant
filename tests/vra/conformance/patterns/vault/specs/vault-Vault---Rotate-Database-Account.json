@@ -1,0 +1,14 @@
+{
+  "workflow_uid": "vault-Vault---Rotate-Database-Account",
+  "purpose": "Vault - Rotate Database Account, for the vault pattern fixture.",
+  "confidence": "high",
+  "open_questions": [
+    {
+      "question": "Where does the converted flow get the database service account password?",
+      "why_it_matters": "credentials",
+      "theme": "credentials"
+    }
+  ],
+  "suspected_defects": [],
+  "external_systems": []
+}

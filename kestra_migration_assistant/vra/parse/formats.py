@@ -418,7 +418,7 @@ def read_any(path: str) -> tuple[list[Element], dict]:
             return read_workflow_export(path)
         if any(n.startswith("elements/") for n in names):
             return read_package(path)
-        raise ValueError(f"ZIP is neither a package nor a workflow export: {path}")
+        raise ValueError("a ZIP that holds neither a vRO package nor a single workflow export")
     if path.endswith(".xml"):
         raw = safety.read_file(path)
         xml = read_xml_text(raw)
@@ -431,4 +431,17 @@ def read_any(path: str) -> tuple[list[Element], dict]:
         return [Element(kind="Workflow", name=_display_name(xml), xml=xml,
                         source_path=path, container_format="raw-xml")], \
                {"source_path": path, "format": "raw-xml", "element_counts": {"Workflow": 1}}
-    raise ValueError(f"unrecognised input: {path}")
+    if path.lower().endswith((".package", ".workflow", ".zip")):
+        raise ValueError("not a ZIP file, so not a vRO package or workflow export: it may be damaged or cut short. "
+                         "Export it again")
+    raise ValueError("not a format this tool reads (INPUTS.md lists them)")
+
+
+def plain_reason(error: str) -> str:
+    """Why an input could not be read, for the first screen and the brief: without the exception's type and without
+    any path (which would name the machine's folders)."""
+    import re as _re
+    t = _re.sub(r"^(?:[a-z_]+\.)*[A-Z][A-Za-z_]*: ", "", str(error or "").strip())       # ValueError:, BadZipFile:
+    t = _re.sub(r"(?:[A-Za-z]:)?[\\/][^\s:,;]*[\\/][^\s:,;]*", "", t)
+    t = _re.sub(r":\s*$", "", _re.sub(r"\s{2,}", " ", t)).strip()
+    return (t[:1].upper() + t[1:]).rstrip(".") + "." if t else "It could not be read."

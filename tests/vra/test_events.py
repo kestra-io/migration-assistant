@@ -288,7 +288,7 @@ def test_brief_shows_one_plan_when_q9_is_answered(estate):
         from kestra_migration_assistant.vra.stages import visuals as V
         page = V.vra_view(A.load(), C.read_json(os.path.join(C.BRIEF, "brief.json")))
         assert "If vRA is replaced" in page and "If vRA stays" not in page
-        assert "vRA is replaced (preflight Q9)" in page
+        assert "vRA is replaced (your answer, or what the brief assumes)" in page
     finally:
         open(path, "w").write(txt)
         B.run()

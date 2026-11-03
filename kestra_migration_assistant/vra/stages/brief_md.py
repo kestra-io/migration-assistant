@@ -2,7 +2,7 @@
 BRIEF.md, the brief to download: the front page's sections (front.document, so the two cannot disagree), then an
 appendix with every element of the estate in its row and every wave's entry criteria, one line each.
 
-The answers and the signature live in your-input/answers.yaml; this file is regenerated on every run.
+The answers live in your-input/answers.yaml; this file is regenerated on every run.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from . import front as FR
 from . import ids as I
 
 
-def render(r: dict, assess: dict, specs: dict, answers: dict, old_approval: dict) -> str:
+def render(r: dict, assess: dict, specs: dict, answers: dict) -> str:
     """BRIEF.md: the front page and the appendices, ending, like every page, with the one call to action and what
     made it."""
     from kestra_migration_assistant.config import HELP_ASK, HELP_URL
@@ -70,13 +70,45 @@ def _body(r: dict, assess: dict) -> str:
                 L.append(f"- open: {I.counted(fam, n, done)} (each workflow's page lists them; "
                          + ", ".join(f"`{x}`" for x in entries) + ")")
         L += [f"{met} of {len(crit)} met.", ""]
+    L += defects_appendix(r, assess)
     return "\n".join(L).rstrip() + "\n"
+
+
+def defects_appendix(r: dict, assess: dict) -> list[str]:
+    """Appendix C: every possible defect, by workflow, as it behaves today, and what the conversion does with it."""
+    ds = r.get("suspected_defects") or []
+    if not ds:
+        return []
+    wf = assess["workflows"]
+    L = ["## Appendix C. Possible defects", "",
+         "What each workflow does today that looks unintended, found in its code. The converted flows keep each one, "
+         "so they can be tested against the originals, unless an answer says to fix it: write `answer: fix` under it "
+         "in `your-input/answers.yaml`. Its evidence is on the workflow's page.", ""]
+    by: dict[str, list] = {}
+    for d in ds:
+        by.setdefault(d["workflow"], []).append(d)
+    for u, xs in sorted(by.items(), key=lambda kv: (wf.get(kv[0]) or {}).get("name") or kv[0]):
+        w = wf.get(u) or {}
+        L += [f"### {w.get('name') or u}", ""]
+        for d in xs:
+            today = str(d.get("today") or d.get("what") or "").rstrip(".")
+            a = str(d.get("answer") or "")
+            how = ("kept, as today" if d.get("assumed") or a.startswith("keep") else
+                   "fixed in the conversion" if a.startswith("fix") else
+                   a if a else
+                   "settled with the certificate checks" if d.get("covered_by") else
+                   "its workflow is in no wave: nothing to decide" if not d.get("in_plan", True) else
+                   "to decide: " + ("it fails every time or is a security problem" if d.get("asked") else "open"))
+            L.append(f"- {today[:1].upper()}{today[1:]}. ({how})")
+        L.append("")
+    return L
 
 
 def closes_key(e: dict) -> str:
     c = e.get("closes") or {}
-    k = str(c.get("field") or c.get("key") or "")
-    return k if k and c.get("kind") != "approval" else ("signed_for" if c.get("kind") == "approval" else k)
+    if c.get("kind") == "package":
+        return ""                       # closed by adding code to the package, not by an answer
+    return str(c.get("field") or c.get("key") or "")
 
 
 def criterion_label(e: dict, assess: dict) -> str:

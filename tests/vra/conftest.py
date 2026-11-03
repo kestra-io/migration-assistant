@@ -5,7 +5,7 @@ Shared fixtures.
 <estate>/: review, helpers, events, builders, triage) the way a customer gets it, with no model, in a temporary
 folder, once per session: its vRO tree and its vRA export (if any) are copied into an export folder, its specs/
 seed data/2-understand/ as if Understand had written them, and preflight, assess and brief run with
-VRO_NO_MODEL=1. Stage output is not committed, so tests that read an estate's assess.json or brief.json build
+VRO_NO_MODEL=1. The webhook URLs a tree marks are written into its copy (webhooks.py). Stage output is not committed, so tests that read an estate's assess.json or brief.json build
 it here.
 """
 from __future__ import annotations
@@ -15,11 +15,26 @@ import shutil
 import sys
 
 import pytest
+import webhooks as W
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
 CONFORMANCE = os.path.join(ROOT, "tests", "vra", "conformance")
+
+
+@pytest.fixture(autouse=True)
+def _model_state(monkeypatch):
+    """Each test starts with no run stopped or halted, and with the `anthropic` package counted as installed, so a
+    test that stands in for the Anthropic API does not need the SDK (test_model_unavailable.py checks both cases)."""
+    from kestra_migration_assistant import config as K
+    from kestra_migration_assistant.vra import model as M
+    M.STOP.clear()
+    M.LIMIT["message"] = M.LIMIT["code"] = None
+    monkeypatch.setattr(K, "has_anthropic_package", lambda: True, raising=False)
+    yield
+    M.STOP.clear()
+    M.LIMIT["message"] = M.LIMIT["code"] = None
 
 
 @pytest.fixture(scope="session")
@@ -35,9 +50,9 @@ def conformance_stages(tmp_path_factory):
         tmp = tmp_path_factory.mktemp(estate)
         src, stages = tmp / "sources" / estate, tmp / "stages" / estate
         # the tree under the estate's name, so workflow IDs (<estate>-<name>) match the committed specs
-        shutil.copytree(os.path.join(here, "vro"), src / estate)
+        W.copy(os.path.join(here, "vro"), src / estate)
         if os.path.isdir(os.path.join(here, "vra")):
-            shutil.copytree(os.path.join(here, "vra"), src / f"{estate}-vra")
+            W.copy(os.path.join(here, "vra"), src / f"{estate}-vra")
         understand = stages / C.LAYOUT["understand"]
         understand.mkdir(parents=True)
         for f in sorted(os.listdir(os.path.join(here, "specs"))):

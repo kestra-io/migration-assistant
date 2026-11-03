@@ -33,7 +33,7 @@ def _doc():
     return yaml.load(open(C.ANSWERS), Loader=Y.TextLoader)      # as the tool reads it: answers are text
 
 
-def test_the_file_has_one_comment_two_lists_and_the_signature(tmp_path):
+def test_the_file_has_one_comment_and_two_lists(tmp_path):
     _setup(tmp_path)
     Y.register("t", [Y.item("a", "answer", "A? More words.", unblocks=["Wave 1: a"]),
                      Y.item("b", "confirm", "B?", suggested="one"), Y.item("c", "answer", "C?")])
@@ -41,7 +41,7 @@ def test_the_file_has_one_comment_two_lists_and_the_signature(tmp_path):
     assert text.splitlines()[0].startswith("# Answer what's open, then run: kestra-migrate vra run ")
     assert sum(1 for ln in text.splitlines() if ln.lstrip().startswith("#")) == 1
     d = _doc()
-    assert list(d) == ["open", "answered", "signed_for"] and d["answered"] == [] and d["signed_for"] is None
+    assert list(d) == ["open", "answered"] and d["answered"] == [] and "\nsigned_for:" not in text
     assert d["open"][0] == {"id": "a", "question": "A?", "answer": None}          # what a wave waits on first
     assert d["open"][1] == {"id": "b", "question": "B?", "suggested": "one", "answer": None}
 
@@ -99,17 +99,19 @@ def test_a_rewrite_of_the_tools_text_keeps_the_files_time(tmp_path):
     assert os.path.exists(os.path.join(C.DATA, "answers.yaml.previous"))
 
 
-def test_the_signature_is_wave_1_or_full_plan(tmp_path):
+def test_a_signed_for_line_is_read_past_and_not_written_back(tmp_path):
+    """The assessment has no signature since 1.2.0: a file that still ends with `signed_for:` loads, the value
+    counts for nothing, and the next rewrite leaves the line out."""
     _setup(tmp_path)
-    Y.register("t", [])
-    assert not Y.signature()["signed"]
-    Y.set_signature("full")
-    assert _doc()["signed_for"] == "full plan"
-    assert Y.signature()["signed"] and Y.signature()["scope"] == "full"
-    Y.set_signature("wave 1")
-    assert Y.signature()["scope"] == "wave-1"
-    Y.set_signature("")
-    assert not Y.signature()["signed"]
+    Y.register("t", [Y.item("a", "answer", "A?")])
+    open(C.ANSWERS, "a").write("\nsigned_for: full plan\n")
+    loaded = Y.load()
+    assert loaded["ok"] and not loaded["warnings"] and "sign" not in loaded
+    assert not hasattr(Y, "signature") and not hasattr(Y, "set_signature")
+    Y.set_answer("a", "kept")
+    Y.register("t", [Y.item("a", "answer", "A?")])
+    assert "signed_for" not in _doc() and "\nsigned_for:" not in open(C.ANSWERS).read()
+    assert Y.entry_of(_doc(), "a")["answer"] == "kept"
 
 
 def test_a_file_in_the_old_format_is_carried_over(tmp_path):
@@ -133,7 +135,7 @@ def test_a_file_in_the_old_format_is_carried_over(tmp_path):
     assert f["b"]["answer"] == "one" and f["c"]["answer"] == "two" and f["gone"]["answer"] == "kept anyway"
     assert f["d"].get("answer") is None and f["d"]["suggested"] == "one"  # the tool's pre-fill, never confirmed
     assert f["a"]["answer"] is None and set(f["a"]) == {"question", "answer"}
-    assert d["signed_for"] == "wave 1"
+    assert "signed_for" not in d and "sign" not in d                     # the old sign: block is not carried
     assert open(os.path.join(C.DATA, "answers.yaml.before-2g")).read() == before
     assert Y.load()["stand_in"]
     # the review was written for spec f0, and the spec is f1 now: stale until the answer changes

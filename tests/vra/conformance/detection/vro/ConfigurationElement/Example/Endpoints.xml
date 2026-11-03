@@ -3,10 +3,10 @@
   <display-name><![CDATA[Endpoints]]></display-name>
   <atts>
     <att name="teamsWebhookUrl" type="string" read-only="false">
-      <value encoded="n"><![CDATA[https://example.webhook.office.com/webhookb2/detect-not-a-real-hook]]></value>
+      <value encoded="n"><![CDATA[@WEBHOOK:teams-detect@]]></value>
     </att>
     <att name="slackWebhookUrl" type="string" read-only="false">
-      <value encoded="n"><![CDATA[https://hooks.slack.com/services/DETECT/FAKE/not-a-real-hook]]></value>
+      <value encoded="n"><![CDATA[@WEBHOOK:slack-detect@]]></value>
     </att>
     <att name="towerUrl" type="string" read-only="false">
       <value encoded="n"><![CDATA[https://tower.example.net]]></value>

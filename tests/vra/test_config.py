@@ -153,11 +153,13 @@ def test_no_model_setting_is_written_to_the_export_folder(tmp_path, monkeypatch)
 
 
 def test_a_run_set_to_claude_code_without_claude_says_so_before_starting(tmp_path, monkeypatch, capsys):
+    import shutil
+
     from kestra_migration_assistant.vra import cli as vra_cli
-    monkeypatch.setattr(vra_cli.shutil, "which", lambda name: None)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
     assert vra_cli.main(["run", str(tmp_path / "acme"), "--provider", "claude-code"]) == 2
     err = capsys.readouterr().err
-    assert "needs the `claude` command" in err and "--provider" in err
+    assert "Claude Code is not installed (the `claude` command)" in err and "--provider" in err and "--no-model" in err
 
 
 # ------------------------------------------------------------------ in the container image

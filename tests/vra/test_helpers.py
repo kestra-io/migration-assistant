@@ -329,23 +329,6 @@ def test_the_replacement_wave_has_entry_criteria_and_takes_the_blocking_policy(e
     assert "**Wave 2, replacing vRA.**" in md and "### Wave 2\n" in md
 
 
-def test_a_signed_approval_closes_the_approval_gate_of_the_waves_it_covers(estate):
-    from kestra_migration_assistant.vra.stages import brief as B
-    from kestra_migration_assistant.vra.stages import your_input as Y
-    path = C.ANSWERS
-    txt = open(path).read()
-    try:
-        Y.set_signature("wave-1")
-        b = B.run()
-        gate = {w["wave"]: next(e for e in w["entry_criteria"] if e["criterion"].startswith("The signature covers"))
-                for w in b["plan"]["waves"]}
-        assert gate[1]["status"] == "done" and gate[1]["note"] == "signed for Wave 1"
-        assert all(g["status"] == "open" for n, g in gate.items() if n > 1)
-    finally:
-        open(path, "w").write(txt)
-        B.run()
-
-
 def test_no_replacement_wave_while_q9_is_open_or_says_keep(estate):
     from kestra_migration_assistant.vra.stages import brief as B
     path = C.ANSWERS

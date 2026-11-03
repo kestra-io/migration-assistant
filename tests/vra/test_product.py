@@ -76,7 +76,8 @@ def test_every_page_ends_with_the_call_to_action_and_the_footer(run):
     for p, t in pages.items():
         foot = t[t.index("<footer"):]
         assert foot.index("</footer>") > 0, p
-        assert t.count(html.escape(HELP_URL)) == 1, p                    # one call to action, in the footer
+        assert foot.count(html.escape(HELP_URL)) == 1, p                 # the call to action, in the footer
+        assert t[:t.index("<footer")].count(html.escape(HELP_URL)) <= 1, p    # and at most the next step's link
         assert html.escape(HELP_ASK) in foot
         assert f"{PRODUCT} {__version__}" in foot and "model: no model" in foot, p
         assert re.search(r"run on \d{4}-\d{2}-\d{2}", foot) and f"snapshot of {snap}" in foot, p
@@ -90,7 +91,7 @@ def test_brief_md_ends_the_same_way(run):
     tail = md.rstrip().splitlines()[-3:]
     assert tail[0] == f"[{HELP_ASK}]({HELP_URL})"
     assert tail[-1].startswith(f"{PRODUCT} {__version__} · model: no model · run on ")
-    assert md.count(HELP_URL) == 1
+    assert md.count(HELP_URL) <= 2                                       # the next step's link, and the end
 
 
 def test_the_next_step_is_the_real_command(run):

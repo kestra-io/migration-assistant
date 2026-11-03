@@ -153,13 +153,13 @@ def colour(model: dict, other_elements: list[dict]) -> dict:
 
 def run(out_dir: str, uids: list[str], label: str = "dev") -> dict:
     model_dir = os.path.join(out_dir, "model")
-    idx = json.load(open(os.path.join(out_dir, "index.json")))
+    idx = json.load(open(os.path.join(out_dir, "index.json"), encoding="utf-8"))
     others = idx["other_elements"]
 
     fps = load_fingerprints(model_dir, uids)
     groups, pairs = cluster(fps)
 
-    models = {u: json.load(open(os.path.join(model_dir, f"{u}.json"))) for u in uids}
+    models = {u: json.load(open(os.path.join(model_dir, f"{u}.json"), encoding="utf-8")) for u in uids}
     colours = {u: colour(models[u], others) for u in uids}
 
 
@@ -202,7 +202,7 @@ def run(out_dir: str, uids: list[str], label: str = "dev") -> dict:
         "fingerprints": fps,
     }
     os.makedirs(os.path.join(out_dir, "assess"), exist_ok=True)
-    with open(os.path.join(out_dir, "assess", f"clusters-{label}.json"), "w") as f:
+    with open(os.path.join(out_dir, "assess", f"clusters-{label}.json"), "w", encoding="utf-8") as f:
         json.dump(result, f, indent=1)
     return result
 

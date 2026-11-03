@@ -20,15 +20,16 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import sys
+import time
 import zipfile
+from typing import Any
 
 from kestra_migration_assistant.vra import outdir
 from kestra_migration_assistant.vra.stages import common as C
 
 COMMANDS_SHOWN = ["run", "status", "check-intake"]
-STAGES = ["preflight", "sanitize", "assess", "understand", "brief", "visuals", "status", "all", "run"]
+STAGES = ["preflight", "sanitize", "assess", "interview", "understand", "brief", "visuals", "status", "all", "run"]
 COMMANDS = frozenset(["check-intake", *STAGES])
 
 
@@ -90,8 +91,21 @@ def run_stage(s: str) -> str:
         c = r["counts"]
         return (f"{_n(c['workflows'], 'workflow')}, {_n(c['actions'], 'action')}, {_n(c['targets'], 'target')}, "
                 f"{_n(c['entry_points'], 'entry point')}")
+    elif s == "interview":
+        from kestra_migration_assistant.vra.stages import interview
+        from kestra_migration_assistant.vra.stages import your_input as Y
+        pat = interview.register()
+        loaded = Y.load()
+        est = [it for it in Y.items() if it.get("family") == "estate"]
+        n_open = sum(1 for it in est if interview.answer_of(it, loaded["entries"].get(it["key"])) is None)
+        n_as = sum(1 for it in Y.items() if it.get("family") == "assume")
+        miss = len(pat.get("missing") or [])
+        print(f"[interview] {C.ESTATE}: {len(est)} estate questions ({n_open} open), {n_as} assumptions, "
+              f"{miss} missing pieces to add to the package")
+        return (f"{_n(len(est), 'estate question')}, {n_open} open; {_n(n_as, 'assumption')}"
+                + (f"; {_n(miss, 'piece')} of code to add to the package" if miss else ""))
     elif s == "understand":
-        from kestra_migration_assistant.vra import understand
+        from kestra_migration_assistant.vra import model, understand
         r = understand.run_estate()
         kept = [k for k, v in r["errors"].items() if "since --no-model" in str(v)]
         unread = [k for k, v in r["errors"].items() if str(v).startswith("needs a model")]
@@ -108,6 +122,15 @@ def run_stage(s: str) -> str:
         for k, v in r["errors"].items():
             if k not in unread:
                 print(f"  {'kept, stale' if 'since --no-model' in str(v) else 'failed'}: {k}: {v}")
+        broken = [k for k in r["errors"] if k not in kept and k not in unread]
+        if broken and not os.environ.get("VRO_NO_MODEL"):
+            # a model was chosen (and, typed in a terminal, its cost agreed): no brief from an analysis that did
+            # not happen, where every workflow it missed would read "needs a model"
+            first = str(r["errors"][broken[0]]).split(": ", 1)[-1][:300]
+            total = len(broken) + have
+            model.halt(f"{len(broken)} of {total} workflows could not be analyzed, so no brief was written. The "
+                       f"first error: {first} Finished work is kept: run the same command again (what failed is "
+                       f"in {C.rel(os.path.join(C.DATA, 'run.log'))}).", model.INCOMPLETE_EXIT)
         failed = len(r["errors"]) - len(kept) - len(unread)
         if unread and not have:
             return f"no specs: what each of the {len(unread)} workflows does needs a model"
@@ -158,7 +181,7 @@ def _old_keys() -> dict[str, str]:
     p = os.path.join(C.ASSESS, "assess.json")
     if not os.path.exists(p):
         return {}
-    wf = json.load(open(p))["workflows"]
+    wf = json.load(open(p, encoding="utf-8"))["workflows"]
     out = {}
     for u, w in wf.items():
         out[u] = G.review_key(w["short"])
@@ -191,9 +214,22 @@ def _export_args(p: argparse.ArgumentParser, model: bool = True) -> None:
         p.add_argument("--base-url", help="openai-compatible only: the server's address, ending in /v1")
         p.add_argument("--yes", action="store_true",
                        help="go ahead without asking when the cost estimate is above max_cost_usd (default $20)")
+        p.add_argument("--batch", action="store_true",
+                       help="ask nothing in the terminal: read the answers in answers.yaml and write the questions "
+                            "left there (the default when no terminal is attached)")
 
 
-def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kestra-migrate vra") -> int:
+def is_terminal() -> bool:
+    """A person at a terminal: both standard input and output are one."""
+    return bool(sys.stdin and sys.stdin.isatty() and sys.stdout and sys.stdout.isatty())
+
+
+def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kestra-migrate vra",
+         interactive: bool = False, exit_now: bool = False) -> int:
+    """The `kestra-migrate vra` command line. `interactive`: the command was typed by a person (the console script
+    says so); only then, and only in a terminal and without --batch, does `run` ask its questions there. A program
+    calling this function never waits for input. `exit_now`: on Ctrl+C, end the process at once once everything
+    finished is written (the console script; a program calling this function gets 130 back instead)."""
     from kestra_migration_assistant import config as K
     note = K.CONTAINER_HELP if K.in_container() else None
     ap = argparse.ArgumentParser(
@@ -223,10 +259,23 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
     if args.cmd == "check-intake":
         return check_intake(args.path)
 
+    asking = bool(interactive and args.cmd == "run" and not getattr(args, "batch", False) and is_terminal())
+    if asking:
+        from kestra_migration_assistant import banner
+        banner.show()
+    from kestra_migration_assistant.vra import model
+    model.STOP.clear()
+    model.LIMIT["message"] = model.LIMIT["code"] = None
+    if asking:                          # the model chosen for this estate is kept in its output folder
+        try:
+            C.configure_export(args.export, args.out)
+        except C.EstateError as e:
+            print(f"{prog}: {e}", file=sys.stderr)
+            return 2
     if getattr(args, "no_model", False):
         os.environ["VRO_NO_MODEL"] = "1"
     elif hasattr(args, "no_model") and args.cmd in ("run", "understand", "brief", "all", "assess"):
-        if not set_up_model(args, prog):
+        if not set_up_model(args, prog, asking=asking):
             return 2
     try:
         C.configure_export(args.export, args.out)
@@ -255,67 +304,125 @@ def main(argv: list[str] | None = None, extensions: tuple = (), prog: str = "kes
             os.replace(old_ep, C.ENTRY_POINTS)
             print(f"  - moved entry-points.yaml to {C.rel(C.ENTRY_POINTS)}")
     if args.cmd == "run":
-        stages = ["sanitize", "preflight", "assess", "understand", "brief", "migrate-input", "visuals", "summary"]
+        stages = ["sanitize", "preflight", "assess", "interview", "understand", "brief", "migrate-input", "visuals",
+                  "summary"]
     elif args.cmd == "all":
-        stages = ["sanitize", "preflight", "assess", "brief", "migrate-input", "visuals", "status"]
+        stages = ["sanitize", "preflight", "assess", "interview", "brief", "migrate-input", "visuals", "status"]
     else:
         stages = [args.cmd]
-    from kestra_migration_assistant.vra import model
+    term = None
+    if asking:
+        from kestra_migration_assistant.vra import interactive as I
+        term = I.Terminal()
     if model.SETTINGS is not None and model.SETTINGS.provider and not os.environ.get("VRO_NO_MODEL"):
-        model.GATE = cost_gate(yes=bool(getattr(args, "yes", False)))
+        model.GATE = cost_gate(yes=bool(getattr(args, "yes", False)), always=asking)
     try:
+        if asking:
+            return _run_interactive(term)
         if args.cmd == "run":
             return _run_with_progress(stages)
         for s in stages:
             run_stage(s)
         return 0
     except model.CostNotApproved as e:
+        PROGRESS.clear()
         print(str(e), file=sys.stderr)
         return 3
+    except (KeyboardInterrupt, model.Stopped):
+        model.stop()                    # the calls in flight end now; nothing new starts
+        PROGRESS.stop()
+        limit = model.LIMIT["message"]  # why the run halted (any thread may have raised first): a limit, no model
+        print(f"\n{limit or stopped_message()}", flush=True)
+        code = (model.LIMIT["code"] or LIMIT_EXIT) if limit else 130
+        if exit_now:
+            sys.stderr.flush()
+            os._exit(code)              # a call still in flight (an HTTP request) would hold the process otherwise
+        return code
     finally:
         model.GATE = None
 
 
-def cost_gate(yes: bool = False, confirm=None, out=None):
+LIMIT_EXIT = 75                 # EX_TEMPFAIL: the model's limit ran out; the same command works once it resets
+
+
+def cost_gate(yes: bool = False, confirm=None, out=None, always: bool = False):
     """The estimate before the run's first billed call (model.Gate): said on the terminal, and above
-    max_cost_usd asked in it. With no terminal to ask in, a run above it stops unless --yes is given."""
+    max_cost_usd asked in it. With no terminal to ask in, a run above it stops unless --yes is given. `always`
+    (the interactive run): asked whatever the estimate, in plain words, Enter to go on."""
     from kestra_migration_assistant.vra import model
     from kestra_migration_assistant.vra.stages import estimate
     out = out or sys.stdout
     width = max(len(v) for v in RUN_NAMES.values())
 
     def say(msg: str) -> None:
+        if always:
+            return                                  # the question says it
+        PROGRESS.clear()
         print(f"{'Cost':<{width}}  {msg}", file=out, flush=True)
 
-    def ask_terminal(question: str) -> bool:
+    def ask_terminal(question: str) -> bool | None:
+        """True to go on, False when told not to, None at the end of input (Ctrl+D, or stdin closed): never a yes."""
+        PROGRESS.clear()
+        if always:
+            from kestra_migration_assistant.vra import interactive
+            print(f"\n{question}", end="", file=out, flush=True)
+            t0 = time.monotonic()
+            try:
+                line = sys.stdin.readline()
+            finally:
+                interactive.WAITED["seconds"] += time.monotonic() - t0
+            if not line:
+                print(file=out, flush=True)
+                return None
+            return line.strip().lower() in ("", "y", "yes")
         print(f"{'Cost':<{width}}  {question}", end="", file=out, flush=True)
-        return sys.stdin.readline().strip().lower() in ("y", "yes")
+        line = sys.stdin.readline()
+        if not line:
+            print(file=out, flush=True)
+            return None
+        return line.strip().lower() in ("y", "yes")
 
-    if confirm is None and sys.stdin is not None and sys.stdin.isatty():
+    if confirm is None and sys.stdin is not None and (always or sys.stdin.isatty()):
         confirm = ask_terminal
-    return model.Gate(estimate.planned, say, yes=yes, confirm=confirm)
+    return model.Gate(estimate.planned, say, yes=yes, confirm=confirm, always=always)
 
 
-def set_up_model(args: argparse.Namespace, prog: str) -> bool:
+def set_up_model(args: argparse.Namespace, prog: str, asking: bool = False) -> bool:
     """Resolve which model this run calls (flags, environment, config file, defaults) and say so. With none set
-    up, the run goes ahead without a model and says how to add one. False on a configuration error."""
+    up, the run goes ahead without a model and says how to add one. False on a configuration error. `asking` (the
+    interactive run): a model chosen in the terminal for this estate comes after the flags, and the terminal says
+    which model it is and lets the person change it, instead of a line here."""
     from kestra_migration_assistant import config as K
     from kestra_migration_assistant.vra import model
+    flags = {"provider": args.provider, "model": args.model, "base_url": args.base_url}
+    kept = {}
+    if asking and not args.provider and not args.model:
+        from kestra_migration_assistant.vra import interactive
+        kept = interactive.remembered_model()
     try:
-        s = K.resolve({"provider": args.provider, "model": args.model, "base_url": args.base_url})
+        s = K.resolve({**flags, **kept})
+        if kept:
+            s.source.update(provider="chosen earlier for this export", model="chosen earlier for this export")
+            why = K.unusable(s)
+            if why:
+                # the model chosen in the terminal for this export cannot be used now: set it aside, so the run
+                # starts with the usual one and the person can choose again (c)
+                print(f"The model chosen earlier for this export cannot be used: {why}")
+                s = K.resolve(flags)
     except K.ConfigError as e:
         print(f"{prog}: {e}", file=sys.stderr)
         return False
-    if s.provider == "claude-code" and not shutil.which("claude"):
-        print(f"{prog}: provider claude-code ({s.source.get('provider')}) needs the `claude` command, and it is not "
-              "installed. Install Claude Code, or choose another provider (--provider, or the config file: "
-              f"{s.path})", file=sys.stderr)
+    why = K.unusable(s)
+    if why:
+        print(f"{prog}: The model cannot be used ({s.provider}, {s.source.get('provider')}): {why} Or choose another "
+              f"provider (--provider, or the config file: {s.path}), or add --no-model to run without one.",
+              file=sys.stderr)
         return False
     model.configure(s)
     if not s.provider:
         os.environ["VRO_NO_MODEL"] = "1"
         print(s.why)
-    else:
+    elif not asking:
         print(f"Model: {s.describe()}")
     return True
 
@@ -334,7 +441,8 @@ def _n(k: int, word: str) -> str:
     return f"{k} {word}{'' if k == 1 else 's'}"
 
 
-RUN_NAMES = {"sanitize": "Sanitize", "preflight": "Preflight", "assess": "Assess", "understand": "Understand",
+RUN_NAMES = {"sanitize": "Sanitize", "preflight": "Preflight", "assess": "Assess", "interview": "Estate",
+             "understand": "Understand",
              "brief": "Brief", "migrate-input": "Your input", "visuals": "Pages", "summary": "Status"}
 
 
@@ -345,7 +453,7 @@ def _calls_since(n: int) -> tuple[int, dict]:
     path = C.STAGE_CALL_LOG
     if not path or not os.path.exists(path):
         return 0, out
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         lines = f.readlines()
     for line in lines[n:]:
         try:
@@ -371,13 +479,255 @@ def _model_words(m: dict) -> str:
 STARTED_AFTER = 1.0          # seconds: a stage still running by then says it started
 
 
+class ProgressLine:
+    """One line that says which step a long run is on and how far it is ("Analyzing 46 workflows: 19 done, 4m 2s"),
+    rewritten in place on a terminal, with the time redrawn every second so the line never looks stuck; elsewhere
+    written once at the start and once at the end. A step that starts inside another (sorting, inside the brief)
+    gives the line back to it when it ends. What each step did in detail goes to the run's log file instead (RunLog)."""
+
+    WHAT = {"workflows": "Analyzing {total} workflows: {done} done",
+            "groups": "Summarizing {total} groups: {done} done",
+            "questions": "Sorting what the analysis found: {done} of {total} parts done",
+            "brief": "Preparing the brief"}
+    EVERY = 1.0                      # seconds between two redraws of the time
+
+    def __init__(self) -> None:
+        import threading
+        self.out: Any = None
+        self.active = False
+        self.lock = threading.RLock()
+        self.cur: dict | None = None             # {"what", "text", "t0"}
+        self.outer: list[dict] = []              # the steps this one started inside
+        self.beat: Any = None
+
+    def _tty(self) -> bool:
+        return bool(getattr(self.out or sys.stdout, "isatty", lambda: False)())
+
+    def _draw(self, end: str = "") -> None:
+        assert self.cur is not None
+        import time
+        t = _minutes(time.monotonic() - self.cur["t0"])
+        print(f"\r{self.cur['text']}, {t}{end}\033[K" if self._tty() else f"{self.cur['text']}, {t}{end}",
+              end="" if not end else "\n", file=self.out or sys.stdout, flush=True)
+
+    def tick(self, what: str, done: int, total: int) -> None:
+        import time
+        with self.lock:
+            if self.cur is None or self.cur["what"] != what:
+                if self.cur is not None and self.active:
+                    self.outer.append(self.cur)
+                self.cur = {"what": what, "t0": time.monotonic()}
+            self.cur["text"] = self.WHAT.get(what, what + ": {done} of {total} done").format(done=done, total=total)
+            if not self._tty():
+                if done == 0:
+                    print(f"{self.cur['text']}.", file=self.out or sys.stdout, flush=True)
+                elif done >= total:
+                    self._draw(".")
+                if done >= total:
+                    self.cur = self.outer.pop() if self.outer else None
+                return
+            if done < total:
+                self.active = True
+                self._draw()
+                self._keep_alive()
+                return
+            self._draw(".")
+            self.active = False
+            self.cur = self.outer.pop() if self.outer else None
+            if self.cur is not None:              # back to the step this one ran inside
+                self.active = True
+                self._draw()
+
+    def _keep_alive(self) -> None:
+        import threading
+        if self.beat is not None and self.beat.is_alive():
+            return
+
+        def beat() -> None:
+            import time
+            while True:
+                time.sleep(self.EVERY)
+                with self.lock:
+                    if not self.active or self.cur is None:
+                        return
+                    self._draw()
+        self.beat = threading.Thread(target=beat, name="progress-line", daemon=True)
+        self.beat.start()
+
+    def clear(self) -> None:
+        """End the line in progress, so what is printed next starts on a line of its own (the next tick draws it
+        again)."""
+        with self.lock:
+            if self.active:
+                print("", file=self.out or sys.stdout, flush=True)
+                self.active = False
+
+    def stop(self) -> None:
+        """The run stopped: end the line and forget every step."""
+        with self.lock:
+            self.clear()
+            self.cur, self.outer = None, []
+
+
+PROGRESS = ProgressLine()
+
+
+class RunLog:
+    """data/run.log: what each step did in detail (each spec written, what was regenerated and why, each group
+    summary). The terminal shows one line per step instead."""
+
+    def __init__(self) -> None:
+        import datetime
+        C.ensure(C.DATA)
+        self.path = os.path.join(C.DATA, "run.log")
+        self.f = open(self.path, "a", encoding="utf-8")
+        self.f.write(f"\n== {datetime.datetime.now().isoformat(timespec='seconds')} {C.run_command()}\n")
+        self.f.flush()
+
+    def write(self, text: str) -> int:
+        self.f.write(text)
+        self.f.flush()
+        return len(text)
+
+    def flush(self) -> None:
+        self.f.flush()
+
+    def line(self, text: str) -> None:
+        self.write(text.rstrip("\n") + "\n")
+
+    def close(self) -> None:
+        self.f.close()
+
+
+ANALYZING = {"on": False}
+
+
+def stopped_message() -> str:
+    """What Ctrl+C kept: the workflows analyzed so far when it stopped the analysis, else the answers."""
+    import json
+    idx = os.path.join(C.WORK, "index.json") if C.WORK else ""
+    if ANALYZING["on"] and idx and os.path.exists(idx):
+        uids = [w["uid"] for w in json.load(open(idx, encoding="utf-8"))["workflows"]]
+        have = sum(1 for u in uids if os.path.exists(os.path.join(C.SPEC_DIR, f"{u}.json")))
+        return f"Stopped. {have} of {len(uids)} workflows analyzed and kept. Run again to continue."
+    return f"Stopped. Every answer given so far is saved in {C.rel(C.ANSWERS)}. Run again to continue."
+
+
+def _run_stage_logged(s: str, log: RunLog) -> str:
+    """One stage, with everything it prints going to the run's log."""
+    import contextlib
+    C.set_progress(log.line)
+    try:
+        with contextlib.redirect_stdout(log):
+            log.line(f"[{s}] started")
+            found = run_stage(s)
+            log.line(f"[{s}] {found}")
+            return found
+    finally:
+        C.set_progress(None)
+
+
+def _minutes(sec: float) -> str:
+    return f"{int(sec // 60)}m {int(sec % 60)}s" if sec >= 60 else f"{sec:.0f}s"
+
+
+def _write_brief(log: RunLog) -> None:
+    """The brief and its pages, one progress line ("Preparing the brief"): Assess first when the specs changed under
+    it, then the brief, what an earlier version's files carry over, and the pages."""
+    import contextlib
+
+    from kestra_migration_assistant.vra.stages import assess
+    C.tick("brief", 0, 1)
+    try:
+        with contextlib.redirect_stdout(log):
+            assess.load()
+        for s in ("brief", "migrate-input", "visuals"):
+            _run_stage_logged(s, log)
+    finally:
+        C.tick("brief", 1, 1)
+        PROGRESS.clear()
+
+
+def _run_interactive(term) -> int:
+    """`run` typed in a terminal. The first time: the model, the export read, the first screen, the interview, the
+    analysis (asked for before anything is billed, one progress line), then the brief at once, with every question
+    that has a suggestion assumed and listed in it. It ends with a short summary, the brief's link, an offer to open
+    it, and one line: run the same command again to sharpen it. Run again on an estate that has a brief and nothing
+    to ask before the analysis, it re-runs only what changed, asks the few questions that sharpen the brief most (q
+    stops), writes it again and ends the same way. "Done in" is the tool's own working time, not the time spent
+    answering. What each step did in detail is in data/run.log."""
+    from kestra_migration_assistant.vra import interactive as I
+    from kestra_migration_assistant.vra import model
+    from kestra_migration_assistant.vra.stages import assess, estimate
+    from kestra_migration_assistant.vra.stages import your_input as Y
+    t_all = time.monotonic()
+    I.WAITED["seconds"] = 0.0
+    use_model = not os.environ.get("VRO_NO_MODEL")
+    log = RunLog()
+    calls_before, _ = _calls_since(0)
+    PROGRESS.out = term.out
+    C.set_tick(PROGRESS.tick)
+    try:
+        if use_model and model.SETTINGS is not None:
+            I.choose_model(term, model.SETTINGS)
+        elif not use_model:
+            term.say("No model: this run reads the code only, and says what needs a model.")
+        assess.NAME_DOMAINS = False                 # nothing is billed before the person says so
+        try:
+            for s in ("sanitize", "preflight", "assess", "interview"):
+                _run_stage_logged(s, log)
+        finally:
+            assess.NAME_DOMAINS = True
+        qs = I.interview_questions(use_model)
+        again = I.has_brief() and not qs            # run again: no first screen, the questions that sharpen it
+        if not again:
+            I.first_screen(term, use_model, len(qs))
+            warn = None
+            if qs and use_model and Y._specs_on_record():
+                est = estimate.reanalysis()
+                warn = ("If your answers differ from those the last analysis read, every workflow is analyzed again: "
+                        "up to " + model.estimate_words(est, model.settings()).split(". With")[0]
+                        + ". You are asked before anything is billed.")
+            if not I.interview(term, use_model, qs, warn):
+                term.stopped = True
+            term.say()
+        # the analysis: what changed is analyzed again, the rest comes from the cache
+        t0, w0 = time.monotonic(), I.WAITED["seconds"]
+        ANALYZING["on"] = True
+        with __import__("contextlib").redirect_stdout(log):
+            assess.run() if use_model else None     # the domain names, now that billing is agreed
+        _run_stage_logged("understand", log)
+        ANALYZING["on"] = False
+        PROGRESS.clear()
+        _write_brief(log)
+        worked = time.monotonic() - t0 - (I.WAITED["seconds"] - w0)
+        if not again and worked > 60:
+            term.say(f"Analysis and brief done in {_minutes(worked)}.")
+        if again:
+            asked = I.to_ask(term, use_model)
+            if asked:
+                I.sharpen(term, use_model, asked, lambda: _write_brief(log))
+        I.summary(term)
+        _, m = _calls_since(calls_before)
+        cost = "under $0.01" if m["cost"] < 0.005 else f"${m['cost']:.2f}"
+        spent = (f" {m['billed']} billed model call{'s' if m['billed'] != 1 else ''}, {cost}." if m["billed"]
+                 else "")
+        term.say()
+        term.say(f"Done in {_minutes(max(0.0, time.monotonic() - t_all - I.WAITED['seconds']))}.{spent}")
+        I.finish(term, C.INDEX)
+        return 0
+    finally:
+        C.set_tick(None)
+        log.close()
+
+
 def _run_with_progress(stages: list[str]) -> int:
     """
-    `run`: one line per stage as it goes (its name, what it found, its model calls, how long it took), the
-    stage's own details indented under it, and a last line with the total time, whether the model results
-    came from cache, and the page to open. A stage still running after STARTED_AFTER seconds first prints a
-    line saying it started, and a long stage prints what it is doing as it goes (Understand: one line per spec
-    written, with its time); a stage that finishes at once stays one line.
+    `run`: one line per stage as it goes (its name, what it found, its model calls, how long it took), and a last
+    line with the total time, whether the model results came from cache, and the page to open. A stage still running
+    after STARTED_AFTER seconds first prints a line saying it started, and a long one shows one progress line ("Analyzing
+    46 workflows: 19 done."). What each stage did in detail (each spec written, what was regenerated and why) goes to
+    data/run.log.
     """
     import contextlib
     import io
@@ -388,50 +738,59 @@ def _run_with_progress(stages: list[str]) -> int:
     width = max(len(v) for v in RUN_NAMES.values())
     out = sys.stdout
     lock = threading.Lock()
-    for s in stages:
-        before, _ = _calls_since(0)
-        t0 = time.monotonic()
-        buf = io.StringIO()
-        name = f"{RUN_NAMES[s]:<{width}}"
-        started = {"said": False}
+    log = RunLog()
+    PROGRESS.out = out
+    C.set_tick(PROGRESS.tick)
+    try:
+        for s in stages:
+            before, _ = _calls_since(0)
+            t0 = time.monotonic()
+            buf = io.StringIO()
+            name = f"{RUN_NAMES[s]:<{width}}"
+            started = {"said": False}
 
-        def say(msg: str | None = None, name=name, started=started) -> None:
-            with lock:
-                if not started["said"]:
-                    started["said"] = True
-                    print(f"{name}  started", file=out, flush=True)
-                if msg:
-                    print(f"{name}  {msg}", file=out, flush=True)
+            def say(msg: str | None = None, name=name, started=started) -> None:
+                with lock:
+                    if not started["said"]:
+                        started["said"] = True
+                        PROGRESS.clear()
+                        print(f"{name}  started", file=out, flush=True)
+                    if msg:
+                        log.line(f"{name}  {msg}")
 
-        timer = threading.Timer(STARTED_AFTER, say)
-        timer.daemon = True
-        if s != "summary":
-            timer.start()
-        C.set_progress(say)
-        try:
-            with contextlib.redirect_stdout(buf):
-                if s == "brief":
-                    # understand wrote or regenerated specs: Assess reads them (spec systems), so bring it up to date
-                    from kestra_migration_assistant.vra.stages import assess
-                    assess.load()
-                found = run_stage(s)
-        finally:
-            timer.cancel()
-            C.set_progress(None)
-            with lock:
-                started["said"] = True          # a timer firing now prints nothing after the stage's line
-        _, m = _calls_since(before)
-        for k in total:
-            total[k] += m[k]
-        if s == "summary":
-            print(f"{RUN_NAMES[s]:<{width}}  {found}")
-            continue
-        details = [x.strip() for x in buf.getvalue().splitlines()
-                   if x.strip() and not x.startswith(f"[{s}]") and x.strip() != found]
-        print(f"{RUN_NAMES[s]:<{width}}  {found or 'done'}; {_model_words(m)}; {time.monotonic() - t0:.1f}s",
-              flush=True)
-        for x in details:
-            print("    " + x)
+            timer = threading.Timer(STARTED_AFTER, say)
+            timer.daemon = True
+            if s != "summary":
+                timer.start()
+            C.set_progress(say)
+            if s == "understand":
+                ANALYZING["on"] = True
+            try:
+                with contextlib.redirect_stdout(buf):
+                    if s == "brief":
+                        # understand wrote or regenerated specs: Assess reads them (spec systems), so bring it up to date
+                        from kestra_migration_assistant.vra.stages import assess
+                        assess.load()
+                    found = run_stage(s)
+                ANALYZING["on"] = False         # still on when Ctrl+C stopped it: the message says how far it got
+            finally:
+                timer.cancel()
+                C.set_progress(None)
+                with lock:
+                    started["said"] = True          # a timer firing now prints nothing after the stage's line
+                log.write(buf.getvalue())
+            PROGRESS.clear()
+            _, m = _calls_since(before)
+            for k in total:
+                total[k] += m[k]
+            if s == "summary":
+                print(f"{RUN_NAMES[s]:<{width}}  {found}")
+                continue
+            print(f"{RUN_NAMES[s]:<{width}}  {found or 'done'}; {_model_words(m)}; {time.monotonic() - t0:.1f}s",
+                  flush=True)
+    finally:
+        C.set_tick(None)
+        log.close()
     cache = ("model results all from cache" if not total["billed"] and total["cached"] else
              "no model calls" if not total["billed"] else
              f"{total['billed']} billed model call{'s' if total['billed'] != 1 else ''}, ${total['cost']:.2f}")

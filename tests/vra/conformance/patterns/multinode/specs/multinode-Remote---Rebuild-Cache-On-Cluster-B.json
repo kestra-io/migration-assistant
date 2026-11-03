@@ -1,0 +1,8 @@
+{
+  "workflow_uid": "multinode-Remote---Rebuild-Cache-On-Cluster-B",
+  "purpose": "Remote - Rebuild Cache On Cluster B, for the multinode pattern fixture.",
+  "confidence": "high",
+  "open_questions": [],
+  "suspected_defects": [],
+  "external_systems": []
+}

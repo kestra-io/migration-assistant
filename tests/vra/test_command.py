@@ -274,7 +274,10 @@ def test_the_re_running_line_names_each_file_once(tmp_path, capsys):
     also sits in the spec folder: the line named it twice."""
     export = _export(tmp_path / "estate")
     assert _main("run", export, "--no-model") == 0
-    lines = [x for x in capsys.readouterr().out.splitlines() if "re-running: newer than" in x]
+    out = capsys.readouterr().out
+    assert "re-running: newer than" not in out                   # the terminal shows a line per stage, no more
+    log = open(os.path.join(export, "kestra-assessment", "data", "run.log"), encoding="utf-8").read()
+    lines = [x for x in log.splitlines() if "re-running: newer than" in x]
     assert lines, "a first run re-reads what Understand wrote"
     for line in lines:
         named = line.split("newer than assess.json: ")[1].split(", ")
@@ -314,3 +317,25 @@ def test_a_tree_without_element_info_takes_the_kind_folder_nearest_the_root(tmp_
     elements, _ = formats.read_raw_tree(str(tmp_path / "tree"))
     (e,) = elements
     assert e.kind == "ScriptModule" and e.category_path == "com.example.lb.actions.common"
+
+
+def test_the_run_reads_and_writes_every_file_as_utf8_whatever_the_systems_encoding(tmp_path):
+    """On Windows the default encoding is the code page (cp1252), not UTF-8: a file opened without an encoding is
+    read or written in it, so answers.yaml with an accent or a dash came back garbled. The run, with Python warning
+    on every open that relies on the default and that warning made an error, on a cp1252 pipe, still writes the
+    brief, and a character cp1252 lacks is printed as "?" instead of stopping it."""
+    import subprocess
+    import sys
+    folder = tmp_path / "helpers"
+    shutil.copytree(os.path.join(HELPERS, "vro"), folder / "vro")
+    shutil.copytree(os.path.join(HELPERS, "vra"), folder / "helpers-vra")
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "VRO_NO_MODEL": "1"}
+    env.pop("PYTHONUTF8", None)
+    r = subprocess.run([sys.executable, "-X", "warn_default_encoding", "-W", "error::EncodingWarning", "-c",
+                        "import sys; from kestra_migration_assistant import cli; "
+                        "sys.argv = ['kestra-migrate', 'vra', 'run', 'helpers', '--no-model']; code = cli.main(); "
+                        "print('\\u2192 done'); sys.exit(code)"],
+                       cwd=tmp_path, env=env, capture_output=True, text=True, encoding="cp1252")
+    assert r.returncode == 0, r.stderr[-2000:]
+    assert os.path.exists(folder / "kestra-assessment" / "report" / "BRIEF.md")
+    assert r.stdout.rstrip().endswith("? done")

@@ -22,7 +22,7 @@ TOKENS_PATH = os.path.join(C.ASSETS, "theme", "tokens.json")
 
 
 def _load() -> dict:
-    with open(TOKENS_PATH) as f:
+    with open(TOKENS_PATH, encoding="utf-8") as f:
         return json.load(f)
 
 

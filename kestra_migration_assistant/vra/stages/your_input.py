@@ -19,10 +19,9 @@ your-input/answers.yaml: the one file a person fills in.
         question: Is this export the whole vRO estate?
         answer: yes, the whole estate, from one vRO node
 
-    signed_for: full plan
-
 Two lists, `open` (what a wave waits on first) and `answered`, a third (`no_longer_asked`) when an answered item is
-no longer asked, then `signed_for` (`wave 1` or `full plan`, empty until signed). Each entry is an `id`, one plain
+no longer asked. A `signed_for:` line, which files written by 1.1.0 and earlier end with, is read past and not
+written back (the assessment has no signature since 1.2.0). Each entry is an `id`, one plain
 `question`, a `suggested` value when the code points to one, and the `answer`; a group's items are under its
 `each:` (see "groups" below). Writing `yes` takes the suggested value; any other answer is the answer. One
 comment line at the top, nothing else: the page with an item's context is named in its question only where it
@@ -44,8 +43,8 @@ next to it when it was written (so a later suggestion does not change what was a
 regenerated since is stale until its answer changes).
 
 Before session 2g the file had sections blocking/open/done (or confirm/answer/review), entries keyed by id
-with `confirmed:`, `by:`, `date:` and `note:`, and a `sign:` block. `load()` reads that shape too; the first
-rewrite carries every answer and the signature into this one and keeps the old file as
+with `confirmed:`, `by:`, `date:` and `note:`, and a `sign:` block (ignored). `load()` reads that shape too; the
+first rewrite carries every answer into this one and keeps the old file as
 data/answers.yaml.before-2g. Corrections to what the tool found are not answers: they go in the optional
 your-input/corrections.yaml (corrections.py), which the tool reads but never creates.
 """
@@ -67,14 +66,14 @@ HEADER = "# Answer what's open, then run: "
 
 def header() -> str:
     return HEADER + C.run_command()
-GROUPS = ("confirm", "answer", "review", "sign")
+GROUPS = ("confirm", "answer", "review")
 YES = ("yes", "y", "true", "confirmed", "confirm", "ok", "x")
-TOOL_FIELDS = ("id", "question", "suggested", "answer", "each")
+TOOL_FIELDS = ("id", "question", "options", "suggested", "assumed", "answer", "needs", "closes", "settles", "each")
 OLD_SECTIONS = ("blocking", "open", "done", "confirm", "answer", "review", "no_longer_asked")
 OLD_FIELDS = ("answer", "confirmed", "by", "date", "note", "spec")    # the old format's own fields
 GONE = "No longer asked: "
-SECTIONS = ("open", "answered", "no_longer_asked")
-SIGN = {"full": "full plan", "wave-1": "wave 1"}
+SECTIONS = ("estate", "open", "waves", "answered", "no_longer_asked")
+ESTATE_FAMILIES = ("estate", "assume")
 
 
 def is_open(answer) -> bool:
@@ -109,7 +108,8 @@ def items() -> list[dict]:
     reg = registry()
     extra = reg.get("_unblocks") or {}
     out, seen = [], set()
-    for section in ("preflight", "brief", *sorted(k for k in reg if k not in ("preflight", "brief") and not k.startswith("_"))):
+    for section in ("estate", "preflight", "brief",
+                    *sorted(k for k in reg if k not in ("estate", "preflight", "brief") and not k.startswith("_"))):
         for it in reg.get(section) or []:
             if it["key"] not in seen:
                 seen.add(it["key"])
@@ -138,13 +138,16 @@ def item(key: str, group: str, ask: str, *, title: str | None = None, why: str |
             "family": family or key.split(".", 1)[0], "link": link, "fixed": fixed or {}, "blocks": blocks or []}
 
 
-def register(section: str, new_items: list[dict]) -> dict:
-    """Replace one section's items in the registry and rewrite answers.yaml. Returns write()'s result."""
+def register(section: str, new_items: list[dict], write: bool = True) -> dict:
+    """Replace one section's items in the registry and rewrite answers.yaml (unless `write` is False, when another
+    section is registered next). Returns write()'s result."""
     reg = registry()
     renames = _renames(reg.get(section) or [], new_items)
     reg[section] = new_items
     C.write_json(_registry_path(), reg)
-    return write(renames)
+    if not write:
+        return {"written": False, "warnings": []}
+    return _write(renames)
 
 
 def _renames(old: list[dict], new: list[dict]) -> dict[str, str]:
@@ -161,7 +164,8 @@ def _renames(old: list[dict], new: list[dict]) -> dict[str, str]:
 def _memo(reg: dict | None = None) -> dict:
     m = (reg if reg is not None else registry()).get("_memo") or {}
     return {"confirmed": dict(m.get("confirmed") or {}), "reviewed": dict(m.get("reviewed") or {}),
-            "groups": dict(m.get("groups") or {}), "stand_in": bool(m.get("stand_in"))}
+            "groups": dict(m.get("groups") or {}), "stand_in": bool(m.get("stand_in")),
+            "closures": dict(m.get("closures") or {})}
 
 
 # ------------------------------------------------------------------ reading
@@ -193,7 +197,7 @@ def _read(path: str) -> tuple[dict | None, list[str]]:
     except (OSError, ValueError, yaml.YAMLError) as e:
         return None, [f"{C.rel(path)} could not be read, so nothing in it counts and the tool did not rewrite it: {e}"]
     if not isinstance(data, dict):
-        return None, [f"{C.rel(path)}: expected open, answered and signed_for at the top"]
+        return None, [f"{C.rel(path)}: expected open and answered at the top"]
     return data, []
 
 
@@ -203,14 +207,14 @@ def is_old_format(data: dict) -> bool:
 
 
 def load(path: str | None = None) -> dict:
-    """{"path", "exists", "ok", "old_format", "entries": {id: entry}, "sign": {"signed_for"}, "memo",
+    """{"path", "exists", "ok", "old_format", "entries": {id: entry}, "memo",
     "stand_in", "warnings"}. An entry holds what the file says for one id: answer, question, suggested, and
     any field a person added."""
     path = path or C.ANSWERS
     data, warnings = _read(path)
     reg = registry()
     out: dict[str, Any] = {"path": C.rel(path), "exists": os.path.exists(path), "ok": data is not None, "warnings": warnings,
-           "old_format": False, "entries": {}, "sign": {}, "memo": _memo(reg)}
+           "old_format": False, "entries": {}, "memo": _memo(reg)}
     if data and is_old_format(data):
         out["old_format"] = True
         _from_old(data, reg, out)
@@ -228,6 +232,9 @@ def load(path: str | None = None) -> dict:
                     continue
                 each = e.get("each")
                 subs: list = each if isinstance(each, list) else []
+                if subs:
+                    out.setdefault("file_groups", {})[str(e["id"]).strip()] = [
+                        str(x["id"]).strip() for x in subs if isinstance(x, dict) and str(x.get("id") or "").strip()]
                 for sub in [e, *subs]:
                     if not isinstance(sub, dict) or not str(sub.get("id") or "").strip():
                         out["warnings"].append(f"an item under `{sec}:` has no `id:`, so it is not read")
@@ -237,13 +244,14 @@ def load(path: str | None = None) -> dict:
                         out["warnings"].append(f"{k} appears twice; the first is read")
                         continue
                     out["entries"][k] = {f: v for f, v in sub.items() if f not in ("id", "each")}
-        out["sign"] = {"signed_for": _text(data.get("signed_for"))}
     texts = " ".join(_text(e.get("answer")) for e in out["entries"].values()).lower()
     out["stand_in"] = out["memo"]["stand_in"] or "stand-in" in texts
     its = items()
     out["items"] = {it["key"]: it for it in its}
     out["groups"] = groups(its, out)
     out["group_of"] = {k: g for g, ks in out["groups"].items() for k in ks}
+    from . import planner
+    out["closed"] = planner.closed(its, out)
     return out
 
 
@@ -278,12 +286,6 @@ def _from_old(data: dict, reg: dict, out: dict) -> None:
             out["entries"][k] = entry
             if e.get("spec") and not is_open(ans):
                 memo["reviewed"].setdefault(k, {"spec": e["spec"], "answer": _text(ans)})
-    s: Any = data.get("sign") if isinstance(data.get("sign"), dict) else {}
-    cov = str(s.get("covers") or "").lower().replace(" ", "-")
-    scope = "full" if cov in ("full", "full-plan", "all") else ("wave-1" if cov in ("wave-1", "wave1", "1") else None)
-    signed = bool(str(s.get("signed_by") or "").strip() and str(s.get("date") or "").strip() and scope)
-    stand_in = stand_in or "stand-in" in str(s.get("signed_by") or "").lower()
-    out["sign"] = {"signed_for": SIGN[scope] if signed and scope else ""}
     memo["stand_in"] = memo["stand_in"] or stand_in
 
 
@@ -302,7 +304,14 @@ def state(key: str, loaded: dict | None = None, it: dict | None = None) -> dict:
     memo = loaded.get("memo") or {}
     rec = {"state": "open", "answer": ans or None, "by": None, "date": None, "note": None, "why": "not answered"}
     if is_open(ans):
+        shut = (loaded.get("closed") or {}).get(key)
+        if shut:
+            rec.update(state="answered", answer=shut["answer"], why=f"settled by {shut['by']}: {shut['answer']}")
         return rec
+    opts = it.get("options") or []
+    if ans.strip().isdigit() and 1 <= int(ans.strip()) <= len(opts):
+        ans = str(opts[int(ans.strip()) - 1])                # an option, by its number
+        rec["answer"] = ans
     sug = _text(it.get("suggested"))
     if it.get("group") == "confirm" and sug and _yes(ans):
         took = (memo.get("confirmed") or {}).get(key) or _text(e.get("suggested")) or sug
@@ -318,17 +327,6 @@ def state(key: str, loaded: dict | None = None, it: dict | None = None) -> dict:
         return rec
     rec.update(state="answered", why=("confirmed" if sug and ans == sug else "answered") + f": {ans}")
     return rec
-
-
-def signature(loaded: dict | None = None) -> dict:
-    """The signature as the approval gate reads it: {present, signed, approved_by, date, scope, block}."""
-    loaded = loaded if loaded is not None else load()
-    raw = str((loaded.get("sign") or {}).get("signed_for") or "")
-    v = raw.lower().replace("-", " ").replace("_", " ").strip()
-    scope = ("full" if v in ("full plan", "full", "all", "the full plan") else
-             "wave-1" if v in ("wave 1", "wave1", "1", "wave one") else None)
-    return {"present": bool(raw), "signed": bool(scope), "approved_by": None, "date": None, "scope": scope,
-            "block": f"signed_for: {raw}"}
 
 
 # ------------------------------------------------------------------ the plain question
@@ -401,12 +399,15 @@ def _field(name: str, v, first: bool) -> list[str]:
 
 def _entry(k: str, e: dict, each: list[tuple[str, dict]] | None = None) -> list[str]:
     L = _field("id", k, True)
-    for f in ("question", "suggested", "answer"):
-        if f in e and (f == "answer" or e[f] not in (None, "")):
+    for f in ("question", "assumed", "options", "suggested", "answer", "needs"):
+        if f in e and (f == "answer" or e[f] not in (None, "", [])):
             L += _field(f, e[f], False)
     for f, v in e.items():                           # a field of the person's own
         if f not in TOOL_FIELDS:
             L += _field(f, v, False)
+    for f in ("closes", "settles"):
+        if e.get(f):
+            L += _field(f, e[f], False)
     if each:
         L.append("    each:")
         for sk, se in each:
@@ -426,7 +427,7 @@ def _entry(k: str, e: dict, each: list[tuple[str, dict]] | None = None) -> list[
 # A group's answer counts for the members the file showed when it was given (the memo keeps them), never for an
 # item that appears later: that one is asked on its own. Every stage still reads each item by its own id (state).
 
-SETTLED_BY_ONE = ("suggested", "defects", "specs")
+SETTLED_BY_ONE = ("suggested", "defects", "specs", "same")
 DEFECT_ANSWERS = {"keep all": "keep", "keep them all": "keep", "keep": "keep", "keep each": "keep",
                   "fix all": "fix", "fix them all": "fix", "fix": "fix", "fix each": "fix"}
 
@@ -448,11 +449,51 @@ def group_of(it: dict) -> str | None:
     return None
 
 
-def groups(its: list[dict], loaded: dict | None = None) -> dict[str, list[str]]:
-    """Group id -> member keys, in the order asked: groups of two or more, and a group already answered."""
+def merges(loaded: dict | None = None) -> dict[str, list[str]]:
+    """Groups the re-planning made (`same.<what>`), from the registry and from the file itself (so a file replayed
+    in a fresh folder keeps them): group id -> member keys."""
     out: dict[str, list[str]] = {}
+    for gid, rec in ((registry().get("_merges") or {}).items()):
+        out[gid] = list(rec.get("members") or [])
+    for gid, ms in ((loaded or {}).get("file_groups") or {}).items():
+        if gid.startswith("same."):
+            out[gid] = list(dict.fromkeys(out.get(gid, []) + ms))
+    return out
+
+
+def groups(its: list[dict], loaded: dict | None = None) -> dict[str, list[str]]:
+    """Group id -> member keys, in the order asked: groups of two or more, and a group already answered. One
+    question per pattern first (`same.<what>`: a shared action's possible defect, the same question of near-duplicate
+    workflows, a group the re-planning made), then the groups by kind."""
+    out: dict[str, list[str]] = {}
+    entries = (loaded or {}).get("entries") or {}
+    pats: dict[str, list[str]] = {}
     for it in its:
-        g = group_of(it)
+        if it.get("pattern"):
+            pats.setdefault(it["pattern"], []).append(it["key"])
+    merged = {k: g for g, ks in merges(loaded).items() for k in ks}
+    per_wf: dict[str, int] = {}
+    for it in its:
+        if it.get("family") == "defect" and it["key"].count(".") >= 2:
+            per_wf[it["key"].split(".")[1]] = per_wf.get(it["key"].split(".")[1], 0) + 1
+
+    def worth(p: str) -> bool:
+        """A pattern is its own entry when it saves answers: a spec question always (each is answered alone), a
+        possible defect when three or more workflows share it, or when it is all a workflow has (one entry fewer)."""
+        ks = pats[p]
+        if not is_open((entries.get(p) or {}).get("answer")):
+            return True
+        if len(ks) < 2:
+            return False
+        if not p.startswith("same.defect."):
+            return True
+        return len(ks) >= 3 or any(per_wf.get(k.split(".")[1]) == 1 for k in ks)
+    for it in its:
+        if it.get("family") in ESTATE_FAMILIES:
+            continue
+        p = it.get("pattern")
+        use_p = bool(p) and worth(str(p))
+        g = merged.get(it["key"]) or (p if use_p else None) or group_of(it)
         if g:
             out.setdefault(g, []).append(it["key"])
     answered = {g for g in out if loaded and not is_open((loaded["entries"].get(g) or {}).get("answer"))}
@@ -466,7 +507,12 @@ def _kind(gid: str) -> str:
 def covered(gid: str, loaded: dict) -> list[str]:
     """The members a group's answer counts for: those the file showed when it was answered."""
     rec = ((loaded.get("memo") or {}).get("groups") or {}).get(gid) or {}
-    return list(rec["members"]) if rec.get("members") is not None else list(loaded["groups"].get(gid) or [])
+    if rec.get("members") is not None:
+        return list(rec["members"])
+    shown = (loaded.get("file_groups") or {}).get(gid)          # a file replayed in a fresh folder: what it lists
+    if shown and not is_open((loaded["entries"].get(gid) or {}).get("answer")):
+        return list(dict.fromkeys(shown + list(loaded["groups"].get(gid) or [])))
+    return list(loaded["groups"].get(gid) or [])
 
 
 def via_group(key: str, loaded: dict) -> str | None:
@@ -482,12 +528,22 @@ def via_group(key: str, loaded: dict) -> str | None:
         return "yes" if _yes(ga) else None
     if kind == "defects":
         return DEFECT_ANSWERS.get(ga.lower().rstrip("."))
+    if kind == "same":
+        if _all_defects(gid, loaded):
+            return DEFECT_ANSWERS.get(ga.lower().rstrip("."))
+        return ga
     # specs: yes, or a remark for the workflows it names (all of them when it names none)
     if _yes(ga):
         return "yes"
     its = loaded.get("items") or {}
     named = [k for k in covered(gid, loaded) if _names_workflow(ga, str((its.get(k) or {}).get("workflow") or ""))]
     return ga if not named or key in named else "yes"
+
+
+def _all_defects(gid: str, loaded: dict) -> bool:
+    its = loaded.get("items") or {}
+    ms = covered(gid, loaded)
+    return bool(ms) and all((its.get(m) or {}).get("family") == "defect" for m in ms)
 
 
 def _names_workflow(text: str, name: str) -> bool:
@@ -505,18 +561,31 @@ def _expands(gid: str, loaded: dict) -> bool:
     ga = _text((loaded["entries"].get(gid) or {}).get("answer"))
     if is_open(ga) or _kind(gid) == "specs":
         return False
-    return (_kind(gid) == "suggested" and not _yes(ga)) or (_kind(gid) == "defects" and
-                                                            ga.lower().rstrip(".") not in DEFECT_ANSWERS)
+    return (_kind(gid) == "suggested" and not _yes(ga)) or ((_kind(gid) == "defects" or (
+        _kind(gid) == "same" and _all_defects(gid, loaded))) and ga.lower().rstrip(".") not in DEFECT_ANSWERS)
 
 
 def group_question(gid: str, its: list[dict]) -> str:
     n = len(its)
     kind = _kind(gid)
+    first = its[0] if its else {}
+    if kind == "same":
+        rec = (registry().get("_merges") or {}).get(gid) or {}
+        if rec.get("question"):
+            return str(rec["question"])
+        wfs = list(dict.fromkeys(w for w in (_workflow_of(it) for it in its) if w))
+        where = (f"{len(wfs)} workflows ({', '.join(wfs[:3])}{f' and {len(wfs) - 3} more' if len(wfs) > 3 else ''})"
+                 if len(wfs) > 1 else f"{n} places")
+        q = _member_question(first) if its else ""
+        if all(it.get("family") == "defect" for it in its):
+            q = re.sub(r"\s*Keep (?:the current behavior|it as today), or fix it\?$", "", q)
+            return f"The same possible defect in {where}: {q} Keep it everywhere, fix it everywhere, or decide each?"
+        return f"Asked of {where}, one answer for all: {q}"
     if kind == "suggested":
         return "Accept every suggested answer below? (yes; to change one, add answer: under it)"
     if kind == "defects":
-        name = _workflow_of(its[0]) or gid.split(".", 1)[1]
-        page = (its[0].get("link") or f"report/workflows/{gid.split('.', 1)[1]}.html")
+        name = _workflow_of(first) or gid.split(".", 1)[1]
+        page = (first.get("link") or f"report/workflows/{gid.split('.', 1)[1]}.html")
         return (f"{n} possible defects in {name}: keep them all, fix them all, or decide each? (they are listed on "
                 f"{page})")
     if kind == "specs":
@@ -570,6 +639,13 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
     gs = groups(its, loaded)
     gof = {k: g for g, ks in gs.items() for k in ks}
     states = {it["key"]: state(it["key"], loaded, it) for it in its}
+    shut = closers(loaded)
+
+    def closed(k: str) -> bool:
+        """Settled by another answer (estate, assumption, re-planning), or waiting for its wave, and not answered on
+        its own: listed under the answer that settled it (`closes:`) or under its wave (`waves:`), not asked now."""
+        return (k in (loaded.get("closed") or {}) or k in (loaded.get("pending") or {})
+                or waits(by_key.get(k))) and is_open((loaded["entries"].get(k) or {}).get("answer"))
 
     def single(it: dict, qtext: str | None = None) -> dict:
         k = it["key"]
@@ -583,6 +659,8 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
             e["suggested"] = st["answer"] if st["state"] == "answered" and _yes(old.get("answer")) else sug
         e["answer"] = old.get("answer")
         e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
+        if shut.get(k):
+            e["closes"] = shut[k]
         return e
 
     def done(k: str) -> bool:
@@ -592,15 +670,19 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
     seen: set[str] = set()
     for it in its:
         k = it["key"]
-        if k in seen:
+        if k in seen or it.get("family") in ESTATE_FAMILIES:
             continue
         gid = gof.get(k)
         if not gid:
             seen.add(k)
+            if closed(k):
+                continue
             units.append((k, single(it), [], not done(k), blocks_a_wave(it)))
             continue
-        members = [by_key[m] for m in gs[gid]]
+        members = [by_key[m] for m in gs[gid] if not closed(m)]
         seen |= set(gs[gid])
+        if not members and is_open((loaded["entries"].get(gid) or {}).get("answer")):
+            continue
         kind = _kind(gid)
         gold = loaded["entries"].get(gid) or {}
         ga = _text(gold.get("answer"))
@@ -614,15 +696,19 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
                 alone.append(m)           # not covered by the group's answer, or reviewed before its spec changed
             else:
                 inside.append(m)
-        e: dict[str, Any] = {"question": group_question(gid, members)}
+        # a group whose members are all settled elsewhere keeps the question it was answered under
+        e: dict[str, Any] = {"question": group_question(gid, members) if members else
+                             str(gold.get("question") or group_question(gid, members))}
         if kind in SETTLED_BY_ONE or not is_open(gold.get("answer")):      # a line of the person's own is kept
             e["answer"] = gold.get("answer")
         e.update({f: v for f, v in gold.items() if f not in TOOL_FIELDS})
+        if shut.get(gid):
+            e["closes"] = shut[gid]
         each = []
         for m in inside:
             mk = m["key"]
             own = not is_open((loaded["entries"].get(mk) or {}).get("answer"))
-            show = (kind == "suggested" or kind not in SETTLED_BY_ONE or own
+            show = (kind in ("suggested", "same") or kind not in SETTLED_BY_ONE or own
                     or (expand and kind == "defects"))
             if not show:
                 continue
@@ -634,6 +720,8 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
             is_open_ = is_open(ga) or (expand and any(not done(m["key"]) for m in inside))
         else:
             is_open_ = any(not done(m["key"]) for m in inside)
+        if not members:
+            is_open_ = False
         units.append((gid, e, each, is_open_, any(blocks_a_wave(m) and not done(m["key"]) for m in members)))
         for m in alone:
             units.append((m["key"], single(m), [], True, blocks_a_wave(m)))
@@ -655,6 +743,144 @@ def plan(its: list[dict], loaded: dict) -> tuple[list[tuple], list[tuple], list[
     return opened, answered, sorted(gone, key=lambda x: x[0])
 
 
+def waits(it: dict | None) -> bool:
+    """An item asked when its wave is converted, not now (defaults.py): listed under `waves:`."""
+    from . import defaults
+    return it is not None and defaults.waits_for_wave(it)
+
+
+def deferred(its: list[dict], loaded: dict) -> list[tuple]:
+    """The `waves:` section: per wave, what is asked when that wave is converted (how its flows are built, and the
+    review of a spec whose confidence is medium). Each keeps an answer line: it can be answered now too."""
+    by_wave: dict = {}
+    for it in its:
+        k = it["key"]
+        if it.get("family") in ESTATE_FAMILIES or not waits(it) or not is_open((loaded["entries"].get(k) or {}).get("answer")):
+            continue
+        if k in (loaded.get("closed") or {}) or k in (loaded.get("pending") or {}):
+            continue
+        by_wave.setdefault(it.get("wave"), []).append(it)
+    rows = []
+    for n in sorted(by_wave, key=lambda w: (w is None, w or 0)):
+        each = []
+        for it in by_wave[n]:
+            old = loaded["entries"].get(it["key"]) or {}
+            e: dict[str, Any] = {"question": question_of(it), "answer": old.get("answer")}
+            e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
+            each.append((it["key"], e))
+        gid = f"wave.{n}" if n is not None else "wave.none"
+        q = (f"Asked when Wave {n} is converted: how its flows are built. Answer them then, or now." if n is not None
+             else "Asked if these workflows are converted later: how their flows are built.")
+        rows.append((gid, {"question": q}, each))
+    return rows
+
+
+def closers(loaded: dict) -> dict[str, list[str]]:
+    """Answer id -> the items its answer settled, as answers.yaml lists them under it (`closes:`)."""
+    out: dict[str, list[str]] = {}
+    for k, c in sorted((loaded.get("closed") or {}).items()):
+        if is_open((loaded["entries"].get(k) or {}).get("answer")):
+            out.setdefault(c["by"], []).append(k)
+    return out
+
+
+def estate_rows(its: list[dict], loaded: dict) -> list[tuple]:
+    """The `estate:` section: the estate questions, then the assumptions, each with what its answer settles."""
+    shut = closers(loaded)
+    by_key = {it["key"]: it for it in its}
+    rows: list[tuple] = []
+    for fam in ESTATE_FAMILIES:
+        for it in its:
+            if it.get("family") != fam:
+                continue
+            k = it["key"]
+            old = loaded["entries"].get(k) or {}
+            e: dict[str, Any] = {}
+            if fam == "assume":
+                e["assumed"] = it.get("assumed") or it["ask"]
+            else:
+                e["question"] = it.get("question") or it["ask"]
+                if it.get("options"):
+                    e["options"] = list(it["options"])
+                if it.get("suggested"):
+                    e["suggested"] = it["suggested"]
+            later = sorted(x for x, by in (loaded.get("pending") or {}).items() if by == k)
+            idle = _idle(it, later, old) if fam == "estate" else None
+            if idle:
+                e["needs"] = idle
+            else:
+                e["answer"] = old.get("answer")
+            e.update({f: v for f, v in old.items() if f not in TOOL_FIELDS})
+            each: list = []
+            if fam == "assume" and shut.get(k):
+                # each item the assumption settles, with the answer it takes: anything reading the file sees the
+                # decision, and `answer:` written under one overrides it for that item
+                each = [(m, {"question": question_of(by_key[m]) if m in by_key else m,
+                             "assumed": _assumed_words(loaded["closed"][m]["answer"])}) for m in shut[k]]
+            elif shut.get(k):
+                e["closes"] = shut[k]
+            if later:
+                e["settles"] = later
+            rows.append((k, e, each))
+    return rows
+
+
+def _assumed_words(answer: str) -> str:
+    """An assumed answer as the file shows it, without the note of which assumption gave it."""
+    return re.sub(r"\s*\(assumed, assume\.[\w-]+\)$", "", str(answer)).strip()
+
+
+def _specs_on_record() -> bool:
+    d = C.SPEC_DIR
+    return bool(d and os.path.isdir(d) and any(f.endswith(".json") and f not in ("PROVENANCE.json", "cluster-summaries.json")
+                                              for f in os.listdir(d)))
+
+
+def _idle(it: dict, later: list[str], old: dict) -> str | None:
+    """Why an open estate question is not asked now (answers.yaml says so under `needs:`, and it has no answer line,
+    though a person can still add one), or None to ask it. One asked to settle questions (what starts the workflows,
+    non-production instances) is idle once all of those are answered on their own. One that only settles what a
+    model writes, or guides its reading, is asked before the first analysis, as context; after it, only while
+    something open waits on it, since answering it writes the specs again."""
+    if not is_open(old.get("answer")) or later:
+        return None
+    if not it.get("needs_model"):
+        return "nothing: every question it would settle is answered (you can still answer it here)"
+    if os.environ.get("VRO_NO_MODEL"):
+        return "a model: this run has none, so it is not asked (you can still answer it here)"
+    if _specs_on_record():
+        return ("nothing open: answer it only to give the model this context (the specs are then written again, "
+                "billed)")
+    return None
+
+
+def _lines(e: dict, each: list) -> int:
+    """How many answers an entry still waits for: its own answer line, and each member's."""
+    return int("answer" in e and is_open(e.get("answer"))) + sum(
+        1 for _k, me in each if "answer" in me and is_open(me.get("answer")))
+
+
+def count(loaded: dict | None = None) -> dict:
+    """What answers.yaml waits for, counted the way the file shows it: `open` is the number of empty answer lines
+    a person can fill (an estate question, an entry, a member listed under a group), `entries` the open entries,
+    `closed` the items another answer settled, `assumed` the assumptions in force. The brief and the terminal
+    show these numbers, so they always match the file."""
+    loaded = loaded if loaded is not None else load()
+    its = items()
+    opened, _a, _g = plan(its, loaded)
+    est = [r for r in estate_rows(its, loaded) if r[0].startswith("estate.")]
+    est_open = sum(1 for _k, e, _ea in est if "answer" in e and is_open(e.get("answer")))
+    assumed = sum(1 for it in its if it.get("family") == "assume"
+                  and str(_text((loaded["entries"].get(it["key"]) or {}).get("answer"))).strip().lower() in
+                  ("", "yes", "y", "keep", "keep it", "ok", "agreed", "true"))
+    later = sum(len(ea) for _k, _e, ea in deferred(its, loaded))
+    return {"open": est_open + sum(_lines(e, ea) for _k, e, ea in opened),
+            "entries": est_open + len(opened), "estate_open": est_open, "later": later,
+            "closed": len([k for k in (loaded.get("closed") or {})
+                           if is_open((loaded["entries"].get(k) or {}).get("answer"))]),
+            "assumed": assumed}
+
+
 def shown(loaded: dict | None = None) -> list[dict]:
     """The open entries of the file as a person sees them: {"id", "members", "blocks"}; a group counts once."""
     loaded = loaded if loaded is not None else load()
@@ -662,15 +888,28 @@ def shown(loaded: dict | None = None) -> list[dict]:
     by_key = {it["key"]: it for it in its}
     gs = groups(its, loaded)
     opened, _a, _g = plan(its, loaded)
-    return [{"id": k, "members": gs.get(k) or [k],
-             "blocks": any(blocks_a_wave(by_key[m]) for m in (gs.get(k) or [k]) if m in by_key)} for k, _e, _ea in opened]
+    est = [{"id": k, "members": [k], "blocks": False, "lines": 1}
+           for k, e, _ea in estate_rows(its, loaded) if k.startswith("estate.") and "answer" in e
+           and is_open(e.get("answer"))]
+    gone = set(loaded.get("closed") or {}) | set(loaded.get("pending") or {})
+
+    def still(k: str) -> list[str]:
+        """An entry's members another answer has not settled (those are not asked, and not counted)."""
+        return [m for m in gs.get(k) or [k] if m not in gone or not is_open((loaded["entries"].get(m) or {}).get(
+            "answer"))] or [k]
+    return est + [{"id": k, "members": still(k), "lines": _lines(e, ea),
+                   "blocks": any(blocks_a_wave(by_key[m]) for m in (gs.get(k) or [k]) if m in by_key)}
+                  for k, e, ea in opened]
 
 
 def render(its: list[dict], loaded: dict) -> str:
     opened, answered, gone = plan(its, loaded)
     L = [header(), ""]
-    for sec, rows in (("open", opened), ("answered", answered), ("no_longer_asked", gone)):
-        if not rows and sec == "no_longer_asked":
+    est = estate_rows(its, loaded)
+    later = deferred(its, loaded)
+    for sec, rows in (("estate", est), ("open", opened), ("waves", later), ("answered", answered),
+                      ("no_longer_asked", gone)):
+        if not rows and sec in ("estate", "waves", "no_longer_asked"):
             continue
         if not rows:
             L += [f"{sec}: []", ""]
@@ -679,8 +918,7 @@ def render(its: list[dict], loaded: dict) -> str:
         for k, e, each in rows:
             L += _entry(k, e, each)
         L.append("")
-    L.append("signed_for:" + _scalar((loaded.get("sign") or {}).get("signed_for") or ""))
-    return "\n".join(L) + "\n"
+    return "\n".join(L).rstrip("\n") + "\n"
 
 
 def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
@@ -692,13 +930,25 @@ def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
     memo["stand_in"] = bool(loaded.get("memo", {}).get("stand_in") or memo["stand_in"])
     for k, v in (loaded.get("memo", {}).get("reviewed") or {}).items():
         memo["reviewed"].setdefault(k, v)
+    for gid, shown in (loaded.get("file_groups") or {}).items():
+        # an answered group as the file lists it, kept before a stage that does not ask it yet rewrites the file
+        ga = _text((loaded["entries"].get(gid) or {}).get("answer"))
+        if not is_open(ga) and gid not in memo["groups"]:
+            memo["groups"][gid] = {"members": list(shown), "answer": ga}
+    # a member another answer settles, or that waits for its wave, is not shown under its group: the group's answer
+    # never counts for it
+    by_key = {it["key"]: it for it in its}
+    hidden = {k for k in by_key if (k in (loaded.get("closed") or {}) or k in (loaded.get("pending") or {})
+                                    or waits(by_key[k])) and is_open((loaded["entries"].get(k) or {}).get("answer"))}
     for gid, members in groups(its, loaded).items():
         ga = _text((loaded["entries"].get(gid) or {}).get("answer"))
         rec = memo["groups"].get(gid)
+        members = [m for m in members if m not in hidden]
         if is_open(ga):
             memo["groups"][gid] = {"members": members, "answer": None}      # what the file shows now
         elif not rec:
-            memo["groups"][gid] = {"members": members, "answer": ga}
+            shown = (loaded.get("file_groups") or {}).get(gid) or []
+            memo["groups"][gid] = {"members": list(dict.fromkeys(shown + members)), "answer": ga}
         elif rec.get("answer") != ga:
             memo["groups"][gid] = {**rec, "answer": ga}
     loaded["memo"] = {**(loaded.get("memo") or {}), "groups": memo["groups"]}
@@ -721,13 +971,44 @@ def _remember(its: list[dict], loaded: dict, reg: dict) -> bool:
                 memo["reviewed"].pop(k, None)
             elif not then or then.get("answer") != ans:
                 memo["reviewed"][k] = {"spec": now, "answer": ans}
-    if json.dumps(memo, sort_keys=True) == before:
+    from . import planner
+    planner.remember(loaded, memo)
+    merged = reg.get("_merges") or {}
+    adopted = False
+    for gid, shown in (loaded.get("file_groups") or {}).items():
+        # a group the re-planning made, read from a file replayed in a fresh folder: kept before a stage that does
+        # not ask its members yet rewrites the file
+        if gid.startswith("same.") and gid not in merged and not any(it.get("pattern") == gid for it in its):
+            e = loaded["entries"].get(gid) or {}
+            merged[gid] = {"members": list(shown), "question": e.get("question"), "options": []}
+            adopted = True
+    if adopted:
+        reg["_merges"] = merged
+    # a question the re-planning added, read from a file replayed in a fresh folder: kept, answered or not
+    have = {it["key"] for it in its}
+    added = list(reg.get("replan") or [])
+    for k, e in (loaded.get("entries") or {}).items():
+        q = str(e.get("question") or "").strip()
+        if k.startswith("added.") and k not in have and q and not q.startswith(GONE.strip()):
+            sug = _text(e.get("suggested")) or _text(e.get("assumed")) or None   # listed under an assumption
+            it = item(k, "confirm" if sug else "answer", q, question=q, suggested=sug, family="added",
+                      unblocks=["raised by an earlier answer"])
+            it["family_title"] = "Raised by your answers"
+            added.append(it)
+            adopted = True
+    if len(added) != len(reg.get("replan") or []):
+        reg["replan"] = added
+    if json.dumps(memo, sort_keys=True) == before and not adopted:
         return False
     reg["_memo"] = memo
     return True
 
 
 def write(renames: dict[str, str] | None = None) -> dict:
+    return _write(renames)
+
+
+def _write(renames: dict[str, str] | None = None) -> dict:
     """Rewrite answers.yaml from the registry, keeping every answer. Never over a file that does not parse.
     `renames` carries an answer from an item's old key to its new one (register)."""
     C.ensure(C.INPUT)
@@ -755,7 +1036,7 @@ def write(renames: dict[str, str] | None = None) -> dict:
         if b is None:
             return {"written": False, "warnings": loaded["warnings"] + [f"answers.yaml was not rewritten: {k} would be lost"]}
         for f, v in e.items():
-            if f not in ("question", "suggested") and not _same(b.get(f), v):
+            if (f == "answer" or f not in TOOL_FIELDS) and not _same(b.get(f), v):
                 return {"written": False, "warnings": loaded["warnings"] + [
                     f"answers.yaml was not rewritten: {k}.{f} would not read back the same"]}
     if old is not None:
@@ -807,7 +1088,7 @@ def _answers_of(text: str | None) -> str:
         return text or ""
     if not isinstance(d, dict) or is_old_format(d):
         return text or ""
-    keep = {"signed_for": d.get("signed_for")}
+    keep: dict[str, Any] = {}
     for k, e in load_text(text or "").items():
         keep[k] = {f: v for f, v in e.items() if f not in ("question", "suggested")}
     return json.dumps(keep, sort_keys=True, default=str)
@@ -824,12 +1105,13 @@ def fingerprint() -> str:
 def summary(loaded: dict | None = None) -> dict:
     """Per group: open and done items; per family within a group, the counts (the front page groups by it)."""
     loaded = loaded if loaded is not None else load()
-    out: dict[str, Any] = {g: {"open": [], "done": [], "stale": []} for g in GROUPS[:3]}
+    out: dict[str, Any] = {g: {"open": [], "done": [], "stale": []} for g in GROUPS}
     for it in items():
+        if it["group"] not in out:
+            continue                                          # an assumption: nothing to answer
         st = state(it["key"], loaded, it)
         bucket = "done" if st["state"] in ("answered", "reviewed") else ("stale" if st["state"] == "stale" else "open")
         out[it["group"]][bucket].append({**it, "status": st})
-    out["sign"] = signature(loaded)
     return out
 
 
@@ -838,7 +1120,7 @@ def summary(loaded: dict | None = None) -> dict:
 def migrate() -> list[str]:
     """
     Carry the answers of an estate written before answers.yaml into it, once: preflight answers.md, the
-    brief's decisions.yaml and reviews.yaml, the BRIEF.md signature. Each old file is renamed `<name>.migrated`
+    brief's decisions.yaml and reviews.yaml (an old BRIEF.md's approval block is not carried). Each old file is renamed `<name>.migrated`
     (kept, read by nothing) once its answers are in. Run after the stages have registered their items, so
     every answer lands on its item; an answer with no item today stays under `answered` as no longer asked.
     Returns one line per file carried.
@@ -872,7 +1154,7 @@ def migrate() -> list[str]:
 
     if "answers.md" in present:
         from . import preflight
-        text = open(present["answers.md"]).read()
+        text = open(present["answers.md"], encoding="utf-8").read()
         parsed = preflight._parse_answers(text)
         wm = re.search(r"^Answered by:[ \t]*(.*)$", text, re.M)
         who = wm.group(1).strip() if wm else ""
@@ -894,16 +1176,6 @@ def migrate() -> list[str]:
                 continue
             n += put(rename_review(str(u)), "yes", e.get("reviewed_by"), e.get("spec"))
         done.append(f"reviews.yaml: {n} review(s)")
-    if "BRIEF.md" in present:
-        from . import brief as B
-        ap = B.parse_approval(open(present["BRIEF.md"]).read())
-        if ap.get("signed") and not signature(loaded)["signed"]:
-            loaded["sign"] = {"signed_for": SIGN.get(ap["scope"], "")}
-            if "stand-in" in str(ap.get("approved_by") or "").lower():
-                memo["stand_in"] = True
-            done.append(f"BRIEF.md: the signature ({ap['scope']})")
-        else:
-            done.append("BRIEF.md: no signature to carry")
     reg = registry()
     reg["_memo"] = memo
     C.write_json(_registry_path(), reg)
@@ -975,12 +1247,6 @@ def set_answer(key: str, value, path: str | None = None) -> None:
     C.write_text(path, _edit(path, lambda d: _set(d, key, "answer", value)))
 
 
-def set_signature(covers: str, path: str | None = None) -> None:
-    """Sign as a person would: `signed_for:` set to `wave 1`, `full plan`, or empty."""
-    path = path or C.ANSWERS
-    C.write_text(path, _edit(path, lambda d: d.__setitem__("signed_for", SIGN.get(covers, covers) or None)))
-
-
 def _set(d: dict, key: str, field: str, value) -> None:
     for _sec, e in _walk(d):
         if str(e.get("id")) == key:
@@ -999,7 +1265,7 @@ def _edit(path: str, change) -> str:
     if is_old_format(d):
         d = _yaml(render(items(), loaded)) or {}
     change(d)
-    ld = {"entries": {}, "sign": {"signed_for": _text(d.get("signed_for"))}, "memo": loaded["memo"]}
+    ld: dict[str, Any] = {"entries": {}, "memo": loaded["memo"]}
     order = []
     each: dict[str, list] = {}
     for sec in SECTIONS:
@@ -1020,8 +1286,7 @@ def _edit(path: str, change) -> str:
         for k in rows:
             L += _entry(k, ld["entries"][k], each.get(k))
         L.append("")
-    L.append("signed_for:" + _scalar(ld["sign"]["signed_for"]))
-    return "\n".join(L) + "\n"
+    return "\n".join(L).rstrip("\n") + "\n"
 
 
 def today() -> str:

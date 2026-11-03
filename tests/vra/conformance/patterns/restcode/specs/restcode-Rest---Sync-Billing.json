@@ -1,0 +1,20 @@
+{
+  "workflow_uid": "restcode-Rest---Sync-Billing",
+  "purpose": "Rest - Sync Billing, for the restcode pattern fixture.",
+  "confidence": "high",
+  "open_questions": [
+    {
+      "question": "How many retries should the billing call get, and how long between attempts?",
+      "why_it_matters": "error handling",
+      "theme": "error semantics"
+    }
+  ],
+  "suspected_defects": [
+    {
+      "what": "TLS certificate verification is off (hostVerification = false)",
+      "evidence": "prototype.hostVerification = false",
+      "question": "Should the converted flow check the certificate?"
+    }
+  ],
+  "external_systems": []
+}
