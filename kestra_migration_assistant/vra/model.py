@@ -418,16 +418,16 @@ class ClaudeCodeProvider(Provider):
         exe = shutil.which("claude")
         if not exe:
             unavailable("Claude Code is not installed (the `claude` command), and the claude-code provider uses it.")
-        args = [exe, "-p", prompt, *BASE_ARGS, "--json-schema", json.dumps(schema), "--model", self.cfg["model"]]
+        args = [exe, "-p", *BASE_ARGS, "--json-schema", json.dumps(schema), "--model", self.cfg["model"]]
         workdir = tempfile.mkdtemp(prefix="kestra-migrate-call-")
         t0 = time.time()
         _check_stop()
-        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE,
                                 text=True, cwd=workdir, start_new_session=True)
         with _procs_lock:
             _procs.add(proc)
         try:
-            out, err = proc.communicate(timeout=timeout_of(self.cfg))
+            out, err = proc.communicate(input=prompt, timeout=timeout_of(self.cfg))
         except subprocess.TimeoutExpired as e:
             proc.kill()
             proc.communicate()
