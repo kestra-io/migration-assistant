@@ -46,9 +46,9 @@ kestra-migrate = "kestra_migration_assistant.cli:main"
 [dependency-groups]
 # Development only, pinned; uv.lock pins everything else. `uv sync` installs them with the package.
 dev = [
-    "pytest==9.1.1",
-    "ruff==0.16.9",
-    "mypy==2.3.1",
+    "pytest==9.2.0",
+    "ruff==0.17.3",
+    "mypy==2.4.1",
     "types-PyYAML==6.0.12.20260906",
 ]
 
