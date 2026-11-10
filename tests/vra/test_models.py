@@ -344,8 +344,10 @@ def test_claude_code_passes_prompt_via_stdin_not_cli_args(monkeypatch):
     class FakePopen:
         def __init__(self, args, **kwargs):
             recorded["args"] = args
+            recorded["kwargs"] = kwargs
             recorded["stdin"] = kwargs.get("stdin")
             recorded["cwd"] = kwargs.get("cwd")
+            recorded["encoding"] = kwargs.get("encoding")
             self.returncode = 0
 
         def communicate(self, input=None, timeout=None):
@@ -359,10 +361,12 @@ def test_claude_code_passes_prompt_via_stdin_not_cli_args(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", FakePopen)
 
     p = M.ClaudeCodeProvider({"provider": "anthropic", "auth": "claude-code", "model": "claude-opus-5-5"})
-    multi_line_prompt = "first line\nsecond line\n```json\n{\"test\": 123}\n```"
+    multi_line_prompt = "first line\nworkflow: Łódź → café — 测试 🚀\n```json\n{\"test\": 123}\n```"
     res = p.invoke(multi_line_prompt, SCHEMA)
     assert json.loads(res["result"]) == {"ok": True}
     assert recorded["input"] == multi_line_prompt
+    assert recorded["kwargs"].get("encoding") == "utf-8"
+    assert recorded["encoding"] == "utf-8"
     assert multi_line_prompt not in recorded["args"]
     assert "-p" in recorded["args"]
     idx = recorded["args"].index("-p")

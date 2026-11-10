@@ -423,7 +423,7 @@ class ClaudeCodeProvider(Provider):
         t0 = time.time()
         _check_stop()
         proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE,
-                                text=True, cwd=workdir, start_new_session=True)
+                                text=True, encoding="utf-8", cwd=workdir, start_new_session=True)
         with _procs_lock:
             _procs.add(proc)
         try:
