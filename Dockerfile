@@ -6,7 +6,7 @@
 #
 # /work is the working folder: mount the export folder inside it, under its own name, so the estate keeps its name.
 # A Claude Code login cannot be used in a container: an Anthropic API key, an OpenAI-compatible endpoint, or no model.
-FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="Kestra Migration Assistant for vRA" \
@@ -22,10 +22,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     KESTRA_MIGRATE_CONTAINER=1
 
+# The Debian security updates published since the base image was built (it lags behind them), then pip removed
+# once the tool is installed: nothing runs it in the container, and it is the image's own CVE source.
 COPY dist/requirements.txt dist/*.whl /tmp/install/
-RUN pip install --no-cache-dir --require-hashes -r /tmp/install/requirements.txt \
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/* \
+ && pip install --no-cache-dir --require-hashes -r /tmp/install/requirements.txt \
  && pip install --no-cache-dir --no-deps /tmp/install/*.whl \
  && pip check \
+ && pip uninstall --yes pip \
  && rm -rf /tmp/install \
  && useradd --uid 1000 --user-group --create-home --shell /usr/sbin/nologin kestra \
  && mkdir /work \
