@@ -2,6 +2,14 @@
 
 Every release of the Kestra Migration Assistant for vRA. Versions follow [semantic versioning](https://semver.org).
 
+## Unreleased
+
+### Fixes
+
+- The container image is rebuilt on the current `python:3.12-slim`, takes the Debian security updates published
+  since that base was built, and no longer ships pip, which nothing runs in it. This fixes the image's known CVEs
+  in apt, zlib, xz, ca-certificates and pip (high: CVE-2026-109518 in apt, CVE-2026-85091 in zlib).
+
 ## 1.2.0 (2026-11-03)
 
 One command takes you from an export to a brief. `kestra-migrate vra run` asks a few questions about the estate first
